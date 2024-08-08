@@ -11,6 +11,6 @@ let bind (t : t) ty_param cstrs : t =
   Map.add_exn t ~key:ty_param ~data:cstrs
 ;;
 
-let merge_disjoint_exn t1 t2 = Map.merge_disjoint_exn t1 t2
+let merge_disjoint_exn (t1 : t) (t2 : t) : t = Map.merge_disjoint_exn t1 t2
 let find (t : t) id = Map.find t id
 let map t ~f = Ty.Generic.Map.map t ~f

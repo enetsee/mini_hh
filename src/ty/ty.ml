@@ -55,6 +55,7 @@ module rec Minimal : sig
   val inter : t list -> t
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Minimal.t Generic.Map.t -> t
+  val unpack_opt : t -> (Param_bounds.t Generic.Map.t * t) option
 end = struct
   type t =
     | Base of Base.t (** Base types *)
@@ -95,6 +96,16 @@ end = struct
   ;;
 
   let nullable t = union [ t; null ]
+
+  let unpack_opt = function
+    | Exists Exists.{ body; quants } ->
+      let ty_param =
+        Generic.Map.of_alist_exn
+        @@ List.map quants ~f:(fun Param.{ ident; param_bounds } -> Generic.Generic ident, param_bounds)
+      in
+      Some (ty_param, body)
+    | _ -> None
+  ;;
 
   type 'acc ops =
     { on_base : 'acc -> Base.t -> 'acc

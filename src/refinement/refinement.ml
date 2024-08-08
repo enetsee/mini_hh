@@ -1,24 +1,5 @@
-(**    
-   
-
-
-    Generic
-
-    ```
-      interface MyInterface<T> {}
-      class MyClass implements MyInterface<int> {}
-
-      function expecting<T>(T $x): void {}
-
-      function foo<T as MyInterface<T2>, T2>(T $x): void {
-        if ($x is MyClass) {
-          expecting<T2>(1);
-        }
-    ```
-}
-  
-*)
 open Core
+module Ctxt = Ctxt
 
 let unify ~is_ ~scrut bounds =
   match is_, scrut with

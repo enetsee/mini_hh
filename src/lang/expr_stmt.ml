@@ -10,6 +10,8 @@ module rec Expr : sig
     | Binary of Binary.t
     | Unary of Unary.t
   [@@deriving eq, compare, sexp, show]
+
+  val local_opt : t -> Local.t option
 end = struct
   type t =
     | Lit of Lit.t
@@ -19,6 +21,11 @@ end = struct
     | Binary of Binary.t
     | Unary of Unary.t
   [@@deriving eq, compare, sexp, show]
+
+  let local_opt = function
+    | Local local -> Some local
+    | _ -> None
+  ;;
 end
 
 (* ~~ Is refinements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

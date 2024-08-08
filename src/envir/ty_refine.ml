@@ -26,3 +26,4 @@ let meet t1 t2 =
 ;;
 
 let cmp t = Refine_map.map t ~f:Ty.Refinement.cmp
+let of_local local ty : t = Refine_map.singleton Refine_key.(Local local) @@ Ty.Refinement.pos ty

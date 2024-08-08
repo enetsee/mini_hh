@@ -31,17 +31,41 @@ end
 and Is : sig
   include Sigs.Synthesizes with type t := Lang.Is.t and type out := Ty.t and type env_out := Envir.Typing.t
 end = struct
-  let synth Lang.Is.{ scrut; ty = _ } ~ctxt ~env ~errs =
-    let _ty_scrut, env, errs = Expr.synth scrut ~ctxt ~env ~errs in
-    (* let env =
-       match scrut with
-       | Lang.Expr.Local local ->
-       let env = Envir.Typing.refine env local (Ty.Refinement.pos ty)  in
+  (** Typing `is` can give us:
+      - a type refinement if the scrutinee is a local
+      - newly bound type parameters if the test type is existentially quantified
+      - type parameter refinements
 
-       | _ -> *)
-    (* The test refines nothing *)
-    (* env  *)
-    Ty.bool, env, errs
+      TODO(mjt) support properties *)
+  let synth Lang.Is.{ scrut; ty } ~ctxt ~env ~errs =
+    (* Get the type of the scrutinee expression *)
+    let ty_scrut, env, errs = Expr.synth scrut ~ctxt ~env ~errs in
+    (* Unpack the test type if it is existential and bind. This assumes the
+       name of any quantifier is fresh with respect to the current type parameter
+       environment *)
+    let ty_param_delta, ty_is = Option.value ~default:(Envir.Ty_param.empty, ty) @@ Ty.unpack_opt ty in
+    (* Refine the scrutinee under the test type, bind any type params from the opened existential *)
+    let ty_param_refine_delta =
+      let Envir.Typing.{ ty_param; ty_param_refine; _ } = env
+      and Ctxt.{ oracle; _ } = ctxt in
+      let ty_param = Envir.Ty_param.merge_disjoint_exn ty_param ty_param_delta in
+      let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+      Refinement.refine ~ty_scrut ~ty_is ~ctxt
+    in
+    let ty_refine =
+      Option.value_map ~default:Envir.Ty_refine.empty ~f:(fun id -> Envir.Ty_refine.of_local id ty)
+      @@ Lang.Expr.local_opt scrut
+    in
+    let delta =
+      Envir.Typing.create
+        ~local:Envir.Local.empty
+        ~ty_refine
+        ~ty_param:ty_param_delta
+        ~ty_param_refine:ty_param_refine_delta
+        ~subtyping:()
+        ()
+    in
+    Ty.bool, delta, errs
   ;;
 end
 
