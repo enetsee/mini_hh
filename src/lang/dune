@@ -1,0 +1,12 @@
+(library
+ (name lang)
+ (libraries core fmt ty identifier)
+ (inline_tests)
+ (preprocess
+  (pps
+   ppx_jane
+   ppx_deriving.map
+   ppx_deriving.eq
+   ppx_deriving.fold
+   ppx_deriving.create
+   ppx_deriving.show)))
