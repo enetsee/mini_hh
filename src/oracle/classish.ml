@@ -200,6 +200,20 @@ module Example = struct
                 Identifier.Ctor.Map.of_alist_exn
                   [ Identifier.Ctor.Ctor "I", [ Ty.bool ]; Identifier.Ctor.Ctor "J", [ Ty.int ] ]
             } )
+        (* class CC<T super int as (int | string)> implements I<int>, J<T> {} *)
+      ; ( Identifier.Ctor.Ctor "CC"
+        , Entry.
+            { ty_params =
+                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                  , Variance.inv
+                  , Ty.Param_bounds.{ lower_bound = Some Ty.int; upper_bound = Some Ty.(union [ int; string ]) } )
+                ]
+            ; supers =
+                Identifier.Ctor.Map.of_alist_exn
+                  [ Identifier.Ctor.Ctor "I", [ Ty.int ]
+                  ; Identifier.Ctor.Ctor "J", [ Ty.generic (Identifier.Ty_param.Ty_param "T") ]
+                  ]
+            } )
       ]
   ;;
 end

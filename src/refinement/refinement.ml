@@ -1,96 +1,5 @@
 (**    
-    Unions
-  
-    Example (coincident points)
-
-    Equality constraints are degenerate point intervals to we only get a valid
-    interal if the points happen to coincide:
-
-    ```
-      class MyClass implements I<int> , J<int>
-      
-      function foo<T>((I<T> | J<T>) $x): void {
-        if($x is MyClass) {
-          expect<T>(1); // Ok
-        }
-      }
-    ```
-
-    Here we have:
-    ```
-    MyClass ~~> I<T> ==> int <: T <: int
-    MyClass ~~> J<T> ==> int <: T <: int 
-    MyClass ~~> (I<T> | J<T>) ==> (int | int) <: T <: (int & int) 
-                              ==>  int <: T <: int
-    ```
-
-    Example (non-coincident points)
-     
-    If the points are disjoint we end up with an empty interval
-
-    ```
-      class MyClass implements I<int> , J<arraykey>
-      
-      function foo<T>((I<T> | J<T>) $x): void {
-        if($x is MyClass) {
-          expect<T>(1); // Error
-        }
-      }
-    ```
-
-    Here we have:
-    ```
-    MyClass ~~> I<T> ==> int <: T <: int
-    MyClass ~~> J<T> ==> arraykey <: T <: arraykey
-    MyClass ~~> (I<T> | J<T>) ==> (int | arraykey) <: T <: (int & arraykey) 
-                              ==>  arraykey <: T <: int
-    ```
-
-    This is counterintuitive to me but if you look at bounds as intervals it 
-    makes more sense - the intersection of non-coincident degenerate intervals 
-    is empty.
-
-    Example (point and containing interval)
-
-    ```
-      interface K<T> {}
-      class MyClass<T super int as arraykey> implements I<int> , K<T>
-      
-      function foo<T>((I<T> | K<T>) $x): void {
-        if($x is MyClass<_>) {
-          expect<T>(1); // Ok 
-        }
-      }
-    ```
-
-    In this case we 
-
-    Here we have:
-    ```
-    MyClass<Texists> ~~> I<T> ==> int <: T <: int
-    MyClass<Texists> ~~> K<T> ==> int <: T <: arraykey 
-    MyClass<Texists> ~~> (I<T> | K<T>) ==> (int | int) <: T <: (int & arraykey) 
-    ```
-
-    This example is a bit weird. If we have something that is either `I<T>` 
-    or `K<T>` then we know that `T` must be from within the interval
-    each type allows i.e. from there intersection. Since `I<_>` only allows a 
-    point and `K<_>` allows an interval containing that point the only solution 
-    is the point allowed by `I<_>`.
-
-
-    Example (union with empty refinement)
-
-    ```
-      function foo<T>((I<T> | MyOtherClass) $x): void {
-        if($x is MyClass<_>) {
-          expect<T>(1); // Error
-        }
-      }
-    ```
-
-    Clearly we can't refine T is the `$x` was `MyOtherClass`
-
+   
 
 
     Generic
@@ -119,8 +28,8 @@ let unify ~is_ ~scrut bounds =
      the refining type is existential. We need to:
      - find the intersection of the bounds on the existential quantifier and
        those of the type from the scrutinee
-     - modify the bounds of the existentail quantifier so that it is equal to
-       the type from the scrutinee
+     - solve the existential quantifier by modifyinf the bounds so that it is
+       equal to type parameter scrutinee
   *)
   | Ty.Generic ty_param_is, Ty.Generic ty_param_scrut ->
     let bounds_is = Map.find_exn bounds ty_param_is in
@@ -359,25 +268,63 @@ module Example = struct
     ctxt, ty_scrut, ty_is, rfn
   ;;
 
-  (* ~~ UNION, NON-COINCIDENT POINTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  (* ~~ UNION, INTERSECTING BOUDNS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
      Given
-     class BB implements I<bool>, J<int> {}
+     class CC<T super int as (int | string)> implements I<int>, J<T> {}
      Γ, nothing <: T <: mixed, $x:(I<T> | J<T>)
 
-     if we have an expression `$x is BB` we refine (I<T> | J<T>) <~~ BB and expect 
+     if we have an expression `$x is CC<Texists>` we open the existential to get 
+     Γ, nothing <: T <: mixed, $x:(I<T> | J<T>), int <: Texists <: (int | string)
+      
+     then we refine (I<T> | J<T>) <~~ CC<Texists> and expect 
 
-     (bool | int) <: T <: (bool & int) == (bool | int) <: T <: nothing == ⊥
+     (int | int) <: T <: ((int | string) & int) == int <: T <: int
   *)
-  let ctxt5, ty_scrut5, ty_is5, rfn5 =
+  let ctxt6, ty_scrut6, ty_is6, rfn6 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
-    let ty_param = Envir.Ty_param.(bind empty tp_t Ty.Param_bounds.top) in
+    let tp_texists = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "Texist") in
+    let ty_param =
+      Envir.Ty_param.(
+        bind (bind empty tp_t Ty.Param_bounds.top) tp_texists
+        @@ Ty.Param_bounds.create ~lower_bound:Ty.int ~upper_bound:Ty.(union [ int; string ]) ())
+    in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
     and ty_scrut =
       Ty.union
         [ Ty.ctor Identifier.Ctor.(Ctor "I") [ Ty.Generic tp_t ]
         ; Ty.ctor Identifier.Ctor.(Ctor "J") [ Ty.Generic tp_t ]
         ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "BB") [] in
+    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "CC") [ Ty.Generic tp_texists ] in
+    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
+    ctxt, ty_scrut, ty_is, rfn
+  ;;
+
+  (* ~~ SOLVE PARAM VIA BOUND ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     Given
+     interface J<T> {}
+     class F implements J<bool>
+
+     and some function 
+     function foo<T1 as J<T2>, T2>(T1 $x): void { ... }
+
+     we have
+     Γ, nothing <: T2 <: mixed, nothing <: T1 <: J<T2>, $x:T1
+
+     if we have an expression `$x is F`,  we refine T1 <~~ F and expect
+
+     bool <: T2 <: bool
+  *)
+  let ctxt7, ty_scrut7, ty_is7, rfn7 =
+    let tp_t1 = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T1") in
+    let tp_t2 = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T2") in
+    let ty_param =
+      Envir.Ty_param.(
+        bind (bind empty tp_t2 Ty.Param_bounds.top) tp_t1
+        @@ Ty.Param_bounds.create ~upper_bound:(Ty.ctor Identifier.Ctor.(Ctor "J") [ Ty.Generic tp_t2 ]) ())
+    in
+    let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
+    and ty_scrut = Ty.Generic tp_t1
+    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "F") [] in
     let rfn = refine ~ty_scrut ~ty_is ~ctxt in
     ctxt, ty_scrut, ty_is, rfn
   ;;
