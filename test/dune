@@ -1,0 +1,8 @@
+(executable
+ (name run_tests)
+ (libraries alcotest test_oracle))
+
+(rule
+ (alias runtest)
+ (action
+  (run ./run_tests.exe)))

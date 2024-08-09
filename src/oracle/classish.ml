@@ -55,6 +55,15 @@ let up (t : t) ~of_ ~at =
 ;;
 
 let find (t : t) id = Option.map ~f:(fun Entry.{ ty_params; supers } -> ty_params, supers) @@ Map.find t id
+let empty = Identifier.Ctor.Map.empty
+
+let add_exn (t : t) ~id ~ty_params ~supers : t =
+  Map.add_exn t ~key:id ~data:Entry.{ ty_params; supers = Identifier.Ctor.Map.of_alist_exn supers }
+;;
+
+let add_all_exn (t : t) ls : t =
+  List.fold_left ls ~init:t ~f:(fun t (id, ty_params, supers) -> add_exn t ~id ~ty_params ~supers)
+;;
 
 module Example = struct
   (* class A {} 
