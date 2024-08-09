@@ -49,6 +49,11 @@ let flip = function
   | Down -> Up
 ;;
 
+let is_up = function
+  | Up -> true
+  | _ -> false
+;;
+
 (* ~~ Implementation  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 let promote_generic generic ty_params ~dir =
   match Envir.Ty_param.find ty_params generic, dir with
@@ -104,7 +109,8 @@ and promote_ctor ctor ty_params ~dir ~oracle =
         | Variance.Inv -> failwith "impossible"
         | Variance.Cov -> promote_help ty ty_params ~dir ~oracle
         | Variance.Contrav -> promote_help ty ty_params ~dir:(flip dir) ~oracle)
-    else
+    else if is_up dir
+    then
       (* We have at least one invariant parameter so there is no least supertype at the current class. Find the current
          class at each supertype, promote and take the intersection. If there are no supertypes, or no supertypes
          not containing invariant type parameters, we end up with mixed / nothing depending on the direction we're
@@ -115,6 +121,8 @@ and promote_ctor ctor ty_params ~dir ~oracle =
       @@ List.filter_map ~f:(fun at ->
         Option.map ~f:(fun (args, _) -> Ty.Ctor.{ ctor = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
       @@ Map.keys supers
+    else (* We need to find the greatest subtype of the constructor *)
+      failwith "TODO"
   | _ -> Error Err.(Set.singleton @@ unbound_ctor id)
 
 and promote_exists exists ty_params ~dir ~oracle =
