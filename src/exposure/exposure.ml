@@ -1,16 +1,10 @@
 open Core
 open Common
+module Err = Err
 
 exception Exposure of Err.t list
 
-type dir =
-  | Up
-  | Down
-
-let flip = function
-  | Up -> Down
-  | Down -> Up
-;;
+(* ~~ Helpers to sequence result with the error as a monoid ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 let collect_list ress =
   let rec aux ress ~k =
@@ -45,6 +39,17 @@ let collect_tuple3 (res1, res2, res3) =
   | Error err, _, _ | _, Error err, _ | _, _, Error err -> Error err
 ;;
 
+(* ~~ Record the direction  (promotion / demotion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+type dir =
+  | Up
+  | Down
+
+let flip = function
+  | Up -> Down
+  | Down -> Up
+;;
+
+(* ~~ Implementation  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 let promote_generic generic ty_params ~dir =
   match Envir.Ty_param.find ty_params generic, dir with
   | None, _ -> Ok (Ty.Generic generic)
@@ -119,7 +124,8 @@ and promote_exists exists ty_params ~dir ~oracle =
   Result.map ~f:(fun body -> Ty.exists quants body) @@ promote_help body ty_params ~dir ~oracle
 ;;
 
-(** Promote a type [ty] by finding its least supertype not containing any type parameter mentioned in [ty_params] *)
+(* ~~ API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
 let promote ty ty_params ~oracle = promote_help ty ty_params ~dir:Up ~oracle
 
 let promote_exn ty ty_params ~oracle =

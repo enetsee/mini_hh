@@ -57,8 +57,11 @@ let rec refine_help ty_scrut ctor_is ~ctxt =
   | Ty.Inter ty_scruts ->
     List.fold_right ty_scruts ~init:Envir.Ty_param_refine.bottom ~f:(fun ty_scrut acc ->
       Envir.Ty_param_refine.join acc @@ refine_help ty_scrut ctor_is ~ctxt)
-    (* TODO(mjt)  what does it mean to say
-       ∃ T1. I<T1> <~~ ∃ T2. E<T2>
+    (* TODO(mjt) what does this mean? Should we also be yielding a
+       type refinement in this case since we can refine the type parameters
+       bound in the existential? This feels right - we should be able
+       to refine then open and expect the same result as opening then refining.
+       ∃ T1. I<T1> <~~ C<T>
     *)
   | Ty.Exists { body; _ } -> refine_help body ctor_is ~ctxt
   | Ty.Generic generic -> refine_generic generic ctor_is ~ctxt

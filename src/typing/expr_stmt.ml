@@ -73,7 +73,81 @@ end
 and As : sig end = struct end
 
 (* ~~ Binary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Binary : sig end = struct end
+and Binary : sig
+  include Sigs.Synthesizes with type t := Lang.Binary.t and type out := Ty.t and type env_out := Envir.Typing.t
+end = struct
+  (** Typing logical binary expression carries through the refinements from each operand *)
+  let synth_logical (binop, lhs, rhs) ~ctxt ~env ~errs =
+    let delta_lhs, errs = Expr.check lhs ~against:Ty.bool ~ctxt ~env ~errs in
+    (* Type the rhs operand under the refinements from the first *)
+    let delta_rhs, errs =
+      (* TODO(mtj) hide all this *)
+      let Envir.Typing.
+            { local = local_delta
+            ; ty_refine = ty_refine_delta
+            ; ty_param = ty_param_delta
+            ; ty_param_refine = ty_param_refine_delta
+            ; subtyping
+            }
+        =
+        delta_lhs
+      and Envir.Typing.{ local; ty_refine; ty_param; ty_param_refine; _ } = env in
+      (* New local bindings supercede the old *)
+      let local = Envir.Local.merge_right local local_delta
+      (* New type refinements intersect with existing refinements *)
+      and ty_refine = Envir.Ty_refine.meet ty_refine ty_refine_delta
+      (* New type parameters must be fresh with respect the existing env *)
+      and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param ty_param_delta
+      (* New type parameter refinements intersect with existing refinements *)
+      and ty_param_refine = Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta in
+      let env = Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping () in
+      Expr.check rhs ~against:Ty.bool ~ctxt ~env ~errs
+    in
+    (* Now combine the two deltas *)
+    let delta =
+      (* TODO(mtj) hide all this *)
+      let Envir.Typing.
+            { local = local_lhs
+            ; ty_refine = ty_refine_lhs
+            ; ty_param = ty_param_lhs
+            ; ty_param_refine = ty_param_refine_lhs
+            ; _
+            }
+        =
+        delta_lhs
+      and Envir.Typing.
+            { local = local_rhs
+            ; ty_refine = ty_refine_rhs
+            ; ty_param = ty_param_rhs
+            ; ty_param_refine = ty_param_refine_rhs
+            ; subtyping
+            }
+        =
+        delta_rhs
+      in
+      (* New local bindings supercede the old *)
+      let local = Envir.Local.merge_right local_lhs local_rhs
+      (* New type parameters must be fresh with respect the existing env *)
+      and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param_lhs ty_param_rhs
+      and ty_refine, ty_param_refine =
+        match binop with
+        | Lang.Binop.Logical.And ->
+          ( Envir.Ty_refine.meet ty_refine_lhs ty_refine_rhs
+          , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs )
+        | Lang.Binop.Logical.Or ->
+          ( Envir.Ty_refine.join ty_refine_lhs ty_refine_rhs
+          , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs )
+      in
+      Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping ()
+    in
+    Ty.bool, delta, errs
+  ;;
+
+  let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt ~env ~errs =
+    match binop with
+    | Logical binop -> synth_logical (binop, lhs, rhs) ~ctxt ~env ~errs
+  ;;
+end
 
 (* ~~ Unary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Unary : sig end = struct end
@@ -114,8 +188,18 @@ end
 and If : sig
   include Sigs.Synthesizes with type t := Lang.If.t and type out := unit and type env_out := Envir.Local.t
 end = struct
-  let promote conts ~env_delta:_ ~errs = conts, errs
-  let defined _then_ _else_ ~outer:_ ~errs = errs
+  let defined then_ else_ ~(outer : Envir.Local.t) ~errs =
+    (* Find the symmetric difference of the bindings in the then and else branches
+       and determine which weren't already bound *)
+    Sequence.fold ~init:errs ~f:(fun errs k ->
+      let k =
+        match k with
+        | Either.First k -> k
+        | Either.Second k -> k
+      in
+      if Envir.Local.is_bound outer k then errs else Err.(Unbound_at_join k) :: errs)
+    @@ Envir.Local.symm_diff then_ else_
+  ;;
 
   let synth Lang.If.{ cond; then_; else_ } ~ctxt ~env ~errs =
     (* Check the type of the conditional exprssion is a subtype of bool *)
@@ -198,11 +282,14 @@ end = struct
     (* Type the `then` branch then ensure locals bound in the branch don't contain references to type parameters scoped
        to the branch by promoting any such types to the least supertype not containing a type parameter which will
        be discarded *)
-    let _, local_env_then, errs = Stmt.synth then_ ~ctxt ~env:then_env ~errs in
-    let local_env_then, errs = promote local_env_then ~env_delta ~errs in
+    let local_env_then, errs =
+      let _, local_env_then, errs = Stmt.synth then_ ~ctxt ~env:then_env ~errs in
+      let Envir.Typing.{ ty_param; _ } = env_delta in
+      let Ctxt.{ oracle; _ } = ctxt in
+      Envir.Local.map local_env_then ~f:(fun ty -> Exposure.promote_exn ty ty_param ~oracle), errs
+    in
     let _, local_env_else, errs = Stmt.synth else_ ~ctxt ~env:else_env ~errs in
-    (* TODO(mjt) ensure newly bound locals are consistently defined / undefined in both branches with respect to the
-       original set of bound locals *)
+    (* Ensure newly bound locals are defined both branches if not already bound *)
     let errs =
       let Envir.Typing.{ local; _ } = env in
       defined ~outer:local local_env_then local_env_else ~errs
