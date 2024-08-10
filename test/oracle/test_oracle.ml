@@ -63,9 +63,11 @@ module Classish = struct
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "I"
+            [ (* interface I<T> {} *)
+              ( Identifier.Ctor.Ctor "I"
               , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
               , [] )
+              (* class A<T super int as arraykey> implements I<T> {} *)
             ; ( Identifier.Ctor.Ctor "A"
               , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, bounds ]
               , [ Identifier.Ctor.Ctor "I", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
@@ -84,7 +86,7 @@ module Classish = struct
           (Oracle.up oracle ~of_ ~at)
           expect
       in
-      Alcotest.test_case "classish / up / concrete super 2" `Quick test
+      Alcotest.test_case "classish / up / bounds 1" `Quick test
     ;;
 
     let test_cases = [ concrete_super_1; concrete_super_2; bounds_1 ]
