@@ -1,15 +1,15 @@
 (library
- (name test_common)
+ (name test_refinement)
  (libraries
   core
   fmt
   str
   alcotest
+  test_common
   common
   identifier
-  lang
   ty
   oracle
   envir
   refinement)
- (synopsis "Helpers for tests"))
+ (synopsis "Tests for type refinement"))

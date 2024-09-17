@@ -7,4 +7,5 @@ let tuple (pp1, equal1) (pp2, equal2) =
 ;;
 
 let ty = Alcotest.testable Ty.pp Ty.equal
-let param_bounds = Alcotest.testable Ty.(Generic.Map.pp Param_bounds.pp) Ty.(Generic.Map.equal Param_bounds.equal)
+let ty_param_refine = Alcotest.testable Envir.Ty_param_refine.pp Envir.Ty_param_refine.equal
+let refinement_err = Alcotest.testable Refinement.Err.pp Refinement.Err.equal

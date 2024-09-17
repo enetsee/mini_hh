@@ -8,13 +8,8 @@ type t =
 [@@deriving create, show]
 
 let param_bounds { ty_param; ty_param_refine; _ } id =
-  match Envir.Ty_param.find ty_param id with
-  | None -> None
-  | Some bounds ->
-    let bounds =
-      Option.value_map ~default:bounds ~f:Ty.Param_bounds.(meet bounds) @@ Envir.Ty_param_refine.find ty_param_refine id
-    in
-    Some bounds
+  Option.map ~f:(fun bounds -> Ty.Param_bounds.meet bounds @@ Envir.Ty_param_refine.find ty_param_refine id)
+  @@ Envir.Ty_param.find ty_param id
 ;;
 
 let bind_param ty_param Ty.Param.{ ident; param_bounds } =

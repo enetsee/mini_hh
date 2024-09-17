@@ -2,6 +2,7 @@ open Core
 module Ctxt = Ctxt
 module Cstr = Cstr
 module Err = Err
+module Prop = Prop
 
 module Eager_leftmost_dfs = struct
   let rec tell_prop prop ~ctxt ~env =

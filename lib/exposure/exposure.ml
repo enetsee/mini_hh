@@ -119,7 +119,7 @@ and promote_ctor ctor ty_params ~dir ~oracle =
       @@ collect_list
       @@ List.map ~f:(fun ctor -> promote_ctor ctor ty_params ~dir ~oracle)
       @@ List.filter_map ~f:(fun at ->
-        Option.map ~f:(fun (args, _) -> Ty.Ctor.{ ctor = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
+        Option.map ~f:(fun args -> Ty.Ctor.{ ctor = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
       @@ Map.keys supers
     else
       (* We need to find the greatest subtype of the constructor; this requires us to find all classes which

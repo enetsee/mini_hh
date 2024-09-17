@@ -1,6 +1,6 @@
 (library
  (name oracle)
- (libraries core fmt common identifier ty)
+ (libraries core fmt common identifier ty envir)
  (inline_tests)
  (preprocess
   (pps

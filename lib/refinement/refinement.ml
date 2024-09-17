@@ -1,54 +1,157 @@
 open Core
+open Common
 module Ctxt = Ctxt
 
-let unify ~is_ ~scrut bounds =
-  match is_, scrut with
-  (* We have an equal generic in the same positions - nothing to do *)
-  | Ty.Generic ty_param_is, Ty.Generic ty_param_scrut when Ty.Generic.equal ty_param_is ty_param_scrut -> bounds
-  (* We have different genrics in the same position - this can only happen if
-     the refining type is existential. We need to:
-     - find the intersection of the bounds on the existential quantifier and
-       those of the type from the scrutinee
-     - solve the existential quantifier by modifyinf the bounds so that it is
-       equal to type parameter scrutinee
-  *)
-  | Ty.Generic ty_param_is, Ty.Generic ty_param_scrut ->
-    let bounds_is = Map.find_exn bounds ty_param_is in
-    (* Refine the outer parameter bounds
-       TODO(mjt)I don't think they can be already bound in the refinement? *)
-    let bounds =
-      Map.update bounds ty_param_scrut ~f:(function
-        | None -> bounds_is
-        | Some bounds_scrut -> Ty.Param_bounds.meet bounds_is bounds_scrut)
-    in
-    let bound_scrut = Ty.Param_bounds.eq scrut in
-    (* Set the inner bounds equal to the outer bound *)
-    Map.update bounds ty_param_is ~f:(function
-      | None -> bound_scrut
-      | Some _ -> bound_scrut)
-    (* The refinement gave us a concrete type so update the bounds of the generic
-       in scrutinee position
-    *)
-  | _, Ty.Generic ty_param_scrut ->
-    let bounds_is = Ty.Param_bounds.eq is_ in
-    Map.update bounds ty_param_scrut ~f:(function
-      | None -> bounds_is
-      | Some bounds_scrut -> Ty.Param_bounds.meet bounds_is bounds_scrut)
-  (* We have a generic from the refining type but some other type in scrutinee
-     position. Update the bounds on the existential to be equal to the
-     scrutinee type
-     TODO(mjt) which example exercises this? *)
-  | Ty.Generic ty_param_is, _ ->
-    let bound_scrut = Ty.Param_bounds.eq scrut in
-    Map.update bounds ty_param_is ~f:(function
-      | None -> bound_scrut
-      | Some bound_is -> Ty.Param_bounds.meet bound_scrut bound_is)
-  (* Otherwise they are both concrete and we leave it for subtyping to
-     find out if this is ok *)
-  | _ -> bounds
+module Err = struct
+  type t =
+    | Not_a_subclass of Identifier.Ctor.t * Identifier.Ctor.t
+    | Multiple of t list
+  [@@deriving variants, eq, show]
+end
+
+let sequence_all ress =
+  let rec aux ress acc =
+    match acc, ress with
+    | _, [] -> acc
+    | Ok refn_acc, Ok refn_next :: ress ->
+      let acc = Ok (refn_next :: refn_acc) in
+      aux ress acc
+    | Error _, Ok _ :: ress -> aux ress acc
+    | Ok _, Error error :: ress ->
+      let acc = Error [ error ] in
+      aux ress acc
+    | Error err_acc, Error err_next :: ress ->
+      let acc = Error (err_next :: err_acc) in
+      aux ress acc
+  in
+  Result.map ~f:Envir.Ty_param_refine.join_many @@ Result.map_error ~f:Err.multiple @@ aux ress @@ Ok []
 ;;
 
-let rec refine_help ty_scrut ctor_is ~ctxt =
+let sequence_any ress =
+  let rec aux ress refns errs =
+    match ress with
+    | [] when List.is_empty errs -> Ok refns
+    | [] -> Error errs
+    | Ok refn_next :: ress -> aux ress (refn_next :: refns) errs
+    | Error err_next :: ress -> aux ress refns (err_next :: errs)
+  in
+  Result.map ~f:Envir.Ty_param_refine.meet_many @@ Result.map_error ~f:Err.multiple @@ aux ress [] []
+;;
+
+let combine ress =
+  let rec aux ress acc =
+    match acc, ress with
+    | _, [] -> acc
+    | Ok refn_acc, Ok refn_next :: ress ->
+      let acc = Ok (refn_next :: refn_acc) in
+      aux ress acc
+    | Error _, Ok _ :: ress -> aux ress acc
+    | Ok _, Error error :: ress ->
+      let acc = Error [ error ] in
+      aux ress acc
+    | Error err_acc, Error err_next :: ress ->
+      let acc = Error (err_next :: err_acc) in
+      aux ress acc
+  in
+  Result.map ~f:Envir.Ty_param_refine.meet_many @@ Result.map_error ~f:Err.multiple @@ aux ress @@ Ok []
+;;
+
+let rec refine ~ty_scrut ~ty_test ~ctxt =
+  match ty_scrut, ty_test with
+  | Ty.Union ty_scruts, _ -> refine_union_scrut ~ty_scruts ~ty_test ~ctxt
+  | Ty.Inter ty_scruts, _ -> refine_inter_scrut ~ty_scruts ~ty_test ~ctxt
+  | Ty.Ctor ctor_scrut, Ty.Ctor ctor_test -> refine_ctor ~ctor_scrut ~ctor_test ~ctxt
+  | _, _ ->
+    (* TODO(mjt) handle existentials in scrutinee and test position
+       TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
+    Ok Envir.Ty_param_refine.top
+
+(** If the scrutinee is a union type we can only draw conclusions about refinements
+       common to all elements 
+       
+       So, given
+
+       interface I<T> {}
+       interface J<T> {}
+       interface K {}
+       class E implements I<int>, J<int>, K {}
+
+       (I<T> | J<T>) is E 
+
+       Should let us refine T to int
+
+       But,  
+
+       (I<T> | K)  is E 
+
+       shouldn't let us refine T
+    *)
+and refine_union_scrut ~ty_scruts ~ty_test ~ctxt =
+  sequence_all @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
+
+(* If the scrutinee is an intersection type we can draw conclusions about refinements 
+       from any element 
+       
+       interface I<T> {}
+       interface J<T> {}
+       interface K {}
+       class E implements I<int>, J<int>, K {}
+
+       (I<T> & K)  is E 
+
+       Should let us refine T to int
+*)
+
+and refine_inter_scrut ~ty_scruts ~ty_test ~ctxt =
+  sequence_any @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
+
+and refine_ctor ~ctor_scrut ~ctor_test ~ctxt =
+  let oracle = ctxt.Ctxt.oracle in
+  match Oracle.up oracle ~of_:ctor_test ~at:ctor_scrut.ctor with
+  | None ->
+    (* The constructor in test position does not have the constructor in scrutinee position
+       as a superclass so this refinement is impossible *)
+    Error (Err.not_a_subclass ctor_scrut.ctor ctor_test.ctor)
+  | Some args_up ->
+    (* We now have the type arguments for the test constructor seen at its instantiation
+    *)
+    let variance = Option.value_exn (Oracle.param_variances_opt oracle ~ctor:ctor_scrut.ctor) in
+    combine
+    @@ List.map3_exn ctor_scrut.args args_up variance ~f:(fun ty_scrut ty_test variance ->
+      refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt)
+
+and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
+  match ty_scrut, ty_test, variance with
+  | Ty.Generic g_scrut, Ty.Generic g_test, _ ->
+    (* Two generics appearing in the same position means they must be equal. To reflect this we need our refinement
+       to:
+       1) reflect that the bounds of the generic in scrutinee are refined by the bounds of the generic in test position; and
+       2) reflect that the generic in test position is equal to the generic in scrutinee position.
+    *)
+    Ok
+      (Envir.Ty_param_refine.bounds
+       @@ Ty.Generic.Map.of_alist_exn
+            [ g_scrut, Option.value_exn (Ctxt.param_bounds ctxt g_test)
+            ; g_test, Ty.Param_bounds.create ~lower_bound:ty_scrut ~upper_bound:ty_scrut ()
+            ])
+  | Ty.Generic g_scrut, _, _ ->
+    (* We have a concrete type in test position so refine the bounds of the generic to this type *)
+    Ok (Envir.Ty_param_refine.singleton g_scrut @@ Ty.Param_bounds.create ~lower_bound:ty_test ~upper_bound:ty_test ())
+  | _, Ty.Generic g_test, Variance.Cov ->
+    (* We have a concrete type in scrutinee position and a covariant generic in test position so we can refine it
+       further by adding the concrete type as an upper bound *)
+    Ok (Envir.Ty_param_refine.singleton g_test @@ Ty.Param_bounds.create ~upper_bound:ty_scrut ())
+  | _, Ty.Generic g_test, Variance.Contrav ->
+    Ok (Envir.Ty_param_refine.singleton g_test @@ Ty.Param_bounds.create ~lower_bound:ty_scrut ())
+  | _, Ty.Generic g_test, Variance.Inv ->
+    Ok (Envir.Ty_param_refine.singleton g_test @@ Ty.Param_bounds.create ~lower_bound:ty_scrut ~upper_bound:ty_scrut ())
+    (* We have two concrete types so we need to recurse into them to discover refinements on any nested generic *)
+  | _, _, Variance.Cov -> refine ~ty_scrut ~ty_test ~ctxt
+  | _, _, Variance.Contrav -> refine ~ty_scrut:ty_test ~ty_test:ty_scrut ~ctxt
+  | _, _, Variance.Inv -> combine [ refine ~ty_scrut ~ty_test ~ctxt; refine ~ty_scrut:ty_test ~ty_test:ty_scrut ~ctxt ]
+;;
+
+(* let rec refine_help ty_scrut ctor_is ~ctxt =
   match ty_scrut with
   | Ty.Base _ | Ty.Fn _ -> Envir.Ty_param_refine.bottom
   | Ty.Union ty_scruts ->
@@ -79,19 +182,11 @@ and refine_generic generic ctor_is ~ctxt =
     Envir.Ty_param_refine.meet lb ub
 
 and refine_ctor ~ctor_scrut ~ctor_is ~ctxt =
-  let Ty.Ctor.{ ctor = at; args = args_scrut } = ctor_scrut in
-  (* Find the instantiation of the refining subtype at the scrutinee supertype *)
-  match Ctxt.up ctxt ~of_:ctor_is ~at with
-  (* The refining type was not a subtype of the scrutinee; no refinement *)
-  | None -> Envir.Ty_param_refine.bottom
-  (* If the refining type was a subtype, we get back the list of types for
-     its instantiation at the supertype and any implied bounds. Since these
-     must be equal we unify the bounds
-  *)
-  | Some (args_is, bounds) ->
-    Envir.Ty_param_refine.bounds
-    @@ List.fold2_exn args_is args_scrut ~init:bounds ~f:(fun bounds is_ scrut -> unify ~is_ ~scrut bounds)
+  let bounds, _errs, _cstrs = Down.down ~scrut:ctor_scrut ~is:ctor_is ~acc:Envir.Ty_param_refine in
+  failwith ""
 ;;
+
+(* if Map.is_empty bounds then *)
 
 let bind_quants ty_param_env quants =
   List.fold_left quants ~init:ty_param_env ~f:(fun env Ty.Param.{ ident; param_bounds } ->
@@ -129,9 +224,9 @@ let refine ~ty_scrut ~ty_is ~ctxt =
     let Ctxt.{ oracle; _ } = ctxt in
     promote_rfn rfn_env delta ~oracle)
   @@ get_ctor ty_is ~ctxt
-;;
+;; *)
 
-module Example = struct
+(* module Example = struct
   let print_rfn rfn = Envir.Ty_param_refine.pp Format.std_formatter rfn
 
   (* ~~ UPPER BOUND, UNIFY ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
@@ -146,15 +241,15 @@ module Example = struct
      T <: Texists <: T
      T <: B
   *)
-  let ctxt1, ty_scrut1, ty_is1, rfn1 =
+  let ctxt1, ty_scrut1, ty_test1, rfn1 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let tp_texists = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "Texists") in
     let ty_param = Envir.Ty_param.(bind empty tp_t Ty.Param_bounds.top) in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
     and ty_scrut = Ty.ctor Identifier.Ctor.(Ctor "I") [ Ty.Generic tp_t ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "E") [ Ty.Generic tp_texists ] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "E") [ Ty.Generic tp_texists ] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
 
   (* ~~ SOLVE PARAM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -166,7 +261,7 @@ module Example = struct
 
      bool <: T <: bool
   *)
-  let ctxt2, ty_scrut2, ty_is2 =
+  let ctxt2, ty_scrut2, ty_test2 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let ty_param = Envir.Ty_param.(bind empty tp_t Ty.Param_bounds.top) in
     ( Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
@@ -174,7 +269,7 @@ module Example = struct
     , Ty.ctor Identifier.Ctor.(Ctor "F") [] )
   ;;
 
-  let rfn2 = refine ~ty_scrut:ty_scrut2 ~ty_is:ty_is2 ~ctxt:ctxt2
+  let rfn2 = refine ~ty_scrut:ty_scrut2 ~ty_test:ty_test2 ~ctxt:ctxt2
 
   (* ~~ LOWER BOUND, UNIFY ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
      Given
@@ -191,7 +286,7 @@ module Example = struct
 
      I don't think we can currently do this in Hack - does it make sense?
   *)
-  let ctxt3, ty_scrut3, ty_is3, rfn3 =
+  let ctxt3, ty_scrut3, ty_test3, rfn3 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let tp_texists = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "Texists") in
     let ty_a = Ty.ctor Identifier.Ctor.(Ctor "A") [] in
@@ -201,9 +296,9 @@ module Example = struct
     in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
     and ty_scrut = Ty.ctor Identifier.Ctor.(Ctor "M") [ Ty.Generic tp_t ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "D") [ Ty.Generic tp_texists ] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "D") [ Ty.Generic tp_texists ] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
 
   (* ~~ UNION, COINCIDENT POINTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -215,7 +310,7 @@ module Example = struct
 
      bool <: T <: bool
   *)
-  let ctxt4, ty_scrut4, ty_is4, rfn4 =
+  let ctxt4, ty_scrut4, ty_test4, rfn4 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let ty_param = Envir.Ty_param.(bind empty tp_t Ty.Param_bounds.top) in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
@@ -224,9 +319,9 @@ module Example = struct
         [ Ty.ctor Identifier.Ctor.(Ctor "I") [ Ty.Generic tp_t ]
         ; Ty.ctor Identifier.Ctor.(Ctor "J") [ Ty.Generic tp_t ]
         ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "AA") [] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "AA") [] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
 
   (* ~~ UNION, NON-COINCIDENT POINTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -238,7 +333,7 @@ module Example = struct
 
      (bool | int) <: T <: (bool & int) == (bool | int) <: T <: nothing == ⊥
   *)
-  let ctxt5, ty_scrut5, ty_is5, rfn5 =
+  let ctxt5, ty_scrut5, ty_test5, rfn5 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let ty_param = Envir.Ty_param.(bind empty tp_t Ty.Param_bounds.top) in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
@@ -247,9 +342,9 @@ module Example = struct
         [ Ty.ctor Identifier.Ctor.(Ctor "I") [ Ty.Generic tp_t ]
         ; Ty.ctor Identifier.Ctor.(Ctor "J") [ Ty.Generic tp_t ]
         ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "BB") [] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "BB") [] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
 
   (* ~~ UNION, INTERSECTING BOUDNS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -264,7 +359,7 @@ module Example = struct
 
      (int | int) <: T <: ((int | string) & int) == int <: T <: int
   *)
-  let ctxt6, ty_scrut6, ty_is6, rfn6 =
+  let ctxt6, ty_scrut6, ty_test6, rfn6 =
     let tp_t = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T") in
     let tp_texists = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "Texist") in
     let ty_param =
@@ -278,9 +373,9 @@ module Example = struct
         [ Ty.ctor Identifier.Ctor.(Ctor "I") [ Ty.Generic tp_t ]
         ; Ty.ctor Identifier.Ctor.(Ctor "J") [ Ty.Generic tp_t ]
         ]
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "CC") [ Ty.Generic tp_texists ] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "CC") [ Ty.Generic tp_texists ] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
 
   (* ~~ SOLVE PARAM VIA BOUND ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -298,7 +393,7 @@ module Example = struct
 
      bool <: T2 <: bool
   *)
-  let ctxt7, ty_scrut7, ty_is7, rfn7 =
+  let ctxt7, ty_scrut7, ty_test7, rfn7 =
     let tp_t1 = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T1") in
     let tp_t2 = Ty.Generic.Generic Identifier.Ty_param.(Ty_param "T2") in
     let ty_param =
@@ -308,8 +403,8 @@ module Example = struct
     in
     let ctxt = Ctxt.create ~ty_param ~ty_param_refine:Envir.Ty_param_refine.top ~oracle:Oracle.Example.oracle ()
     and ty_scrut = Ty.Generic tp_t1
-    and ty_is = Ty.ctor Identifier.Ctor.(Ctor "F") [] in
-    let rfn = refine ~ty_scrut ~ty_is ~ctxt in
-    ctxt, ty_scrut, ty_is, rfn
+    and ty_test = Ty.ctor Identifier.Ctor.(Ctor "F") [] in
+    let rfn = refine ~ty_scrut ~ty_test ~ctxt in
+    ctxt, ty_scrut, ty_test, rfn
   ;;
-end
+end *)

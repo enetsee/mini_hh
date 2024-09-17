@@ -19,39 +19,94 @@ let collect_generics =
   fun ty -> Ty.bottom_up ~ops ~init:Ty.Generic.Set.empty ty
 ;;
 
-let up (t : t) ~of_ ~at =
+(* let param_bounds_opt generic ~ty_params ~param_arg_map =
+   match List.find ty_params ~f:(fun (g, _, _) -> Ty.Generic.equal generic g) with
+   | None -> None
+   | Some (_, _, bounds) ->
+   (* We only refine bounds if the generic occurs in of_ *)
+   (match Map.find param_arg_map generic with
+   | Some (Ty.Generic generic) -> Some (generic, bounds)
+   | _ -> None)
+   ;; *)
+
+let intersect ups =
+  let rec aux ~k = function
+    | [] -> None
+    | [ (tys, bounds) ] -> k (List.map ~f:List.singleton tys, bounds)
+    | (tys, bounds) :: rest ->
+      aux rest ~k:(fun (tys_rest, bounds_rest) ->
+        let tys = List.map2_exn tys tys_rest ~f:List.cons in
+        let bounds = Envir.Ty_param.meet bounds bounds_rest in
+        k (tys, bounds))
+  in
+  match ups with
+  | [] -> None
+  | _ -> aux ups ~k:(fun (tys, bounds) -> Some (List.map ~f:Ty.inter tys, bounds))
+;;
+
+let entry (t : t) ctor = Map.find t ctor
+
+let params_opt (t : t) ctor =
+  match Map.find t ctor with
+  | Some Entry.{ ty_params; _ } -> Some ty_params
+  | _ -> None
+;;
+
+let supers_opt (t : t) ctor =
+  match Map.find t ctor with
+  | Some Entry.{ supers; _ } -> Some supers
+  | _ -> None
+;;
+
+let param_variances_opt t ctor = Option.map ~f:(List.map ~f:(fun (_, variance, _) -> variance)) @@ params_opt t ctor
+
+let param_bounds_opt t ~ctor =
+  let Ty.Ctor.{ ctor; args } = ctor in
+  match params_opt t ctor with
+  | Some params ->
+    Some
+      (Map.map ~f:Ty.Param_bounds.meet_many
+       @@ Ty.Generic.Map.of_alist_multi
+       @@ List.filter_opt
+       @@ List.map2_exn args params ~f:(fun arg (_, _, bounds) ->
+         match arg with
+         | Ty.Generic g -> Some (g, bounds)
+         | _ -> None))
+  | None -> None
+;;
+
+let rec up (t : t) ~of_ ~at =
   let Ty.Ctor.{ ctor = of_id; args = of_args } = of_ in
-  (* and Ty.Ctor.{ ctor = at_id; _ } = at in *)
   (* First, is do we have an entry for the subclass *)
   match Map.find t of_id with
-  (* Nope; there is no instantiation of the subclass at the provided ancestor *)
+  (* The oracle has no information about the [of_] class type *)
   | None -> None
-  (* Yes; Now check is the superclass is in the list of declared supers *)
+  (* The class exists but we're asking for an instantiation at itself so just return the args *)
+  | Some _ when Identifier.Ctor.equal of_id at -> Some of_args
+  (* Yes; check is the superclass is in the list of declared supers *)
   | Some Entry.{ supers; ty_params } ->
-    (* Build a map from the declared type params back to the actual type arguments of the subclass *)
-    let args_map =
-      Ty.Generic.Map.of_alist_exn @@ List.map2_exn ty_params of_args ~f:(fun (src, _, _) dest -> src, dest)
+    (* 1) Build a substitution from the declared type params back to the actual type arguments of the subclass.
+       We use [List.map2_exn] here since we assume the class type is well-formed which guarantees the list of arguments
+       and list of parameters have the same length.
+    *)
+    let subst =
+      Ty.Generic.Map.of_alist_exn @@ List.map2_exn ty_params of_args ~f:(fun (param, _, _) arg -> param, arg)
     in
+    (* Any class can be viewed at its superclass *)
     (match Map.find supers at with
-     (* No; TODO(mjt) search the transitive supertypes *)
-     | None -> None
-     (* Yes; each declared type must either be a generic bound in the subclass declaration _or_ a concrete type*)
-     | Some args ->
-       let generics =
-         Ty.Generic.Map.of_alist_exn
-         @@ List.filter_map ~f:(fun generic ->
-           match List.find ty_params ~f:(fun (g, _, _) -> Ty.Generic.equal generic g) with
-           | None -> None
-           | Some (_, _, bounds) ->
-             (* We only refine bounds if the generic occurs in of_ *)
-             (match Map.find args_map generic with
-              | Some (Ty.Generic generic) -> Some (generic, bounds)
-              | _ -> None))
-         @@ Set.elements
-         @@ Ty.Generic.Set.union_list
-         @@ List.map args ~f:collect_generics
-       in
-       Some (List.map args ~f:(Ty.apply_subst ~subst:args_map), generics))
+     (* The class type directly declares [at] as an ancestor; the args of [at] must either be a generic bound in the
+        subclass declaration _or_ a concrete type. Collect the generic type arguments and lookup the declared bounds
+        on [of_] *)
+     | Some args -> Some (List.map args ~f:(Ty.apply_subst ~subst))
+     (* No; search the transitive supertypes *)
+     | None ->
+       List.hd
+       @@ List.filter_map ~f:(fun (ctor, args) ->
+         (* Instantiate the superclass at the provided arguments and make the recursive call *)
+         let args = List.map args ~f:(Ty.apply_subst ~subst) in
+         let of_ = Ty.Ctor.{ ctor; args } in
+         up t ~of_ ~at)
+       @@ Map.to_alist supers)
 ;;
 
 let find (t : t) id = Option.map ~f:(fun Entry.{ ty_params; supers } -> ty_params, supers) @@ Map.find t id

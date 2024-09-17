@@ -44,6 +44,7 @@ module rec Minimal : sig
   val null : t
   val int : t
   val string : t
+  val arraykey : t
   val nullable : t -> t
   val generic : Identifier.Ty_param.t -> t
   val fn : required:t list -> optional:t list -> variadic:t -> t -> t
@@ -95,6 +96,7 @@ end = struct
     | ts -> Inter ts
   ;;
 
+  let arraykey = union [ int; string ]
   let nullable t = union [ t; null ]
 
   let unpack_opt = function
@@ -469,8 +471,10 @@ and Param_bounds : sig
 
   (* TODO(mjt) add order sigs *)
   val meet : t -> t -> t
+  val meet_many : t list -> t
   val bottom : t
   val join : t -> t -> t
+  val join_many : t list -> t
   val top : t
 end = struct
   type t =
@@ -485,6 +489,7 @@ end = struct
       least upper bound of the lower bounds  i.e.
       `A <: T <: B`  /\  `C <: T <: D`
       is
+      `A \/ C <: T <: B /\ D`, or
       `A | C <: T <: B & D` *)
   let meet { lower_bound = lb1; upper_bound = ub1 } { lower_bound = lb2; upper_bound = ub2 } =
     (* If either lower-bound is `None` (nothing) the least upper bound is the other *)
@@ -512,6 +517,9 @@ end = struct
 
   (** The top element: join top _ = join _ top = top *)
   let top = { lower_bound = None; upper_bound = None }
+
+  let meet_many ts = List.fold ts ~init:top ~f:meet
+  let join_many ts = List.fold ts ~init:bottom ~f:join
 
   type 'a ops =
     { on_lower_bound : 'a -> Minimal.t option -> 'a

@@ -1,0 +1,125 @@
+open Core
+open Common
+module Ctxt = Ctxt
+
+let make_bounds ty variance =
+  match variance with
+  | Common.Variance.Cov -> Ty.Param_bounds.create ~upper_bound:ty ()
+  | Common.Variance.Contrav -> Ty.Param_bounds.create ~lower_bound:ty ()
+  | Common.Variance.Inv -> Ty.Param_bounds.create ~upper_bound:ty ~lower_bound:ty ()
+;;
+
+(** Refine a superclass to a subclass *)
+let rec down_help ~ctor_scrut ~ctor_test ~acc ~ctxt =
+  let Ty.Ctor.{ ctor = ctor_scrut; args = args_scrut } = ctor_scrut in
+  let oracle = ctxt.Ctxt.oracle in
+  (* In  order to go down to a subclass, we first check if its possible to go up to the superclass
+     so if we want to do `I<int>  ↓ C` we are first going to get `C ↑ I`
+     After that we use the bounds implied by the up relation along with the existing bounds of any type parameters
+     to figure our the refinement. We also make type parameters occuring in the same position in the scrutinee
+     and up args equal.
+  *)
+  let acc_opt =
+    Option.(
+      Oracle.up oracle ~of_:ctor_test ~at:ctor_scrut
+      >>= fun args_up ->
+      Oracle.generic_bounds oracle ~ctor:ctor_test
+      >>= fun bounds_up ->
+      (* TODO: rather than passing these as an argument, actually update
+         the refined bound! *)
+      Oracle.variance oracle ctor_scrut
+      >>= fun variance ->
+      return
+        (List.fold ~init:acc ~f:(fun acc elem -> refine_bounds elem ~bounds_up ~ctxt ~acc)
+         @@ List.map3_exn ~f:(fun arg_scrut arg_up var -> arg_scrut, arg_up, var) args_scrut args_up variance))
+  in
+  match acc_opt with
+  | None ->
+    let bounds, errs, subtype_props = acc in
+    bounds, (ctor_scrut, ctor_test.ctor) :: errs, subtype_props
+  | Some acc -> acc
+
+and refine_bounds (arg_scrut, arg_up, variance) ~bounds_up ~ctxt ~acc:((bounds, errs, subtype_props) as acc) =
+  match arg_scrut, arg_up with
+  | Ty.Generic g1, Ty.Generic g2 ->
+    (* In the case we have a generic in the same position in both the scrutinee and test we need to
+       find the meet of all bounds and update the type parameter environment so that the generic in the
+       scrutinee has these bounds then solve the generic in the test to the generic in the scrutinee
+    *)
+    (* Existing bounds in the environment *)
+    let b1 = Option.value_exn (Ctxt.param_bounds ctxt g1)
+    and b2 = Option.value_exn (Ctxt.param_bounds ctxt g2)
+    (* Bounds required under the declaration of the test constructor *)
+    and b3 = Map.find_exn bounds_up g2 in
+    let delta = Ty.Param_bounds.(meet b3 @@ meet b1 b2) in
+    (* Update the bounds in the refinement *)
+    let bounds =
+      Map.update bounds g1 ~f:(function
+        | Some bounds -> Ty.Param_bounds.meet bounds delta
+        | _ -> delta)
+    in
+    (* Solve the generic in the up args to the generic in the scrutinee *)
+    let bounds =
+      Map.update bounds g2 ~f:(function _ -> Ty.Param_bounds.create ~upper_bound:arg_scrut ~lower_bound:arg_scrut ())
+    in
+    bounds, errs, subtype_props
+  | Ty.Generic g, ty ->
+    (* We have a generic in the scrutinee but a concrete type in the test so we have a GADT style refinement:
+      class If extends Expr<Bool>
+      ...
+      function refine<T>(Expr<T> $expr): void {
+        if($expr is If)  {
+        
+        }
+      }
+      here we have T in the scrutinee but bool as the argument from up. We need to update the bounds of T
+      in the type parameter environment using the type and its variance
+    *)
+    (* Bounds in the environemnt *)
+    let b1 = Option.value_exn (Ctxt.param_bounds ctxt g)
+    (* Bounds implied by the concrete type in the up arguments *)
+    and b2 = Ty.Param_bounds.create ~lower_bound:ty ~upper_bound:ty () in
+    let delta = Ty.Param_bounds.meet b1 b2 in
+    (* Update the bounds in the refinement *)
+    let bounds =
+      Map.update bounds g ~f:(function
+        | Some bounds -> Ty.Param_bounds.meet bounds delta
+        | _ -> delta)
+    in
+    bounds, errs, subtype_props
+  | ty, Ty.Generic g ->
+    (* We have a generic in the test but a concrete type in the scrutinee: 
+       interface I<+T>
+       class C<T as string> implements I<T>
+       function refine(I<arraykey> $i): void {
+          if($i is C<_>) {}
+       }
+    *)
+    (* Bounds in the environment *)
+    let generic_bounds = Option.value_exn (Ctxt.param_bounds ctxt g) in
+    (* Bounds required under the declaration of the test constructor *)
+    let decl_bounds = Map.find_exn bounds_up g in
+    (* Bounds implied by the conrete type in the scrutinee *)
+    let implied_bounds = make_bounds ty variance in
+    let delta = Ty.Param_bounds.(meet decl_bounds @@ meet generic_bounds implied_bounds) in
+    (* Update the bounds in the refinement *)
+    let bounds =
+      Map.update bounds g ~f:(function
+        | Some bounds -> Ty.Param_bounds.meet bounds delta
+        | _ -> delta)
+    in
+    bounds, errs, subtype_props
+  | Ty.Ctor ctor_scrut, Ty.Ctor ctor_test ->
+    (match variance with
+     | Variance.Cov -> down_help ~ctor_scrut ~ctor_test ~acc ~ctxt
+     | Variance.Contrav -> down_help ~ctor_scrut:ctor_test ~ctor_test:ctor_scrut ~acc ~ctxt
+     | Variance.Inv ->
+       down_help ~ctor_scrut ~ctor_test ~ctxt ~acc:(down_help ~ctor_scrut:ctor_test ~ctor_test:ctor_scrut ~acc ~ctxt))
+  | ty1, ty2 ->
+    (match variance with
+     | Variance.Cov -> bounds, errs, (ty1, ty2) :: subtype_props
+     | Variance.Contrav -> bounds, errs, (ty2, ty1) :: subtype_props
+     | Variance.Inv -> bounds, errs, (ty1, ty2) :: (ty2, ty1) :: subtype_props)
+;;
+
+let down ~ctor_scrut ~ctor_test ~ctxt = down_help ~ctor_scrut ~ctor_test ~ctxt ~acc:(Envir.Ty_param.empty, [], [])
