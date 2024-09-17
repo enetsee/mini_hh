@@ -66,44 +66,11 @@ let rec refine ~ty_scrut ~ty_test ~ctxt =
        TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
     Ok Envir.Ty_param_refine.top
 
-(** If the scrutinee is a union type we can only draw conclusions about refinements
-       common to all elements 
-       
-       So, given
-
-       interface I<T> {}
-       interface J<T> {}
-       interface K {}
-       class E implements I<int>, J<int>, K {}
-
-       (I<T> | J<T>) is E 
-
-       Should let us refine T to int
-
-       But,  
-
-       (I<T> | K)  is E 
-
-       shouldn't let us refine T
-    *)
 and refine_union_scrut ~ty_scruts ~ty_test ~ctxt =
-  sequence_all @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
-
-(* If the scrutinee is an intersection type we can draw conclusions about refinements 
-       from any element 
-       
-       interface I<T> {}
-       interface J<T> {}
-       interface K {}
-       class E implements I<int>, J<int>, K {}
-
-       (I<T> & K)  is E 
-
-       Should let us refine T to int
-*)
+  sequence_any @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
 
 and refine_inter_scrut ~ty_scruts ~ty_test ~ctxt =
-  sequence_any @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
+  sequence_all @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
 
 and refine_ctor ~ctor_scrut ~ctor_test ~ctxt =
   let oracle = ctxt.Ctxt.oracle in
