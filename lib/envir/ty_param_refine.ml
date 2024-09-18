@@ -29,6 +29,7 @@ let map t ~f =
 
 let singleton generic param_bounds = bounds @@ Ty.Generic.Map.singleton generic param_bounds
 
+(** meet / greatest lower bound / intersection *)
 let meet t1 t2 =
   match t1, t2 with
   | Top, t | t, Top -> t
@@ -46,6 +47,7 @@ let meet t1 t2 =
 
 let meet_many ts = List.fold_left ts ~init:top ~f:meet
 
+(** join / least upper bound  / union *)
 let join t1 t2 =
   match t1, t2 with
   | Top, _ | _, Top -> Top

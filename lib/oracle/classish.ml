@@ -109,6 +109,37 @@ let rec up (t : t) ~of_ ~at =
        @@ Map.to_alist supers)
 ;;
 
+(* let down t ~of_ ~at = 
+  let Ty.Ctor.{ ctor = of_id; args = of_args } = of_ in
+  (* Find [up ~of_:at ~at:of_] with  [at] applied to its declared generics *)
+  match Map.find t at with
+  | None -> None
+  | Some _ when Identifier.Ctor.equal of_id at -> Some of_args
+  | Some Entry.{ty_params;_} ->
+    let at_args = List.map ty_params ~f:(fun (g,_,_) ->Ty.Generic g ) in
+    (match up t ~of_:Ty.Ctor.{ctor = at; args = at_args} ~at:of_id with
+    | None -> None
+    | Some args_up ->
+      (* [args_up] now contains generics at the positions we want to extract from [of_args] 
+         so we zip them together and build a map. We can end up with multiple different types:
+         
+         class B<T> extends C<T,T> 
+
+         then say we want to go down C<X,Y> -> B we have T |-> [X,Y] so what type should we use?
+
+         *)
+      let subst = 
+        
+       Ty.Generic.Map.of_alist_multi @@ List.filter_opt @@ List.map2_exn args_up of_args ~f:(fun arg_up of_arg -> 
+       match arg_up with 
+       | Ty.Generic g -> Some (g,of_arg)
+       | _ -> None)
+       in 
+       
+      None
+
+    ) *)
+
 let find (t : t) id = Option.map ~f:(fun Entry.{ ty_params; supers } -> ty_params, supers) @@ Map.find t id
 let empty = Identifier.Ctor.Map.empty
 

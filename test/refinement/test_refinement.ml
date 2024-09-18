@@ -589,6 +589,7 @@ module Down = struct
                  ; ctor_nm "J", [ Ty.ctor (ctor_nm "Five") [] ]
                  ; ctor_nm "K", []
                  ] )
+             ; Identifier.Ctor.Ctor "F", [], [ ctor_nm "I", [ Ty.ctor (ctor_nm "Four") [] ] ]
              ]))
     ;;
 
@@ -621,7 +622,7 @@ module Down = struct
           (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
           expect
       in
-      Alcotest.test_case "refinement / nested / nested case" `Quick test
+      Alcotest.test_case "refinement / union case 1" `Quick test
     ;;
 
     let case_2 =
@@ -650,13 +651,42 @@ module Down = struct
           (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
           expect
       in
-      Alcotest.test_case "refinement / nested / nested case" `Quick test
+      Alcotest.test_case "refinement / union case 2" `Quick test
     ;;
 
-    let test_cases = [ case_1; case_2 ]
+    let case_3 =
+      (* Scrutinee and test type *)
+      let t_scrut = Ty.Generic.Generic (Identifier.Ty_param.Ty_param "Tscrut") in
+      let ty_scrut =
+        let i = Ty.ctor (ctor_nm "I") [ Ty.Generic t_scrut ] in
+        let j = Ty.ctor (ctor_nm "J") [ Ty.Generic t_scrut ] in
+        Ty.union [ i; j ]
+      in
+      let ty_test = Ty.ctor (ctor_nm "F") [] in
+      (* Set up context *)
+      let ty_param = Envir.Ty_param.(bind empty t_scrut Ty.Param_bounds.top) in
+      let ty_param_refine = Envir.Ty_param_refine.empty in
+      let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+      (* Expected type parameter refinement *)
+      let expect =
+        let lower_bound = Ty.ctor (ctor_nm "Four") [] in
+        let upper_bound = lower_bound in
+        Ok (Envir.Ty_param_refine.singleton t_scrut @@ Ty.Param_bounds.create ~upper_bound ~lower_bound ())
+      in
+      let test () =
+        Alcotest.check
+          result
+          "\ninterface I<T>\nclass A implements I<Four> {}\nI<Ta> ↓ A = { nothing <= Ta <= Four }\n"
+          (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
+          expect
+      in
+      Alcotest.test_case "refinement / union case 3" `Quick test
+    ;;
+
+    let test_cases = [ case_1; case_2; case_3 ]
   end
 
-  module Intersecton = struct
+  module Intersection = struct
     let oracle =
       Oracle.(
         add_classishes_exn
@@ -697,7 +727,7 @@ module Down = struct
           (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
           expect
       in
-      Alcotest.test_case "refinement / nested / nested case" `Quick test
+      Alcotest.test_case "refinement / intersection case 1" `Quick test
     ;;
 
     let case_2 =
@@ -715,8 +745,61 @@ module Down = struct
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
       (* Expected type parameter refinement *)
       let expect =
+        Error
+          (Refinement.Err.Multiple
+             [ Refinement.Err.Not_a_subclass (Identifier.Ctor.Minimal.Ctor "K", Identifier.Ctor.Minimal.Ctor "D") ])
+      in
+      let test () =
+        Alcotest.check
+          result
+          "\ninterface I<T>\nclass A implements I<Four> {}\nI<Ta> ↓ A = { nothing <= Ta <= Four }\n"
+          (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
+          expect
+      in
+      Alcotest.test_case "refinement / intersecrtion case 2" `Quick test
+    ;;
+
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          (class_chain
+           @ [ ( Identifier.Ctor.Ctor "I"
+               , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+               , [] )
+             ; ( Identifier.Ctor.Ctor "J"
+               , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+               , [] )
+             ; Identifier.Ctor.Ctor "K", [], []
+             ; ( Identifier.Ctor.Ctor "E"
+               , []
+               , [ ctor_nm "I", [ Ty.ctor (ctor_nm "Four") [] ]
+                 ; ctor_nm "J", [ Ty.ctor (ctor_nm "Five") [] ]
+                 ; ctor_nm "K", []
+                 ] )
+             ]))
+    ;;
+
+    let case_3 =
+      (* Scrutinee and test type *)
+      let t_scrut = Ty.Generic.Generic (Identifier.Ty_param.Ty_param "Tscrut") in
+      let ty_scrut =
+        let i = Ty.ctor (ctor_nm "I") [ Ty.Generic t_scrut ] in
+        let j = Ty.ctor (ctor_nm "J") [ Ty.Generic t_scrut ] in
+        Ty.inter [ i; j ]
+      in
+      let ty_test = Ty.ctor (ctor_nm "E") [] in
+      (* Set up context *)
+      let ty_param = Envir.Ty_param.(bind empty t_scrut Ty.Param_bounds.top) in
+      let ty_param_refine = Envir.Ty_param_refine.empty in
+      let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+      (* Expected type parameter refinement *)
+      let expect =
         let four = Ty.ctor (ctor_nm "Four") [] in
-        let bnds = Ty.Param_bounds.create ~lower_bound:four ~upper_bound:four () in
+        let five = Ty.ctor (ctor_nm "Five") [] in
+        let bnds =
+          Ty.Param_bounds.create ~lower_bound:(Ty.inter [ five; four ]) ~upper_bound:(Ty.union [ five; four ]) ()
+        in
         Ok Envir.Ty_param_refine.(singleton t_scrut bnds)
       in
       let test () =
@@ -726,7 +809,7 @@ module Down = struct
           (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
           expect
       in
-      Alcotest.test_case "refinement / nested / nested case" `Quick test
+      Alcotest.test_case "refinement / intersection case 3" `Quick test
     ;;
 
     let test_cases = [ case_1; case_2 ]
@@ -856,7 +939,88 @@ module Down = struct
       Alcotest.test_case "refinement / nested / hack comparison case 2" `Quick test
     ;;
 
-    let test_cases = [ case_1; case_2 ]
+    (**  
+    class Bigly {}
+    class Small extends Bigly {}
+    interface ICovContrav<+TCov, -TContrav> {}
+    class MyClass<T super Small as Bigly> implements ICovContrav<T, T> {}
+
+    function refine<T>(ICovContrav<T, T> $i): void {
+      if ($i is MyClass<_>) {
+        (* We should have refined:
+           Small <= T <= Bigly
+           T <= Texists <= T *)
+        expect<T>(new Small()); // Error! Expected T but got Small
+      }
+    }
+
+    function call(): void {
+      refine(new MyClass<Small>()); // This is ok, though
+      refine(new MyClass<Bigly>()); // and so is this
+    }
+              
+    *)
+    let case_3 =
+      (* Set up context *)
+      let oracle =
+        Oracle.(
+          add_classishes_exn
+            empty
+            [ ctor_nm "Bigly", [], []
+            ; ctor_nm "Small", [], [ ctor_nm "Bigly", [] ]
+            ; ( Identifier.Ctor.Ctor "ICovContrav"
+              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "TCov"), Variance.cov, Ty.Param_bounds.top
+                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "TContrav"), Variance.contrav, Ty.Param_bounds.top
+                ]
+              , [] )
+            ; ( Identifier.Ctor.Ctor "C"
+              , [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                  , Variance.inv
+                  , Ty.Param_bounds.create
+                      ~lower_bound:Ty.(ctor (ctor_nm "Small") [])
+                      ~upper_bound:Ty.(ctor (ctor_nm "Bigly") [])
+                      () )
+                ]
+              , [ (ctor_nm "ICovContrav", Ty.[ generic (ty_param_nm "T"); generic (ty_param_nm "T") ]) ] )
+            ])
+      in
+      let small = Ty.ctor (ctor_nm "Small") []
+      and bigly = Ty.ctor (ctor_nm "Bigly") [] in
+      let t_scrut = Ty.Generic.Generic (Identifier.Ty_param.Ty_param "Tscrut") in
+      let t_scrut_bounds = Ty.Param_bounds.top in
+      let t_test = Ty.Generic.Generic (Identifier.Ty_param.Ty_param "Ttest") in
+      let t_test_bounds = Ty.Param_bounds.create ~lower_bound:small ~upper_bound:bigly () in
+      let ty_param = Envir.Ty_param.(bind (bind empty t_scrut t_scrut_bounds) t_test t_test_bounds) in
+      let ty_param_refine = Envir.Ty_param_refine.empty in
+      let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+      (* Scrutinee and test type *)
+      let ty_scrut = Ty.ctor (ctor_nm "ICovContrav") Ty.[ Generic t_scrut; Generic t_scrut ] in
+      let ty_test = Ty.ctor (ctor_nm "C") [ Ty.Generic t_test ] in
+      (* Expected type parameter refinement *)
+      let expect =
+        let bnds_scrut =
+          Ty.Param_bounds.create ~lower_bound:Ty.(union [ small; small ]) ~upper_bound:Ty.(inter [ bigly; bigly ]) ()
+        in
+        let bnds_test =
+          let ty_t_scrut = Ty.Generic t_scrut in
+          Ty.Param_bounds.create
+            ~lower_bound:Ty.(union [ ty_t_scrut; ty_t_scrut ])
+            ~upper_bound:Ty.(inter [ ty_t_scrut; ty_t_scrut ])
+            ()
+        in
+        Ok Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ])
+      in
+      let test () =
+        Alcotest.check
+          result
+          "\ninterface I<T>\nclass A implements I<Four> {}\nI<Ta> ↓ A = { nothing <= Ta <= Four }\n"
+          (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
+          expect
+      in
+      Alcotest.test_case "refinement / nested / hack comparison case 2" `Quick test
+    ;;
+
+    let test_cases = [ case_1; case_2; case_3 ]
   end
 
   let test_cases =
@@ -866,6 +1030,7 @@ module Down = struct
       ; Non_generic_class_impl_covariant.test_cases
       ; Nested.test_cases
       ; Union.test_cases
+      ; Intersection.test_cases
       ; Hack_comparison.test_cases
       ]
   ;;
