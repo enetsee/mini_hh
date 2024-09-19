@@ -3,7 +3,7 @@ open Common
 open Test_common
 
 module Down = struct
-  let result = Alcotest.result Testable.ty_param_refine Testable.refinement_err
+  let result = Alcotest.result (Alcotest.pair Testable.ty Testable.ty_param_refine) Testable.refinement_err
   let ctor_nm nm = Identifier.Ctor.Ctor nm
   let mk_class nm ?(args = []) ?(extends = []) () = ctor_nm nm, args, extends
   let ty_param_nm nm = Identifier.Ty_param.Ty_param nm
@@ -45,7 +45,9 @@ module Down = struct
       (* Expected type parameter refinement *)
       let expect =
         let four = Ty.ctor (ctor_nm "Four") [] in
-        Ok Envir.Ty_param_refine.(singleton ta @@ Ty.Param_bounds.create ~lower_bound:four ~upper_bound:four ())
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.(singleton ta @@ Ty.Param_bounds.create ~lower_bound:four ~upper_bound:four ()) )
       in
       let test () =
         Alcotest.check
@@ -72,8 +74,9 @@ module Down = struct
       (* Expected type parameter refinement *)
       let expect =
         Ok
-          Envir.Ty_param_refine.(
-            singleton ta @@ Ty.Param_bounds.create ~lower_bound:four ~upper_bound:(Ty.inter [ four ]) ())
+          ( ty_test
+          , Envir.Ty_param_refine.(
+              singleton ta @@ Ty.Param_bounds.create ~lower_bound:four ~upper_bound:(Ty.inter [ four ]) ()) )
       in
       let test () =
         Alcotest.check
@@ -155,7 +158,10 @@ module Down = struct
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
       (* Expected type parameter refinements *)
       let expect =
-        Ok (Envir.Ty_param_refine.singleton ta @@ Ty.Param_bounds.create ~upper_bound:Ty.(ctor (ctor_nm "Four") []) ())
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.singleton ta @@ Ty.Param_bounds.create ~upper_bound:Ty.(ctor (ctor_nm "Four") []) ()
+          )
       in
       let test () =
         Alcotest.check
@@ -188,7 +194,7 @@ module Down = struct
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
       (* Expected type parameter refinements *)
       let bounds_expect = Ty.Param_bounds.create ~upper_bound:Ty.(ctor (ctor_nm "One") []) () in
-      let expect = Ok Envir.Ty_param_refine.(singleton ta bounds_expect) in
+      let expect = Ok (ty_test, Envir.Ty_param_refine.(singleton ta bounds_expect)) in
       let test () =
         Alcotest.check
           result
@@ -220,7 +226,7 @@ module Down = struct
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
       (* Expected type parameter refinements *)
       let bounds_expect = Ty.Param_bounds.create ~upper_bound:Ty.(ctor (ctor_nm "Seven") []) () in
-      let expect = Ok Envir.Ty_param_refine.(singleton ta bounds_expect) in
+      let expect = Ok (ty_test, Envir.Ty_param_refine.(singleton ta bounds_expect)) in
       let test () =
         Alcotest.check
           result
@@ -255,7 +261,10 @@ module Down = struct
           ()
       in
       let expect =
-        Ok (Envir.Ty_param_refine.bounds @@ Ty.Generic.Map.of_alist_exn [ ta, ta_bounds_expect; tco, tco_bounds_expect ])
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.bounds @@ Ty.Generic.Map.of_alist_exn [ ta, ta_bounds_expect; tco, tco_bounds_expect ]
+          )
       in
       let test () =
         Alcotest.check
@@ -326,7 +335,7 @@ module Down = struct
       let ty_param_refine = Envir.Ty_param_refine.empty in
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
       (* Expect no type parameter refinement *)
-      let expect = Ok Envir.Ty_param_refine.top in
+      let expect = Ok (ty_test, Envir.Ty_param_refine.top) in
       let test () =
         Alcotest.check
           result
@@ -375,7 +384,7 @@ module Down = struct
       let expect =
         let c = Ty.ctor (ctor_nm "C") [] in
         let bnds = Ty.Param_bounds.create ~lower_bound:(Ty.union [ c; c ]) ~upper_bound:(Ty.inter [ c; c ]) () in
-        Ok Envir.Ty_param_refine.(singleton tab bnds)
+        Ok (ty_test, Envir.Ty_param_refine.(singleton tab bnds))
       in
       let test () =
         Alcotest.check
@@ -428,7 +437,7 @@ module Down = struct
       (* Expected type parameter refinement *)
       let expect =
         let c = Ty.ctor (ctor_nm "C") [] in
-        Ok Envir.Ty_param_refine.(singleton tae @@ Ty.Param_bounds.create ~lower_bound:c ~upper_bound:c ())
+        Ok (ty_test, Envir.Ty_param_refine.(singleton tae @@ Ty.Param_bounds.create ~lower_bound:c ~upper_bound:c ()))
       in
       let test () =
         Alcotest.check
@@ -471,7 +480,7 @@ module Down = struct
       let expect =
         let c = Ty.ctor (ctor_nm "C") [] in
         let bnds = Ty.Param_bounds.create ~lower_bound:c ~upper_bound:c () in
-        Ok Envir.Ty_param_refine.(singleton tab bnds)
+        Ok (ty_test, Envir.Ty_param_refine.(singleton tab bnds))
       in
       let test () =
         Alcotest.check
@@ -539,7 +548,7 @@ module Down = struct
       let expect =
         let c = Ty.ctor (ctor_nm "End") [] in
         let bnds = Ty.Param_bounds.create ~lower_bound:c ~upper_bound:c () in
-        Ok Envir.Ty_param_refine.(singleton t_scrut bnds)
+        Ok (ty_test, Envir.Ty_param_refine.(singleton t_scrut bnds))
       in
       let test () =
         Alcotest.check
@@ -613,7 +622,7 @@ module Down = struct
         let bnds =
           Ty.Param_bounds.create ~lower_bound:(Ty.union [ five; four ]) ~upper_bound:(Ty.inter [ five; four ]) ()
         in
-        Ok Envir.Ty_param_refine.(singleton t_scrut bnds)
+        Ok (Ty.union [ ty_test; ty_test ], Envir.Ty_param_refine.(singleton t_scrut bnds))
       in
       let test () =
         Alcotest.check
@@ -642,7 +651,9 @@ module Down = struct
       let expect =
         let lower_bound = Ty.ctor (ctor_nm "Four") [] in
         let upper_bound = lower_bound in
-        Ok (Envir.Ty_param_refine.singleton t_scrut @@ Ty.Param_bounds.create ~upper_bound ~lower_bound ())
+        Ok
+          ( Ty.union [ ty_test; ty_test ]
+          , Envir.Ty_param_refine.singleton t_scrut @@ Ty.Param_bounds.create ~upper_bound ~lower_bound () )
       in
       let test () =
         Alcotest.check
@@ -671,7 +682,7 @@ module Down = struct
       let expect =
         let lower_bound = Ty.ctor (ctor_nm "Four") [] in
         let upper_bound = lower_bound in
-        Ok (Envir.Ty_param_refine.singleton t_scrut @@ Ty.Param_bounds.create ~upper_bound ~lower_bound ())
+        Ok (ty_test, Envir.Ty_param_refine.singleton t_scrut @@ Ty.Param_bounds.create ~upper_bound ~lower_bound ())
       in
       let test () =
         Alcotest.check
@@ -718,7 +729,7 @@ module Down = struct
       let expect =
         let four = Ty.ctor (ctor_nm "Four") [] in
         let bnds = Ty.Param_bounds.create ~lower_bound:four ~upper_bound:four () in
-        Ok Envir.Ty_param_refine.(singleton t_scrut bnds)
+        Ok (Ty.inter [ ty_test; ty_test ], Envir.Ty_param_refine.(singleton t_scrut bnds))
       in
       let test () =
         Alcotest.check
@@ -800,7 +811,7 @@ module Down = struct
         let bnds =
           Ty.Param_bounds.create ~lower_bound:(Ty.inter [ five; four ]) ~upper_bound:(Ty.union [ five; four ]) ()
         in
-        Ok Envir.Ty_param_refine.(singleton t_scrut bnds)
+        Ok (ty_test, Envir.Ty_param_refine.(singleton t_scrut bnds))
       in
       let test () =
         Alcotest.check
@@ -866,7 +877,9 @@ module Down = struct
       let expect =
         let bnds_scrut = Ty.Param_bounds.create ~lower_bound:Ty.int () in
         let bnds_test = Ty.Param_bounds.create ~lower_bound:(Ty.Generic t_scrut) ~upper_bound:(Ty.Generic t_scrut) () in
-        Ok Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ])
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ]) )
       in
       let test () =
         Alcotest.check
@@ -927,7 +940,9 @@ module Down = struct
       let expect =
         let bnds_scrut = Ty.Param_bounds.create ~upper_bound:Ty.(ctor (ctor_nm "Big") []) () in
         let bnds_test = Ty.Param_bounds.create ~lower_bound:(Ty.Generic t_scrut) ~upper_bound:(Ty.Generic t_scrut) () in
-        Ok Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ])
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ]) )
       in
       let test () =
         Alcotest.check
@@ -1008,7 +1023,9 @@ module Down = struct
             ~upper_bound:Ty.(inter [ ty_t_scrut; ty_t_scrut ])
             ()
         in
-        Ok Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ])
+        Ok
+          ( ty_test
+          , Envir.Ty_param_refine.(bounds @@ Ty.Generic.Map.of_alist_exn [ t_scrut, bnds_scrut; t_test, bnds_test ]) )
       in
       let test () =
         Alcotest.check
@@ -1017,7 +1034,7 @@ module Down = struct
           (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
           expect
       in
-      Alcotest.test_case "refinement / nested / hack comparison case 2" `Quick test
+      Alcotest.test_case "refinement / hack comparison case 3" `Quick test
     ;;
 
     let test_cases = [ case_1; case_2; case_3 ]

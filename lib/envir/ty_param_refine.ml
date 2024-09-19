@@ -71,3 +71,11 @@ let find t id =
   | Bottom -> Ty.Param_bounds.bottom
   | Bounds m -> Option.value ~default:Ty.Param_bounds.top @@ Map.find m id
 ;;
+
+let unbind t generic =
+  match t with
+  | Top | Bottom -> t
+  | Bounds bounds -> Bounds (Map.remove bounds generic)
+;;
+
+let unbind_all t generics = List.fold_left generics ~init:t ~f:unbind
