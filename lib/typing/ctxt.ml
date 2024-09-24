@@ -4,7 +4,7 @@ end
 
 type t =
   { oracle : Oracle.t
-  ; class_ : Identifier.Ctor.t option
+  ; class_ : Name.Ctor.t option
   ; fn : Fn.t option
   }
 [@@deriving create, show]

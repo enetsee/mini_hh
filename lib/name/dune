@@ -1,5 +1,5 @@
 (library
- (name identifier)
+ (name name)
  (libraries core fmt)
  (inline_tests)
  (preprocess

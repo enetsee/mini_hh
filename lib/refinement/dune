@@ -1,6 +1,6 @@
 (library
  (name refinement)
- (libraries core fmt identifier dnf ty envir oracle exposure subtyping)
+ (libraries core fmt name ty envir oracle exposure subtyping)
  (inline_tests)
  (preprocess
   (pps

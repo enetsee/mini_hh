@@ -3,7 +3,7 @@ open Core
 (* We can always synthesize a type for a literal *)
 let synth lit =
   match lit with
-  | Lang.Lit.Bool _ -> Ty.bool
+  | Lang.Lit.Bool _ -> Ty.bool Reporting.Prov.empty
 ;;
 
 let check lit ~against ~env ~ctxt =

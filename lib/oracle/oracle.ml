@@ -4,6 +4,7 @@ type t = { classish : Classish.t } [@@deriving show]
 
 let empty = { classish = Classish.empty }
 let up { classish } ~of_ ~at = Classish.up classish ~of_ ~at
+let down { classish } ~of_ ~at = Classish.down classish ~of_ ~at
 let param_bounds_opt { classish } ~ctor = Classish.param_bounds_opt classish ~ctor
 let param_variances_opt { classish } ~ctor = Classish.param_variances_opt classish ctor
 let find_ctor { classish } id = Classish.find classish id
@@ -18,6 +19,6 @@ let add_classishes_exn { classish } ls =
   { classish }
 ;;
 
-module Example = struct
+(* module Example = struct
   let oracle = { classish = Classish.Example.data }
-end
+end *)

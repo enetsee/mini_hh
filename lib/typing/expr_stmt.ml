@@ -1,4 +1,5 @@
 open Core
+open Reporting
 
 module rec Expr : sig
   include Sigs.Synthesizes with type t := Lang.Expr.t and type out := Ty.t and type env_out := Envir.Typing.t
@@ -33,39 +34,36 @@ and Is : sig
 end = struct
   (** Typing `is` can give us:
       - a type refinement if the scrutinee is a local
-      - newly bound type parameters if the test type is existentially quantified
-      - type parameter refinements
+      - type parameter refinements if the test / scrutinee involve generics
 
       TODO(mjt) support properties *)
-  let synth Lang.Is.{ scrut; ty } ~ctxt ~env ~errs =
+  let synth Lang.Is.{ scrut; ty_test } ~ctxt ~env ~errs =
     (* Get the type of the scrutinee expression *)
     let ty_scrut, env, errs = Expr.synth scrut ~ctxt ~env ~errs in
-    (* Unpack the test type if it is existential and bind. This assumes the
-       name of any quantifier is fresh with respect to the current type parameter
-       environment *)
-    let ty_param_delta, ty_is = Option.value ~default:(Envir.Ty_param.empty, ty) @@ Ty.unpack_opt ty in
     (* Refine the scrutinee under the test type, bind any type params from the opened existential *)
-    let ty_param_refine_delta =
+    let _refinement_res =
       let Envir.Typing.{ ty_param; ty_param_refine; _ } = env
       and Ctxt.{ oracle; _ } = ctxt in
-      let ty_param = Envir.Ty_param.merge_disjoint_exn ty_param ty_param_delta in
       let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
-      Refinement.refine ~ty_scrut ~ty_is ~ctxt
+      Refinement.refine ~ty_scrut ~ty_test ~ctxt
     in
+    (* match refinement_res with
+    | Error err ->
+      (* The refinemnt gave us a subtyping error but we will assume we can just  *)
     let ty_refine =
-      Option.value_map ~default:Envir.Ty_refine.empty ~f:(fun id -> Envir.Ty_refine.of_local id ty)
+      Option.value_map ~default:Envir.Ty_refine.empty ~f:(fun id -> Envir.Ty_refine.of_local id ty_test)
       @@ Lang.Expr.local_opt scrut
-    in
+    in *)
     let delta =
       Envir.Typing.create
         ~local:Envir.Local.empty
-        ~ty_refine
-        ~ty_param:ty_param_delta
-        ~ty_param_refine:ty_param_refine_delta
+        ~ty_refine:Envir.Ty_refine.empty
+        ~ty_param:Envir.Ty_param.empty
+        ~ty_param_refine:Envir.Ty_param_refine.empty
         ~subtyping:()
         ()
     in
-    Ty.bool, delta, errs
+    Ty.bool Prov.empty, delta, errs
   ;;
 end
 
@@ -78,7 +76,7 @@ and Binary : sig
 end = struct
   (** Typing logical binary expression carries through the refinements from each operand *)
   let synth_logical (binop, lhs, rhs) ~ctxt ~env ~errs =
-    let delta_lhs, errs = Expr.check lhs ~against:Ty.bool ~ctxt ~env ~errs in
+    let delta_lhs, errs = Expr.check lhs ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs in
     (* Type the rhs operand under the refinements from the first *)
     let delta_rhs, errs =
       (* TODO(mtj) hide all this *)
@@ -99,9 +97,9 @@ end = struct
       (* New type parameters must be fresh with respect the existing env *)
       and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param ty_param_delta
       (* New type parameter refinements intersect with existing refinements *)
-      and ty_param_refine = Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta in
+      and ty_param_refine = Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta ~prov:Prov.empty in
       let env = Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping () in
-      Expr.check rhs ~against:Ty.bool ~ctxt ~env ~errs
+      Expr.check rhs ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs
     in
     (* Now combine the two deltas *)
     let delta =
@@ -133,14 +131,14 @@ end = struct
         match binop with
         | Lang.Binop.Logical.And ->
           ( Envir.Ty_refine.meet ty_refine_lhs ty_refine_rhs
-          , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs )
+          , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
         | Lang.Binop.Logical.Or ->
           ( Envir.Ty_refine.join ty_refine_lhs ty_refine_rhs
-          , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs )
+          , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
       in
       Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping ()
     in
-    Ty.bool, delta, errs
+    Ty.bool Prov.empty, delta, errs
   ;;
 
   let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt ~env ~errs =
@@ -203,7 +201,7 @@ end = struct
 
   let synth Lang.If.{ cond; then_; else_ } ~ctxt ~env ~errs =
     (* Check the type of the conditional exprssion is a subtype of bool *)
-    let env_delta, errs = Expr.check cond ~against:Ty.bool ~ctxt ~env ~errs in
+    let env_delta, errs = Expr.check cond ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs in
     (* Check the `then` branch under the delta. This means: 
        - appending the local environments, prefering bindings resulting from typing the conditional expresssion
        
@@ -264,7 +262,7 @@ end = struct
         ~local:(Envir.Local.merge_right local local_delta)
         ~ty_param:(Envir.Local.merge_disjoint_exn ty_param ty_param_delta)
         ~ty_refine:(Envir.Ty_refine.meet ty_refine ty_refine_delta)
-        ~ty_param_refine:(Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta)
+        ~ty_param_refine:(Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta ~prov:Prov.empty)
         ~subtyping
         ()
     (* Check the `else` branch under:
@@ -276,7 +274,7 @@ end = struct
     and else_env =
       let Envir.Typing.{ ty_refine; _ } = env
       and Envir.Typing.{ ty_refine = ty_refine_delta; _ } = env_delta in
-      let ty_refine = Envir.Ty_refine.(meet ty_refine @@ cmp ty_refine_delta) in
+      let ty_refine = Envir.Ty_refine.(meet ty_refine (cmp ty_refine_delta)) in
       Envir.Typing.{ env with ty_refine }
     in
     (* Type the `then` branch then ensure locals bound in the branch don't contain references to type parameters scoped
@@ -294,7 +292,7 @@ end = struct
       let Envir.Typing.{ local; _ } = env in
       defined ~outer:local local_env_then local_env_else ~errs
     in
-    (), Envir.Local.join local_env_then local_env_else, errs
+    (), Envir.Local.join local_env_then local_env_else ~prov:Prov.empty, errs
   ;;
 end
 

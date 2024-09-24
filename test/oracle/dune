@@ -1,4 +1,14 @@
 (library
  (name test_oracle)
- (libraries core fmt str alcotest test_common common identifier ty oracle)
+ (libraries
+  core
+  fmt
+  str
+  alcotest
+  test_common
+  common
+  name
+  reporting
+  ty
+  oracle)
  (synopsis "Tests for declaration oracle"))

@@ -1,9 +1,9 @@
 open Core
 
 (** A type parameter environment is a map from type parameter identifiers to sets of type parameter constraints *)
-type t = Ty.Param_bounds.t Ty.Generic.Map.t [@@deriving compare, eq, sexp, show]
+type t = Ty.Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp, show]
 
-let empty : t = Ty.Generic.Map.empty
+let empty : t = Name.Ty_param.Map.empty
 let is_empty t = Map.is_empty t
 
 let bind (t : t) ty_param cstrs : t =
@@ -22,4 +22,4 @@ let meet t1 t2 =
 ;;
 
 let find (t : t) id = Map.find t id
-let map t ~f = Ty.Generic.Map.map t ~f
+let map t ~f = Name.Ty_param.Map.map t ~f

@@ -19,10 +19,10 @@ type t = Local.t Cont_map.t [@@deriving compare, eq, sexp, show]
 
 let singleton key data = Map.singleton key data
 
-let join t1 t2 =
+let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left v | `Right v -> Some v
-    | `Both (vl, vr) -> Some (Local.join vl vr)
+    | `Both (vl, vr) -> Some (Local.join vl vr ~prov)
   in
   Map.merge t1 t2 ~f
 ;;

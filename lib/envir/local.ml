@@ -8,18 +8,18 @@ let bottom = empty
 let find t local = Map.find t local
 let is_bound t local = Option.is_some @@ find t local
 
-let join t1 t2 =
+let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left ty | `Right ty -> Some ty
-    | `Both (ty1, ty2) -> Some (Ty.union [ ty1; ty2 ])
+    | `Both (ty1, ty2) -> Some (Ty.union ~prov [ ty1; ty2 ])
   in
   Map.merge t1 t2 ~f
 ;;
 
-let meet t1 t2 =
+let meet t1 t2 ~prov =
   let f ~key:_ = function
     | `Left _ | `Right _ -> None
-    | `Both (ty1, ty2) -> Some (Ty.inter [ ty1; ty2 ])
+    | `Both (ty1, ty2) -> Some (Ty.inter ~prov [ ty1; ty2 ])
   in
   Map.merge t1 t2 ~f
 ;;

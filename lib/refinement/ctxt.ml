@@ -8,14 +8,15 @@ type t =
 [@@deriving create, show]
 
 let param_bounds { ty_param; ty_param_refine; _ } id =
-  Option.map ~f:(fun bounds -> Ty.Param_bounds.meet bounds @@ Envir.Ty_param_refine.find ty_param_refine id)
+  Option.map ~f:(fun bounds ->
+    match Envir.Ty_param_refine.find ty_param_refine id with
+    | Envir.Ty_param_refine.Bounds_top -> bounds
+    | Envir.Ty_param_refine.Bounds_bottom -> Ty.Param_bounds.bottom Reporting.Prov.empty
+    | Envir.Ty_param_refine.Bounds other -> Ty.Param_bounds.meet bounds other ~prov:Reporting.Prov.empty)
   @@ Envir.Ty_param.find ty_param id
 ;;
 
-let bind_param ty_param Ty.Param.{ ident; param_bounds } =
-  let generic = Ty.Generic.Generic ident in
-  Envir.Ty_param.bind ty_param generic param_bounds
-;;
+let bind_param ty_param Ty.Param.{ name; param_bounds } = Envir.Ty_param.bind ty_param name param_bounds
 
 let bind_all ({ ty_param; _ } as t) ty_params =
   let ty_param = List.fold_left ty_params ~init:ty_param ~f:bind_param in

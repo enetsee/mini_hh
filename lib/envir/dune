@@ -1,6 +1,6 @@
 (library
  (name envir)
- (libraries core fmt identifier dnf ty lang)
+ (libraries core fmt name dnf ty lang)
  (inline_tests)
  (preprocess
   (pps

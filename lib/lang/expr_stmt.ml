@@ -32,13 +32,13 @@ end
 and Is : sig
   type t =
     { scrut : Expr.t
-    ; ty : Ty.t
+    ; ty_test : Ty.t
     }
   [@@deriving eq, compare, sexp, show]
 end = struct
   type t =
     { scrut : Expr.t
-    ; ty : Ty.t
+    ; ty_test : Ty.t
     }
   [@@deriving eq, compare, sexp, show]
 end
@@ -47,13 +47,13 @@ end
 and As : sig
   type t =
     { scrut : Expr.t
-    ; ty : Ty.t
+    ; ty_assert : Ty.t
     }
   [@@deriving eq, compare, sexp, show]
 end = struct
   type t =
     { scrut : Expr.t
-    ; ty : Ty.t
+    ; ty_assert : Ty.t
     }
   [@@deriving eq, compare, sexp, show]
 end

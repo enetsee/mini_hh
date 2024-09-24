@@ -8,4 +8,5 @@ let tuple (pp1, equal1) (pp2, equal2) =
 
 let ty = Alcotest.testable Ty.pp Ty.equal
 let ty_param_refine = Alcotest.testable Envir.Ty_param_refine.pp Envir.Ty_param_refine.equal
-let refinement_err = Alcotest.testable Refinement.Err.pp Refinement.Err.equal
+let refinement = Alcotest.testable Refinement.pp Refinement.equal
+let subtyping_err = Alcotest.testable Subtyping.Err.pp Subtyping.Err.equal

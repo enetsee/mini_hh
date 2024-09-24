@@ -2,7 +2,7 @@ open Core
 
 module Minimal = struct
   (* TODO(mjt) add idents for fast comparison *)
-  type t = Local of Identifier.Tm_var.t [@@deriving eq, compare, sexp, show] [@@ocaml.unboxed]
+  type t = Local of Name.Tm_var.t [@@deriving eq, compare, sexp, show] [@@ocaml.unboxed]
 end
 
 include Minimal

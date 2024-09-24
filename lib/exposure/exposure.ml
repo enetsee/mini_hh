@@ -55,22 +55,36 @@ let is_up = function
 ;;
 
 (* ~~ Implementation  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-let promote_generic generic ty_params ~dir =
+let promote_generic (prov, generic) ty_params ~dir =
   match Envir.Ty_param.find ty_params generic, dir with
-  | None, _ -> Ok (Ty.Generic generic)
-  | Some Ty.Param_bounds.{ upper_bound; _ }, Up -> Ok (Option.value ~default:Ty.mixed upper_bound)
-  | Some Ty.Param_bounds.{ lower_bound; _ }, Down -> Ok (Option.value ~default:Ty.nothing lower_bound)
+  | None, _ -> Ok (Ty.generic prov generic)
+  | Some Ty.Param_bounds.{ upper; _ }, Up -> Ok upper
+  | Some Ty.Param_bounds.{ lower; _ }, Down -> Ok lower
 ;;
 
 let rec promote_help ty ty_params ~dir ~oracle =
-  match ty with
-  | Ty.Base _ -> Ok ty
-  | Ty.Generic generic -> promote_generic generic ty_params ~dir
-  | Ty.Fn fn -> promote_fn fn ty_params ~dir ~oracle
-  | Ty.Ctor ctor -> promote_ctor ctor ty_params ~dir ~oracle
-  | Ty.Exists exists -> promote_exists exists ty_params ~dir ~oracle
-  | Ty.Union union -> Result.map ~f:(fun union -> Ty.Union union) @@ promotes union ty_params ~dir ~oracle
-  | Ty.Inter inter -> Result.map ~f:(fun inter -> Ty.Inter inter) @@ promotes inter ty_params ~dir ~oracle
+  let Ty.{ node; prov } = ty in
+  match node with
+  | Ty.Node.Base _ -> Ok ty
+  | Ty.Node.Generic generic -> promote_generic (prov, generic) ty_params ~dir
+  | Ty.Node.Fn fn ->
+    Result.map ~f:(fun fn ->
+      let node = Ty.Node.Fn fn in
+      Ty.{ prov; node })
+    @@ promote_fn fn ty_params ~dir ~oracle
+  | Ty.Node.Tuple tuple ->
+    Result.map ~f:(fun tuple ->
+      let node = Ty.Node.Tuple tuple in
+      Ty.{ prov; node })
+    @@ promote_tuple tuple ty_params ~dir ~oracle
+  | Ty.Node.Ctor ctor -> promote_ctor (prov, ctor) ty_params ~dir ~oracle
+  | Ty.Node.Exists exists ->
+    Result.map ~f:(fun exists ->
+      let node = Ty.Node.Exists exists in
+      Ty.{ prov; node })
+    @@ promote_exists exists ty_params ~dir ~oracle
+  | Ty.Node.Union union -> Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promotes union ty_params ~dir ~oracle
+  | Ty.Node.Inter inter -> Result.map ~f:(fun elems -> Ty.inter ~prov elems) @@ promotes inter ty_params ~dir ~oracle
 
 and promotes tys ty_params ~dir ~oracle =
   collect_list @@ List.map tys ~f:(fun ty -> promote_help ty ty_params ~dir ~oracle)
@@ -81,30 +95,29 @@ and promote_opt ty_opt ty_params ~dir ~oracle =
   | Some ty -> Result.map ~f:(fun ty -> Some ty) @@ promote_help ty ty_params ~dir ~oracle
 
 and promote_fn Ty.Fn.{ params; return } ty_params ~dir ~oracle =
-  Result.map ~f:(fun (params, return) -> Ty.Fn Ty.Fn.{ params; return })
-  @@ collect_tuple2
-       (promote_fn_params params ty_params ~dir:(flip dir) ~oracle, promote_help return ty_params ~dir ~oracle)
+  Result.map ~f:(fun (params, return) -> Ty.Fn.{ params; return })
+  @@ collect_tuple2 (promote_tuple params ty_params ~dir:(flip dir) ~oracle, promote_help return ty_params ~dir ~oracle)
 
-and promote_fn_params Ty.Fn_params.{ required; optional; variadic } ty_params ~dir ~oracle =
-  Result.map ~f:(fun (required, optional, variadic) -> Ty.Fn_params.{ required; optional; variadic })
+and promote_tuple Ty.Tuple.{ required; optional; variadic } ty_params ~dir ~oracle =
+  Result.map ~f:(fun (required, optional, variadic) -> Ty.Tuple.{ required; optional; variadic })
   @@ collect_tuple3
        ( promotes required ty_params ~dir ~oracle
        , promotes optional ty_params ~dir ~oracle
        , promote_opt variadic ty_params ~dir ~oracle )
 
-and promote_ctor ctor ty_params ~dir ~oracle =
-  let Ty.Ctor.{ ctor = id; args } = ctor in
-  match Oracle.find_ctor oracle id with
+and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
+  let Ty.Ctor.{ name; args } = ctor in
+  match Oracle.find_ctor oracle name with
   | Some (params, supers) ->
     let invariant_params =
-      List.filter_map params ~f:(fun (id, var, _) -> if Variance.is_inv var then Some id else None)
+      List.filter_map params ~f:(fun (id, var, _, _) -> if Variance.is_inv var then Some id else None)
     in
     if List.is_empty invariant_params
     then
       (* There are no invariant type parameters we can promote / demote each argument *)
-      Result.map ~f:(fun args -> Ty.ctor id args)
+      Result.map ~f:(fun args -> Ty.ctor prov ~name ~args)
       @@ collect_list
-      @@ List.map2_exn args params ~f:(fun ty (_, var, _) ->
+      @@ List.map2_exn args params ~f:(fun ty (_, var, _, _) ->
         match var with
         | Variance.Inv -> failwith "impossible"
         | Variance.Cov -> promote_help ty ty_params ~dir ~oracle
@@ -115,23 +128,23 @@ and promote_ctor ctor ty_params ~dir ~oracle =
          class at each supertype, promote and take the intersection. If there are no supertypes, or no supertypes
          not containing invariant type parameters, we end up with mixed / nothing depending on the direction we're
          going in *)
-      Result.map ~f:(fun supers -> Ty.inter supers)
+      Result.map ~f:(fun supers -> Ty.inter ~prov supers)
       @@ collect_list
-      @@ List.map ~f:(fun ctor -> promote_ctor ctor ty_params ~dir ~oracle)
+      @@ List.map ~f:(fun ctor -> promote_ctor (prov, ctor) ty_params ~dir ~oracle)
       @@ List.filter_map ~f:(fun at ->
-        Option.map ~f:(fun args -> Ty.Ctor.{ ctor = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
+        Option.map ~f:(fun args -> Ty.Ctor.{ name = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
       @@ Map.keys supers
     else
       (* We need to find the greatest subtype of the constructor; this requires us to find all classes which
          extend or implement this constructor. For now just return nothing *)
-      Ok Ty.nothing
-  | _ -> Error Err.(Set.singleton @@ unbound_ctor id)
+      Ok Ty.(nothing prov)
+  | _ -> Error Err.(Set.singleton @@ unbound_ctor name prov)
 
 and promote_exists exists ty_params ~dir ~oracle =
   (* We don't need to worry about the quantifiers here since we won't be promoting them in the body
      TODO(mjt) -does this make sense? *)
   let Ty.Exists.{ body; quants } = exists in
-  Result.map ~f:(fun body -> Ty.exists quants body) @@ promote_help body ty_params ~dir ~oracle
+  Result.map ~f:(fun body -> Ty.Exists.create ~quants ~body ()) @@ promote_help body ty_params ~dir ~oracle
 ;;
 
 (* ~~ API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

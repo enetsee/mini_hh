@@ -3,20 +3,20 @@ open Common
 
 module Entry = struct
   type t =
-    { ty_params : (Ty.Generic.t * Variance.t * Ty.Param_bounds.t) list
+    { ty_params : (Name.Ty_param.t * Variance.t * Ty.Param_bounds.t * Reporting.Loc.t) list
     (** The type parameters declared in the class along with there declared bounds *)
-    ; supers : Ty.t list Identifier.Ctor.Map.t
+    ; supers : Ty.t list Name.Ctor.Map.t
     (** Any superclass the class extends and the list any interfaces it implements. The args in each [Ty.Ctor.t]
         must either be concreate types or be bound *)
     }
   [@@deriving show]
 end
 
-type t = Entry.t Identifier.Ctor.Map.t [@@deriving show]
+type t = Entry.t Name.Ctor.Map.t [@@deriving show]
 
 let collect_generics =
   let ops = Ty.Ops.collect_generics () in
-  fun ty -> Ty.bottom_up ~ops ~init:Ty.Generic.Set.empty ty
+  fun ty -> Ty.bottom_up ~ops ~init:Name.Ty_param.Set.empty ty
 ;;
 
 (* let param_bounds_opt generic ~ty_params ~param_arg_map =
@@ -29,20 +29,20 @@ let collect_generics =
    | _ -> None)
    ;; *)
 
-let intersect ups =
-  let rec aux ~k = function
-    | [] -> None
-    | [ (tys, bounds) ] -> k (List.map ~f:List.singleton tys, bounds)
-    | (tys, bounds) :: rest ->
-      aux rest ~k:(fun (tys_rest, bounds_rest) ->
-        let tys = List.map2_exn tys tys_rest ~f:List.cons in
-        let bounds = Envir.Ty_param.meet bounds bounds_rest in
-        k (tys, bounds))
-  in
-  match ups with
-  | [] -> None
-  | _ -> aux ups ~k:(fun (tys, bounds) -> Some (List.map ~f:Ty.inter tys, bounds))
-;;
+(* let intersect ups ~prov =
+   let rec aux ~k = function
+   | [] -> None
+   | [ (tys, bounds) ] -> k (List.map ~f:List.singleton tys, bounds)
+   | (tys, bounds) :: rest ->
+   aux rest ~k:(fun (tys_rest, bounds_rest) ->
+   let tys = List.map2_exn tys tys_rest ~f:List.cons in
+   let bounds = Envir.Ty_param.meet bounds bounds_rest in
+   k (tys, bounds))
+   in
+   match ups with
+   | [] -> None
+   | _ -> aux ups ~k:(fun (tys, bounds) -> Some (List.map ~f:Ty.inter tys, bounds))
+   ;; *)
 
 let entry (t : t) ctor = Map.find t ctor
 
@@ -58,31 +58,31 @@ let supers_opt (t : t) ctor =
   | _ -> None
 ;;
 
-let param_variances_opt t ctor = Option.map ~f:(List.map ~f:(fun (_, variance, _) -> variance)) @@ params_opt t ctor
+let param_variances_opt t ctor = Option.map ~f:(List.map ~f:(fun (_, variance, _, _) -> variance)) @@ params_opt t ctor
 
 let param_bounds_opt t ~ctor =
-  let Ty.Ctor.{ ctor; args } = ctor in
-  match params_opt t ctor with
+  let Ty.Ctor.{ name; args } = ctor in
+  match params_opt t name with
   | Some params ->
     Some
-      (Map.map ~f:Ty.Param_bounds.meet_many
-       @@ Ty.Generic.Map.of_alist_multi
+      (Map.map ~f:Ty.Param_bounds.(meet_many ~prov:Reporting.Prov.empty)
+       @@ Name.Ty_param.Map.of_alist_multi
        @@ List.filter_opt
-       @@ List.map2_exn args params ~f:(fun arg (_, _, bounds) ->
-         match arg with
-         | Ty.Generic g -> Some (g, bounds)
+       @@ List.map2_exn args params ~f:(fun arg (_, _, bounds, _) ->
+         match arg.node with
+         | Ty.Node.Generic g -> Some (g, bounds)
          | _ -> None))
   | None -> None
 ;;
 
 let rec up (t : t) ~of_ ~at =
-  let Ty.Ctor.{ ctor = of_id; args = of_args } = of_ in
+  let Ty.Ctor.{ name = of_id; args = of_args } = of_ in
   (* First, is do we have an entry for the subclass *)
   match Map.find t of_id with
   (* The oracle has no information about the [of_] class type *)
   | None -> None
   (* The class exists but we're asking for an instantiation at itself so just return the args *)
-  | Some _ when Identifier.Ctor.equal of_id at -> Some of_args
+  | Some _ when Name.Ctor.equal of_id at -> Some of_args
   (* Yes; check is the superclass is in the list of declared supers *)
   | Some Entry.{ supers; ty_params } ->
     (* 1) Build a substitution from the declared type params back to the actual type arguments of the subclass.
@@ -90,68 +90,68 @@ let rec up (t : t) ~of_ ~at =
        and list of parameters have the same length.
     *)
     let subst =
-      Ty.Generic.Map.of_alist_exn @@ List.map2_exn ty_params of_args ~f:(fun (param, _, _) arg -> param, arg)
+      Name.Ty_param.Map.of_alist_exn @@ List.map2_exn ty_params of_args ~f:(fun (param, _, _, _) arg -> param, arg)
     in
     (* Any class can be viewed at its superclass *)
     (match Map.find supers at with
      (* The class type directly declares [at] as an ancestor; the args of [at] must either be a generic bound in the
         subclass declaration _or_ a concrete type. Collect the generic type arguments and lookup the declared bounds
         on [of_] *)
-     | Some args -> Some (List.map args ~f:(Ty.apply_subst ~subst))
+     | Some args -> Some (List.map args ~f:(Ty.apply_subst ~subst ~combine_prov:(fun _ p -> p)))
      (* No; search the transitive supertypes *)
      | None ->
        List.hd
-       @@ List.filter_map ~f:(fun (ctor, args) ->
+       @@ List.filter_map ~f:(fun (name, args) ->
          (* Instantiate the superclass at the provided arguments and make the recursive call *)
-         let args = List.map args ~f:(Ty.apply_subst ~subst) in
-         let of_ = Ty.Ctor.{ ctor; args } in
+         let args = List.map args ~f:(Ty.apply_subst ~subst ~combine_prov:(fun _ p -> p)) in
+         let of_ = Ty.Ctor.{ name; args } in
          up t ~of_ ~at)
        @@ Map.to_alist supers)
 ;;
 
-(* let down t ~of_ ~at = 
-  let Ty.Ctor.{ ctor = of_id; args = of_args } = of_ in
+let down t ~of_ ~at =
+  let Ty.Ctor.{ name = of_id; args = of_args } = of_ in
   (* Find [up ~of_:at ~at:of_] with  [at] applied to its declared generics *)
   match Map.find t at with
   | None -> None
-  | Some _ when Identifier.Ctor.equal of_id at -> Some of_args
-  | Some Entry.{ty_params;_} ->
-    let at_args = List.map ty_params ~f:(fun (g,_,_) ->Ty.Generic g ) in
-    (match up t ~of_:Ty.Ctor.{ctor = at; args = at_args} ~at:of_id with
-    | None -> None
-    | Some args_up ->
-      (* [args_up] now contains generics at the positions we want to extract from [of_args] 
-         so we zip them together and build a map. We can end up with multiple different types:
-         
-         class B<T> extends C<T,T> 
+  | Some _ when Name.Ctor.equal of_id at -> Some of_args
+  | Some Entry.{ ty_params; _ } ->
+    let at_args = List.map ty_params ~f:(fun (g, _, _, loc) -> Ty.generic Reporting.Prov.(witness loc) g) in
+    (match up t ~of_:Ty.Ctor.{ name = at; args = at_args } ~at:of_id with
+     | None -> None
+     | Some args_up ->
+       (* [args_up] now contains generics at the positions we want to extract from [of_args]
+          so we zip them together and build a map. We can end up with multiple different types:
 
-         then say we want to go down C<X,Y> -> B we have T |-> [X,Y] so what type should we use?
+          class B<T> extends C<T,T>
 
-         *)
-      let subst = 
-        
-       Ty.Generic.Map.of_alist_multi @@ List.filter_opt @@ List.map2_exn args_up of_args ~f:(fun arg_up of_arg -> 
-       match arg_up with 
-       | Ty.Generic g -> Some (g,of_arg)
-       | _ -> None)
-       in 
-       
-      None
-
-    ) *)
+          then say we want to go down C<X,Y> -> B we have T |-> [X,Y] so what type should we use?
+       *)
+       let subst =
+         (* TODO(mjt): shouldn't this be using variance and using least upper bound for contravariant params *)
+         Name.Ty_param.Map.map ~f:Ty.(inter ~prov:Reporting.Prov.empty)
+         @@ Name.Ty_param.Map.of_alist_multi
+         @@ List.filter_opt
+         @@ List.map2_exn args_up of_args ~f:(fun arg_up of_arg ->
+           match arg_up.node with
+           | Ty.Node.Generic g -> Some (g, of_arg)
+           | _ -> None)
+       in
+       Some (List.map ty_params ~f:(fun (g, _, _, _) -> Map.find_exn subst g)))
+;;
 
 let find (t : t) id = Option.map ~f:(fun Entry.{ ty_params; supers } -> ty_params, supers) @@ Map.find t id
-let empty = Identifier.Ctor.Map.empty
+let empty = Name.Ctor.Map.empty
 
 let add_exn (t : t) ~id ~ty_params ~supers : t =
-  Map.add_exn t ~key:id ~data:Entry.{ ty_params; supers = Identifier.Ctor.Map.of_alist_exn supers }
+  Map.add_exn t ~key:id ~data:Entry.{ ty_params; supers = Name.Ctor.Map.of_alist_exn supers }
 ;;
 
 let add_all_exn (t : t) ls : t =
   List.fold_left ls ~init:t ~f:(fun t (id, ty_params, supers) -> add_exn t ~id ~ty_params ~supers)
 ;;
 
-module Example = struct
+(* module Example = struct
   (* class A {} 
      class B extends A {}
      class C extends B {}
@@ -170,145 +170,123 @@ module Example = struct
      class BB implements I<bool> , J<int>
   *)
   let data =
-    Identifier.Ctor.Map.of_alist_exn
+    Name.Ctor.Map.of_alist_exn
       [ (* class A {}  *)
-        (Identifier.Ctor.Ctor "A", Entry.{ ty_params = []; supers = Identifier.Ctor.Map.empty })
-        (* class B extends A {} *)
-      ; ( Identifier.Ctor.Ctor "B"
-        , Entry.{ ty_params = []; supers = Identifier.Ctor.Map.of_alist_exn [ Identifier.Ctor.Ctor "A", [] ] } )
+        (Name.Ctor.Ctor "A", Entry.{ ty_params = []; supers = Name.Ctor.Map.empty }) (* class B extends A {} *)
+      ; (Name.Ctor.Ctor "B", Entry.{ ty_params = []; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "A", [] ] })
         (* class C extends B {} *)
-      ; ( Identifier.Ctor.Ctor "C"
-        , Entry.{ ty_params = []; supers = Identifier.Ctor.Map.of_alist_exn [ Identifier.Ctor.Ctor "B", [] ] } )
+      ; (Name.Ctor.Ctor "C", Entry.{ ty_params = []; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "B", [] ] })
         (* interface I<T> {} *)
-      ; ( Identifier.Ctor.Ctor "I"
+      ; ( Name.Ctor.Ctor "I"
         , Entry.
-            { ty_params = [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-            ; supers = Identifier.Ctor.Map.empty
+            { ty_params = [ Ty.Generic.Generic (Name.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+            ; supers = Name.Ctor.Map.empty
             } )
         (* interface J<T> {} *)
-      ; ( Identifier.Ctor.Ctor "J"
+      ; ( Name.Ctor.Ctor "J"
         , Entry.
-            { ty_params = [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-            ; supers = Identifier.Ctor.Map.empty
+            { ty_params = [ Ty.Generic.Generic (Name.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+            ; supers = Name.Ctor.Map.empty
             } )
         (* interface K<T1,T2> {} *)
-      ; ( Identifier.Ctor.Ctor "K"
+      ; ( Name.Ctor.Ctor "K"
         , Entry.
             { ty_params =
-                [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+                [ Ty.Generic.Generic (Name.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
+                ; Ty.Generic.Generic (Name.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
                 ]
-            ; supers = Identifier.Ctor.Map.empty
+            ; supers = Name.Ctor.Map.empty
             } )
         (* interface L<T1,T2> {} *)
-      ; ( Identifier.Ctor.Ctor "L"
+      ; ( Name.Ctor.Ctor "L"
         , Entry.
             { ty_params =
-                [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+                [ Ty.Generic.Generic (Name.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
+                ; Ty.Generic.Generic (Name.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
                 ]
-            ; supers = Identifier.Ctor.Map.empty
+            ; supers = Name.Ctor.Map.empty
             } )
         (* interface M<T> {} *)
-      ; ( Identifier.Ctor.Ctor "M"
+      ; ( Name.Ctor.Ctor "M"
         , Entry.
-            { ty_params = [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-            ; supers = Identifier.Ctor.Map.empty
+            { ty_params = [ Ty.Generic.Generic (Name.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+            ; supers = Name.Ctor.Map.empty
             } )
         (* class D<T super A> implements M<T> {} *)
-      ; ( Identifier.Ctor.Ctor "D"
+      ; ( Name.Ctor.Ctor "D"
         , Entry.
             { ty_params =
-                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                [ ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T")
                   , Variance.inv
-                  , Ty.Param_bounds.{ lower_bound = Some (Ty.ctor (Identifier.Ctor.Ctor "A") []); upper_bound = None }
-                  )
+                  , Ty.Param_bounds.{ lower_bound = Some (Ty.ctor (Name.Ctor.Ctor "A") []); upper_bound = None } )
                 ]
-            ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "M", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ]
+            ; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "M", [ Ty.generic @@ Name.Ty_param.Ty_param "T" ] ]
             } )
         (* class E<T as B> implements I<T> {} *)
-      ; ( Identifier.Ctor.Ctor "E"
+      ; ( Name.Ctor.Ctor "E"
         , Entry.
             { ty_params =
-                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                [ ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T")
                   , Variance.inv
-                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Identifier.Ctor.Ctor "B") []) }
-                  )
+                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Name.Ctor.Ctor "B") []) } )
                 ]
-            ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "I", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ]
+            ; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "I", [ Ty.generic @@ Name.Ty_param.Ty_param "T" ] ]
             } )
         (* class F implements  J<bool>  {} *)
-      ; ( Identifier.Ctor.Ctor "F"
-        , Entry.{ ty_params = []; supers = Identifier.Ctor.Map.of_alist_exn [ Identifier.Ctor.Ctor "J", [ Ty.bool ] ] }
-        )
+      ; ( Name.Ctor.Ctor "F"
+        , Entry.{ ty_params = []; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "J", [ Ty.bool ] ] } )
         (* class G<T as C> implements K<T,int> {} *)
-      ; ( Identifier.Ctor.Ctor "G"
+      ; ( Name.Ctor.Ctor "G"
         , Entry.
             { ty_params =
-                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                [ ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T")
                   , Variance.inv
-                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Identifier.Ctor.Ctor "C") []) }
-                  )
+                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Name.Ctor.Ctor "C") []) } )
                 ]
             ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "K", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T"; Ty.bool ] ]
+                Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "K", [ Ty.generic @@ Name.Ty_param.Ty_param "T"; Ty.bool ] ]
             } )
         (* class H<T1 as B, T2 as C> implements L<T2, T1> {} *)
-      ; ( Identifier.Ctor.Ctor "H"
+      ; ( Name.Ctor.Ctor "H"
         , Entry.
             { ty_params =
-                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1")
+                [ ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T1")
                   , Variance.inv
-                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Identifier.Ctor.Ctor "B") []) }
-                  )
-                ; ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2")
+                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Name.Ctor.Ctor "B") []) } )
+                ; ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T2")
                   , Variance.inv
-                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Identifier.Ctor.Ctor "C") []) }
-                  )
+                  , Ty.Param_bounds.{ lower_bound = None; upper_bound = Some (Ty.ctor (Name.Ctor.Ctor "C") []) } )
                 ]
             ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ ( Identifier.Ctor.Ctor "L"
-                    , [ Ty.generic @@ Identifier.Ty_param.Ty_param "T1"
-                      ; Ty.generic @@ Identifier.Ty_param.Ty_param "T2"
-                      ] )
+                Name.Ctor.Map.of_alist_exn
+                  [ ( Name.Ctor.Ctor "L"
+                    , [ Ty.generic @@ Name.Ty_param.Ty_param "T1"; Ty.generic @@ Name.Ty_param.Ty_param "T2" ] )
                   ]
             } )
         (* class AA implements I<bool> , J<bool> *)
-      ; ( Identifier.Ctor.Ctor "AA"
+      ; ( Name.Ctor.Ctor "AA"
         , Entry.
             { ty_params = []
-            ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "I", [ Ty.bool ]; Identifier.Ctor.Ctor "J", [ Ty.bool ] ]
+            ; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "I", [ Ty.bool ]; Name.Ctor.Ctor "J", [ Ty.bool ] ]
             } )
         (* class BB implements I<bool> , J<int> *)
-      ; ( Identifier.Ctor.Ctor "BB"
+      ; ( Name.Ctor.Ctor "BB"
         , Entry.
             { ty_params = []
-            ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "I", [ Ty.bool ]; Identifier.Ctor.Ctor "J", [ Ty.int ] ]
+            ; supers = Name.Ctor.Map.of_alist_exn [ Name.Ctor.Ctor "I", [ Ty.bool ]; Name.Ctor.Ctor "J", [ Ty.int ] ]
             } )
         (* class CC<T super int as (int | string)> implements I<int>, J<T> {} *)
-      ; ( Identifier.Ctor.Ctor "CC"
+      ; ( Name.Ctor.Ctor "CC"
         , Entry.
             { ty_params =
-                [ ( Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T")
+                [ ( Ty.Generic.Generic (Name.Ty_param.Ty_param "T")
                   , Variance.inv
                   , Ty.Param_bounds.{ lower_bound = Some Ty.int; upper_bound = Some Ty.(union [ int; string ]) } )
                 ]
             ; supers =
-                Identifier.Ctor.Map.of_alist_exn
-                  [ Identifier.Ctor.Ctor "I", [ Ty.int ]
-                  ; Identifier.Ctor.Ctor "J", [ Ty.generic (Identifier.Ty_param.Ty_param "T") ]
-                  ]
+                Name.Ctor.Map.of_alist_exn
+                  [ Name.Ctor.Ctor "I", [ Ty.int ]; Name.Ctor.Ctor "J", [ Ty.generic (Name.Ty_param.Ty_param "T") ] ]
             } )
       ]
   ;;
-end
+end *)

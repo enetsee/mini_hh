@@ -3,7 +3,8 @@
  (libraries
   core
   fmt
-  identifier
+  name
+  reporting
   dnf
   ty
   lang

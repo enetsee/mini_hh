@@ -1,5 +1,6 @@
 open Test_common
 open Common
+open Reporting
 
 module Classish = struct
   module Up = struct
@@ -10,15 +11,15 @@ module Classish = struct
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+            [ ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
               , [] )
-            ; Identifier.Ctor.Ctor "A", [], [ Identifier.Ctor.Ctor "I", [ Ty.int ] ]
+            ; Name.Ctor.of_string "A", [], [ Name.Ctor.of_string "I", [ Ty.int Prov.empty ] ]
             ])
       in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [] } in
-      let at = Identifier.Ctor.Ctor "I" in
-      let expect = Some [ Ty.int ] in
+      let of_ = Ty.Ctor.create ~name:Name.Ctor.(of_string "A") () in
+      let at = Name.Ctor.of_string "I" in
+      let expect = Some [ Ty.int Prov.empty ] in
       let test () =
         Alcotest.check
           result
@@ -34,19 +35,20 @@ module Classish = struct
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+            [ ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
               , [] )
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-              , [ Identifier.Ctor.Ctor "I", [ Ty.int; Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              , [ Name.Ctor.of_string "I", [ Ty.int Prov.empty; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ]
+              )
             ])
       in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ Ty.bool ] } in
-      let at = Identifier.Ctor.Ctor "I" in
-      let expect = Some [ Ty.int; Ty.bool ] in
+      let of_ = Ty.Ctor.create ~name:Name.Ctor.(of_string "A") ~args:[ Ty.bool Prov.empty ] () in
+      let at = Name.Ctor.of_string "I" in
+      let expect = Some [ Ty.int Prov.empty; Ty.bool Prov.empty ] in
       let test () =
         Alcotest.check
           result
@@ -63,24 +65,29 @@ module Classish = struct
        A<Ta> up I
      *)
     let bounds_1 =
-      let bounds = Ty.Param_bounds.create ~lower_bound:Ty.int ~upper_bound:Ty.(union [ int; string ]) () in
+      let bounds =
+        Ty.Param_bounds.create
+          ~lower:Ty.(int Prov.empty)
+          ~upper:Ty.(union [ int Prov.empty; string Prov.empty ] ~prov:Prov.empty)
+          ()
+      in
       let oracle =
         Oracle.(
           add_classishes_exn
             empty
             [ (* interface I<T> {} *)
-              ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+              ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
               , [] )
               (* class A<T super int as arraykey> implements I<T> {} *)
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, bounds ]
-              , [ Identifier.Ctor.Ctor "I", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T", Variance.inv, bounds, Loc.empty ]
+              , [ Name.Ctor.of_string "I", [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ] )
             ])
       in
-      let ta = Ty.generic @@ Identifier.Ty_param.Ty_param "Ta" in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ ta ] } in
-      let at = Identifier.Ctor.Ctor "I" in
+      let ta = Ty.generic Prov.empty @@ Name.Ty_param.of_string "Ta" in
+      let of_ = Ty.Ctor.{ name = Name.Ctor.(Ctor "A"); args = [ ta ] } in
+      let at = Name.Ctor.of_string "I" in
       let expect = Some [ ta ] in
       let test () =
         Alcotest.check
@@ -97,27 +104,29 @@ module Classish = struct
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+            [ ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
-              , [ ( Identifier.Ctor.Ctor "J"
-                  , [ Ty.generic @@ Identifier.Ty_param.Ty_param "T1"; Ty.generic @@ Identifier.Ty_param.Ty_param "T2" ]
-                  )
+              , [ ( Name.Ctor.of_string "J"
+                  , [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T1"
+                    ; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T2"
+                    ] )
                 ] )
-            ; ( Identifier.Ctor.Ctor "J"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+            ; ( Name.Ctor.of_string "J"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
               , [] )
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-              , [ Identifier.Ctor.Ctor "I", [ Ty.int; Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              , [ Name.Ctor.of_string "I", [ Ty.int Prov.empty; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ]
+              )
             ])
       in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ Ty.bool ] } in
-      let at = Identifier.Ctor.Ctor "J" in
-      let expect = Some [ Ty.int; Ty.bool ] in
+      let of_ = Ty.Ctor.{ name = Name.Ctor.(Ctor "A"); args = [ Ty.bool Prov.empty ] } in
+      let at = Name.Ctor.of_string "J" in
+      let expect = Some [ Ty.int Prov.empty; Ty.bool Prov.empty ] in
       let test () =
         Alcotest.check
           result
@@ -133,29 +142,30 @@ module Classish = struct
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+            [ ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
-              , [ ( Identifier.Ctor.Ctor "J"
-                  , [ Ty.generic @@ Identifier.Ty_param.Ty_param "T1"
-                    ; Ty.generic @@ Identifier.Ty_param.Ty_param "T2"
-                    ; Ty.int
+              , [ ( Name.Ctor.of_string "J"
+                  , [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T1"
+                    ; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T2"
+                    ; Ty.int Prov.empty
                     ] )
                 ] )
-            ; ( Identifier.Ctor.Ctor "J"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+            ; ( Name.Ctor.of_string "J"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
               , [] )
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-              , [ Identifier.Ctor.Ctor "I", [ Ty.int; Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              , [ Name.Ctor.of_string "I", [ Ty.int Prov.empty; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ]
+              )
             ])
       in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ Ty.bool ] } in
-      let at = Identifier.Ctor.Ctor "J" in
-      let expect = Some [ Ty.int; Ty.bool; Ty.int ] in
+      let of_ = Ty.Ctor.{ name = Name.Ctor.(Ctor "A"); args = [ Ty.bool Prov.empty ] } in
+      let at = Name.Ctor.of_string "J" in
+      let expect = Some [ Ty.int Prov.empty; Ty.bool Prov.empty; Ty.int Prov.empty ] in
       let test () =
         Alcotest.check
           result
@@ -173,31 +183,37 @@ module Classish = struct
        A<Ta> up J
     *)
     let transitive_bounds_1 =
-      let bounds = Ty.Param_bounds.create ~lower_bound:Ty.int ~upper_bound:Ty.(union [ int; string ]) () in
+      let bounds =
+        Ty.Param_bounds.create
+          ~lower:(Ty.int Prov.empty)
+          ~upper:Ty.(union [ int Prov.empty; string Prov.empty ] ~prov:Prov.empty)
+          ()
+      in
       let oracle =
         Oracle.(
           add_classishes_exn
             empty
             [ (* interface J<T1,T2> {} *)
-              ( Identifier.Ctor.Ctor "J"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
+              ( Name.Ctor.of_string "J"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
               , [] )
             ; (* interface I<T> extends J<int,T> {} *)
-              ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
-              , [ Identifier.Ctor.Ctor "J", [ Ty.int; Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+              ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              , [ Name.Ctor.of_string "J", [ Ty.int Prov.empty; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ]
+              )
               (* class A<T super int as arraykey> implements I<T> {} *)
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, bounds ]
-              , [ Identifier.Ctor.Ctor "I", [ Ty.generic @@ Identifier.Ty_param.Ty_param "T" ] ] )
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T", Variance.inv, bounds, Loc.empty ]
+              , [ Name.Ctor.of_string "I", [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T" ] ] )
             ])
       in
-      let ta = Ty.generic @@ Identifier.Ty_param.Ty_param "Ta" in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ ta ] } in
-      let at = Identifier.Ctor.Ctor "J" in
-      let expect = Some [ Ty.int; ta ] in
+      let ta = Ty.generic Prov.empty @@ Name.Ty_param.of_string "Ta" in
+      let of_ = Ty.Ctor.{ name = Name.Ctor.(Ctor "A"); args = [ ta ] } in
+      let at = Name.Ctor.of_string "J" in
+      let expect = Some [ Ty.int Prov.empty; ta ] in
       let test () =
         Alcotest.check
           result
@@ -218,46 +234,46 @@ module Classish = struct
        A<Ta> up J
     *)
     let transitive_bounds_2 =
-      let bounds_t1 = Ty.Param_bounds.create ~lower_bound:Ty.int ~upper_bound:Ty.arraykey () in
-      let bounds_t2 = Ty.Param_bounds.create ~upper_bound:Ty.arraykey () in
+      let bounds_t1 = Ty.Param_bounds.create ~lower:(Ty.int Prov.empty) ~upper:(Ty.arraykey Prov.empty) () in
+      let bounds_t2 = Ty.Param_bounds.create ~lower:(Ty.nothing Prov.empty) ~upper:(Ty.arraykey Prov.empty) () in
       let oracle =
         Oracle.(
           add_classishes_exn
             empty
-            [ ( Identifier.Ctor.Ctor "J"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T3"), Variance.inv, Ty.Param_bounds.top
+            [ ( Name.Ctor.of_string "J"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T3", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
               , [] )
-            ; ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, Ty.Param_bounds.top
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T3"), Variance.inv, Ty.Param_bounds.top
+            ; ( Name.Ctor.of_string "I"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
+                ; Name.Ty_param.of_string "T3", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty
                 ]
-              , [ ( Identifier.Ctor.Ctor "J"
-                  , [ Ty.generic @@ Identifier.Ty_param.Ty_param "T3"
-                    ; Ty.generic @@ Identifier.Ty_param.Ty_param "T2"
-                    ; Ty.generic @@ Identifier.Ty_param.Ty_param "T1"
+              , [ ( Name.Ctor.of_string "J"
+                  , [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T3"
+                    ; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T2"
+                    ; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T1"
                     ] )
                 ] )
-            ; ( Identifier.Ctor.Ctor "A"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T1"), Variance.inv, bounds_t1
-                ; Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T2"), Variance.inv, bounds_t2
+            ; ( Name.Ctor.of_string "A"
+              , [ Name.Ty_param.of_string "T1", Variance.inv, bounds_t1, Loc.empty
+                ; Name.Ty_param.of_string "T2", Variance.inv, bounds_t2, Loc.empty
                 ]
-              , [ ( Identifier.Ctor.Ctor "I"
-                  , [ Ty.generic @@ Identifier.Ty_param.Ty_param "T2"
-                    ; Ty.bool
-                    ; Ty.generic @@ Identifier.Ty_param.Ty_param "T1"
+              , [ ( Name.Ctor.of_string "I"
+                  , [ Ty.generic Prov.empty @@ Name.Ty_param.of_string "T2"
+                    ; Ty.bool Prov.empty
+                    ; Ty.generic Prov.empty @@ Name.Ty_param.of_string "T1"
                     ] )
                 ] )
             ])
       in
-      let ta = Ty.generic @@ Identifier.Ty_param.Ty_param "Ta" in
-      let tb = Ty.generic @@ Identifier.Ty_param.Ty_param "Tb" in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "A"); args = [ ta; tb ] } in
-      let at = Identifier.Ctor.Ctor "J" in
-      let expect = Some [ ta; Ty.bool; tb ] in
+      let ta = Ty.generic Prov.empty @@ Name.Ty_param.of_string "Ta" in
+      let tb = Ty.generic Prov.empty @@ Name.Ty_param.of_string "Tb" in
+      let of_ = Ty.Ctor.{ name = Name.Ctor.(Ctor "A"); args = [ ta; tb ] } in
+      let at = Name.Ctor.of_string "J" in
+      let expect = Some [ ta; Ty.bool Prov.empty; tb ] in
       let test () =
         Alcotest.check
           result
@@ -284,20 +300,20 @@ module Classish = struct
           add_classishes_exn
             empty
             [ (* interface I<T> {} *)
-              ( Identifier.Ctor.Ctor "I"
-              , [ Ty.Generic.Generic (Identifier.Ty_param.Ty_param "T"), Variance.inv, Ty.Param_bounds.top ]
+              ( Name.Ctor.of_string "I"
+              , [  (Name.Ty_param.of_string "T"), Variance.inv, Ty.Param_bounds.top ]
               , [] )
             ; (* class A implements I<arraykey> {} *)
-              Identifier.Ctor.Ctor "A", [], [ Identifier.Ctor.Ctor "I", [ Ty.arraykey ] ]
+              Name.Ctor.of_string "A", [], [ Name.Ctor.of_string "I", [ Ty.arraykey ] ]
             ; (* class B implements I<string> {} *)
-              Identifier.Ctor.Ctor "B", [], [ Identifier.Ctor.Ctor "I", [ Ty.string ] ]
+              Name.Ctor.of_string "B", [], [ Name.Ctor.of_string "I", [ Ty.string ] ]
             ; (* class C extends A, B {} *)
-              Identifier.Ctor.Ctor "C", [], [ Identifier.Ctor.Ctor "A", []; Identifier.Ctor.Ctor "B", [] ]
+              Name.Ctor.of_string "C", [], [ Name.Ctor.of_string "A", []; Name.Ctor.of_string "B", [] ]
             ])
       in
-      let of_ = Ty.Ctor.{ ctor = Identifier.Ctor.(Ctor "C"); args = [] } in
-      let at = Identifier.Ctor.Ctor "I" in
-      let expect = Some ([ Ty.(inter [ arraykey; string ]) ], Ty.Generic.Map.empty) in
+      let of_ = Ty.Ctor.{ name =Name.Ctor.(Ctor "C"); args = [] } in
+      let at = Name.Ctor.of_string "I" in
+      let expect = Some ([ Ty.(inter [ arraykey; string ]) ], Name.Ty_param.of_string.empty) in
       let test () =
         Alcotest.check
           result

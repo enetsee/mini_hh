@@ -6,7 +6,7 @@
   str
   alcotest
   common
-  identifier
+  name
   lang
   ty
   oracle

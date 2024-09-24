@@ -7,7 +7,7 @@
   alcotest
   test_common
   common
-  identifier
+  name
   ty
   oracle
   envir
