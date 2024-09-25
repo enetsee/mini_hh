@@ -1,31 +1,39 @@
 open Core
+open Reporting
 
 (* ~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-module rec Expr : sig
+module rec Expr_node : sig
   type t =
     | Lit of Lit.t
-    | Local of Local.t
+    | Local of Name.Tm_var.t
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
     | Unary of Unary.t
   [@@deriving eq, compare, sexp, show]
-
-  val local_opt : t -> Local.t option
 end = struct
   type t =
     | Lit of Lit.t
-    | Local of Local.t
+    | Local of Name.Tm_var.t
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
     | Unary of Unary.t
   [@@deriving eq, compare, sexp, show]
+end
 
-  let local_opt = function
-    | Local local -> Some local
-    | _ -> None
-  ;;
+and Expr : sig
+  type t =
+    { node : Expr_node.t
+    ; loc : Loc.t
+    }
+  [@@deriving eq, compare, sexp, show]
+end = struct
+  type t =
+    { node : Expr_node.t
+    ; loc : Loc.t
+    }
+  [@@deriving eq, compare, sexp, show]
 end
 
 (* ~~ Is refinements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -91,7 +99,7 @@ end = struct
 end
 
 (* ~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Stmt : sig
+and Stmt_node : sig
   type t =
     | Expr of Expr.t
     | Return of Expr.t option
@@ -107,6 +115,20 @@ end = struct
     | If of If.t
     | Seq of Seq.t
   [@@deriving eq, compare, sexp, show, variants]
+end
+
+and Stmt : sig
+  type t =
+    { node : Stmt_node.t
+    ; loc : Loc.t
+    }
+  [@@deriving eq, compare, sexp, show]
+end = struct
+  type t =
+    { node : Stmt_node.t
+    ; loc : Loc.t
+    }
+  [@@deriving eq, compare, sexp, show]
 end
 
 (* ~~ Assigment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -150,7 +172,7 @@ end
 
 (* ~~ L-values ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Lvalue : sig
-  type t = Local of Local.t [@@deriving eq, compare, sexp, show, variants]
+  type t = Local of Name.Tm_var.t [@@deriving eq, compare, sexp, show, variants]
 end = struct
-  type t = Local of Local.t [@@deriving eq, compare, sexp, show, variants]
+  type t = Local of Name.Tm_var.t [@@deriving eq, compare, sexp, show, variants]
 end

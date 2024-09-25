@@ -3,7 +3,7 @@ open Core
 module Refine_key = struct
   (** A type refinement key is either a term variable or a member property
       TODO(mjt) Add members *)
-  type t = Local of Lang.Local.t [@@deriving compare, eq, sexp, show]
+  type t = Local of Name.Tm_var.t [@@deriving compare, eq, sexp, show]
 end
 
 module Refine_map = struct

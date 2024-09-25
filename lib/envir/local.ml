@@ -1,9 +1,9 @@
 open Core
 
 (** A local environment is a map from term variables names to *)
-type t = Ty.t Lang.Local.Map.t [@@deriving compare, eq, sexp, show]
+type t = Ty.t Name.Tm_var.Map.t [@@deriving compare, eq, sexp, show]
 
-let empty = Lang.Local.Map.empty
+let empty = Name.Tm_var.Map.empty
 let bottom = empty
 let find t local = Map.find t local
 let is_bound t local = Option.is_some @@ find t local
@@ -33,7 +33,7 @@ let merge_right t1 t2 : t =
 
 let merge_disjoint_exn t1 t2 = Map.merge_disjoint_exn t1 t2
 let bind_local t local ty = Map.update t local ~f:(fun _ -> ty)
-let map t ~f = Lang.Local.Map.map t ~f
+let map t ~f = Name.Tm_var.Map.map t ~f
 
 let symm_diff (t1 : t) (t2 : t) =
   let k1 = Map.key_set t1

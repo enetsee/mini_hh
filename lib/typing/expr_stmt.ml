@@ -5,9 +5,9 @@ module rec Expr : sig
   include Sigs.Synthesizes with type t := Lang.Expr.t and type out := Ty.t and type env_out := Envir.Typing.t
   include Sigs.Checks with type t := Lang.Expr.t and type env_out := Envir.Typing.t
 end = struct
-  let synth t ~ctxt ~env ~errs =
-    match t with
-    | Lang.Expr.Is is_ -> Is.synth is_ ~ctxt ~env ~errs
+  let synth Lang.Expr.{ node; _ } ~ctxt ~env ~errs =
+    match node with
+    | Lang.Expr_node.Is is_ -> Is.synth is_ ~ctxt ~env ~errs
     | _ -> failwith "Nope"
   ;;
 
@@ -129,10 +129,10 @@ end = struct
       and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param_lhs ty_param_rhs
       and ty_refine, ty_param_refine =
         match binop with
-        | Lang.Binop.Logical.And ->
+        | Lang.Binop.Logical.And _ ->
           ( Envir.Ty_refine.meet ty_refine_lhs ty_refine_rhs
           , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
-        | Lang.Binop.Logical.Or ->
+        | Lang.Binop.Logical.Or _ ->
           ( Envir.Ty_refine.join ty_refine_lhs ty_refine_rhs
           , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
       in
@@ -154,10 +154,10 @@ and Unary : sig end = struct end
 and Stmt : sig
   include Sigs.Synthesizes with type t := Lang.Stmt.t and type out := unit and type env_out := Envir.Local.t
 end = struct
-  let synth t ~ctxt ~env ~errs =
-    match t with
-    | Lang.Stmt.Assign assign -> Assign.synth assign ~ctxt ~env ~errs
-    | Lang.Stmt.Seq seq -> Seq.synth seq ~ctxt ~env ~errs
+  let synth Lang.Stmt.{ node; _ } ~ctxt ~env ~errs =
+    match node with
+    | Lang.Stmt_node.Assign assign -> Assign.synth assign ~ctxt ~env ~errs
+    | Lang.Stmt_node.Seq seq -> Seq.synth seq ~ctxt ~env ~errs
     | _ -> failwith "Nope"
   ;;
 end
