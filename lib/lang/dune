@@ -1,6 +1,6 @@
 (library
  (name lang)
- (libraries core fmt ty name reporting)
+ (libraries core fmt common ty name reporting)
  (inline_tests)
  (preprocess
   (pps

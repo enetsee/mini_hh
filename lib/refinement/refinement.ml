@@ -1,5 +1,6 @@
 open Core
 open Common
+open Reporting
 module Ctxt = Ctxt
 
 type t =
@@ -26,24 +27,89 @@ let combine ty_scruts refns =
     | Intersect_with (prov, ty_test) -> Ty.inter [ ty_scrut; ty_test ] ~prov :: tys, refns)
 ;;
 
+let combine_one ty_scrut refns =
+  List.fold_left refns ~init:([], []) ~f:(fun (tys, refns) refn ->
+    match refn with
+    | Replace_with (ty, refn) -> ty :: tys, refn :: refns
+    | Intersect_with (prov, ty_test) -> Ty.inter [ ty_scrut; ty_test ] ~prov :: tys, refns)
+;;
+
 let rec refine ~ty_scrut ~ty_test ~ctxt : (t, Subtyping.Err.t) result =
   match Ty.prj ty_scrut, Ty.prj ty_test with
-  (* | Ty.Exists exists_scrut, Ty.Exists exists_test -> refine_existential_r ty_scrut exists_test ~ctxt *)
-  | _, (prov_test, Ty.Node.Exists exists_test) -> refine_existential_r ty_scrut prov_test exists_test ~ctxt
+  | _, (_, Ty.Node.Generic _) -> failwith "Nope"
+  (* -- Existentials -- *)
+  | (prov_scrut, Ty.Node.Exists exists_scrut), _ -> refine_existential_scrut prov_scrut exists_scrut ty_test ~ctxt
+  | _, (prov_test, Ty.Node.Exists exists_test) -> refine_existential_test ty_scrut prov_test exists_test ~ctxt
+  (* -- Unions & intersections *)
+  | _, (prov_test, Ty.Node.Union ty_tests) -> refine_union_test prov_test ~ty_tests ~ty_scrut ~ctxt
+  | _, (prov_test, Ty.Node.Inter ty_tests) -> refine_inter_test prov_test ~ty_tests ~ty_scrut ~ctxt
   | (prov_scrut, Ty.Node.Union ty_scruts), _ -> refine_union_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
   | (prov_scrut, Ty.Node.Inter ty_scruts), _ -> refine_inter_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
+  (* -- Constructors -- *)
   | (prov_scrut, Ty.Node.Ctor ctor_scrut), (prov_test, Ty.Node.Ctor ctor_test) ->
     refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt
+  (* -- Everything else -- *)
   | (prov_scrut, _), (prov_test, _) ->
     let prov = Reporting.Prov.refines ~prov_scrut ~prov_test in
-    (* TODO(mjt) handle existentials in scrutinee and test position
-       TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
+    (* TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
     Ok (Intersect_with (prov, ty_test))
 
-and refine_existential_r ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctxt =
-  (* Bind the quantifiers in the type parameter env
-     TODO(mjt) these need to be fresh wrt to the enclosing context
-  *)
+(* ~~ Refine existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+and refine_existential_scrut prov_exists Ty.Exists.{ quants; body } ty_test ~ctxt =
+  let ctxt, generics = Ctxt.fresh_generics ctxt (List.length quants) in
+  let subst, quants =
+    let subst, quants =
+      List.unzip
+      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name; param_bounds } fresh_name ->
+        (name, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = fresh_name; param_bounds })
+    in
+    let subst = Name.Ty_param.Map.of_alist_exn subst in
+    subst, quants
+  in
+  let body = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
+  let ctxt = Ctxt.bind_all ctxt quants in
+  (* Refine the body in this context *)
+  let body_refn = refine ~ty_scrut:body ~ty_test ~ctxt in
+  Result.map body_refn ~f:(function
+    | Replace_with (body, refn) ->
+      let quants =
+        List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
+          let param_bounds =
+            match Envir.Ty_param_refine.find refn name with
+            | Envir.Ty_param_refine.Bounds bounds_delta ->
+              (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
+              Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_exists
+            | Envir.Ty_param_refine.Bounds_top -> param_bounds
+            | Envir.Ty_param_refine.Bounds_bottom -> Ty.Param_bounds.bottom prov_exists
+          in
+          Ty.Param.{ name; param_bounds })
+      in
+      (* 2) Unbind the quantifiers in the refinement *)
+      let refn = Envir.Ty_param_refine.unbind_all refn @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name) in
+      (* 3) Pack the existential *)
+      let ty_test = Ty.exists ~quants ~body prov_exists in
+      Replace_with (ty_test, refn)
+    | Intersect_with (prov, body') ->
+      (* In the case that we couldn't determine the body was a subtype of the scrutinee (and we therefore have no
+         type parameter refinement) we need to intersect the body with the scrutinee type before repacking. Since
+         there is no refinement the quantifiers are unchanged and there is nothing to unbind *)
+      let body = Ty.inter ~prov [ body; body' ] in
+      let ty_test = Ty.exists ~quants ~body prov_exists in
+      Replace_with (ty_test, Envir.Ty_param_refine.top))
+
+and refine_existential_test ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctxt =
+  let ctxt, generics = Ctxt.fresh_generics ctxt (List.length quants) in
+  let subst, quants =
+    let subst, quants =
+      List.unzip
+      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name; param_bounds } fresh_name ->
+        (name, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = fresh_name; param_bounds })
+    in
+    let subst = Name.Ty_param.Map.of_alist_exn subst in
+    subst, quants
+  in
+  let body = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
   let ctxt = Ctxt.bind_all ctxt quants in
   (* Refine the body in this context *)
   let body_refn = refine ~ty_scrut ~ty_test:body ~ctxt in
@@ -60,6 +126,7 @@ and refine_existential_r ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctxt =
           let param_bounds =
             match Envir.Ty_param_refine.find refn name with
             | Envir.Ty_param_refine.Bounds bounds_delta ->
+              (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
               Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_exists
             | Envir.Ty_param_refine.Bounds_top -> param_bounds
             | Envir.Ty_param_refine.Bounds_bottom -> Ty.Param_bounds.bottom prov_exists
@@ -78,7 +145,8 @@ and refine_existential_r ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctxt =
       let body = Ty.inter ~prov [ ty_scrut; body ] in
       let ty_test = Ty.exists ~quants ~body prov_exists in
       Replace_with (ty_test, Envir.Ty_param_refine.top))
-(* == Refine union types ============================================================================================ *)
+
+(* ~~ Refine union types in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 (** Refining a union type means we can eliminate the elements which are not
     supertypes of the test type - refinement is an assertion that
@@ -94,7 +162,17 @@ and refine_union_scrut prov ~ty_scruts ~ty_test ~ctxt =
   @@ sequence_any
   @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
 
-(* == Refine intersection types ===================================================================================== *)
+(* ~~ Refine union types in test position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+and refine_union_test prov ~ty_tests ~ty_scrut ~ctxt =
+  Result.map ~f:(fun refns ->
+    let tys, refns = combine_one ty_scrut refns in
+    Replace_with (Ty.union tys ~prov, Envir.Ty_param_refine.join_many refns ~prov))
+  @@ Result.map_error ~f:Subtyping.Err.multiple
+  @@ sequence_any
+  @@ List.map ty_tests ~f:(fun ty_test -> refine ~ty_scrut ~ty_test ~ctxt)
+
+(* ~~ Refine intersection types in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 (** Refining an intersection type doesn't let us elminate any element - they
     must all be supertypes of the test type - refinement is an assertion that
@@ -108,7 +186,16 @@ and refine_inter_scrut prov ~ty_scruts ~ty_test ~ctxt =
   @@ sequence_all
   @@ List.map ty_scruts ~f:(fun ty_scrut -> refine ~ty_scrut ~ty_test ~ctxt)
 
-(* -- Refine constructor types -------------------------------------------------------------------------------------- *)
+(* ~~ Refine intersection types in test position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and refine_inter_test prov ~ty_tests ~ty_scrut ~ctxt =
+  Result.map ~f:(fun refns ->
+    let tys, refns = combine_one ty_scrut refns in
+    Replace_with (Ty.inter tys ~prov, Envir.Ty_param_refine.meet_many refns ~prov))
+  @@ Result.map_error ~f:Subtyping.Err.multiple
+  @@ sequence_all
+  @@ List.map ty_tests ~f:(fun ty_test -> refine ~ty_scrut ~ty_test ~ctxt)
+
+(* ~~ Refine constructor types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt =
   let oracle = ctxt.Ctxt.oracle in
   let prov = Reporting.Prov.refines ~prov_scrut ~prov_test in

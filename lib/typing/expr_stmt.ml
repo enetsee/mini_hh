@@ -5,8 +5,8 @@ module rec Expr : sig
   include Sigs.Synthesizes with type t := Lang.Expr.t and type out := Ty.t and type env_out := Envir.Typing.t
   include Sigs.Checks with type t := Lang.Expr.t and type env_out := Envir.Typing.t
 end = struct
-  let synth Lang.Expr.{ node; _ } ~ctxt ~env ~errs =
-    match node with
+  let synth Located.{ elem; _ } ~ctxt ~env ~errs =
+    match elem with
     | Lang.Expr_node.Is is_ -> Is.synth is_ ~ctxt ~env ~errs
     | _ -> failwith "Nope"
   ;;
@@ -154,8 +154,8 @@ and Unary : sig end = struct end
 and Stmt : sig
   include Sigs.Synthesizes with type t := Lang.Stmt.t and type out := unit and type env_out := Envir.Local.t
 end = struct
-  let synth Lang.Stmt.{ node; _ } ~ctxt ~env ~errs =
-    match node with
+  let synth Located.{ elem; _ } ~ctxt ~env ~errs =
+    match elem with
     | Lang.Stmt_node.Assign assign -> Assign.synth assign ~ctxt ~env ~errs
     | Lang.Stmt_node.Seq seq -> Seq.synth seq ~ctxt ~env ~errs
     | _ -> failwith "Nope"

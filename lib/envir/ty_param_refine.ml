@@ -86,4 +86,8 @@ let unbind t generic =
   | Bounds bounds -> Bounds (Map.remove bounds generic)
 ;;
 
-let unbind_all t generics = List.fold_left generics ~init:t ~f:unbind
+let unbind_all t generics =
+  match List.fold_left generics ~init:t ~f:unbind with
+  | Bounds bounds when Map.is_empty bounds -> Top
+  | t -> t
+;;

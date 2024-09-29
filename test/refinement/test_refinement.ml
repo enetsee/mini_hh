@@ -633,7 +633,7 @@ module Nested = struct
   let test_cases = [ akenn1; akenn2; akenn3; akenn4 ]
 end
 
-module Union = struct
+module Union_scrut = struct
   (*
      interface I<T> {}
     interface J<T> {}
@@ -707,7 +707,7 @@ module Union = struct
         (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
         expect
     in
-    Alcotest.test_case "refinement / union case 1" `Quick test
+    Alcotest.test_case "union scrut 1" `Quick test
   ;;
 
   let case_2 =
@@ -739,7 +739,7 @@ module Union = struct
         (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
         expect
     in
-    Alcotest.test_case "refinement / union case 2" `Quick test
+    Alcotest.test_case "union scrut 2" `Quick test
   ;;
 
   let case_3 =
@@ -772,13 +772,100 @@ module Union = struct
         (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
         expect
     in
-    Alcotest.test_case "refinement / union case 3" `Quick test
+    Alcotest.test_case "union scrut 3" `Quick test
   ;;
 
   let test_cases = [ case_1; case_2; case_3 ]
 end
 
-module Intersection = struct
+module Union_test = struct
+  (* class Expr<T>
+     class NumExpr extends Expr<Num>
+     class ArraykeyExpr extends Expr<Arraykey>
+
+     Expr<T> ~~> (NumExpr | ArraykeyExpr) === Expr<T> ~~> NumExpr OR Expr<T> ~~> ArraykeyExpr
+     (Num & Arraykey) <= T <= (Num | Arraykey)
+  *)
+  let case_1 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class "NumExpr" ~extends:[ ctor_nm "Expr", [ Ty.num Prov.empty ] ] ()
+          ; mk_class "ArraykeyExpr" ~extends:[ ctor_nm "Expr", [ Ty.arraykey Prov.empty ] ] ()
+          ])
+    in
+    let t_scrut = ty_param_nm "Tscrut" in
+    let ty_param = Envir.Ty_param.(bind empty t_scrut @@ Ty.Param_bounds.top Prov.empty) in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let ty_scrut = Ty.ctor Prov.empty ~name:(ctor_nm "Expr") ~args:[ Ty.generic Prov.empty t_scrut ]
+    and ty_num_expr = Ty.ctor Prov.empty ~name:(ctor_nm "NumExpr") ~args:[]
+    and ty_arraykey_expr = Ty.ctor Prov.empty ~name:(ctor_nm "ArraykeyExpr") ~args:[] in
+    let ty_test = Ty.union ~prov:Prov.empty [ ty_arraykey_expr; ty_num_expr ] in
+    (* expected result *)
+    let expect =
+      let ty = Ty.union ~prov:Prov.empty [ ty_num_expr; ty_arraykey_expr ] in
+      let upper = Ty.union ~prov:Prov.empty [ Ty.num Prov.empty; Ty.arraykey Prov.empty ] in
+      let lower = Ty.inter ~prov:Prov.empty [ Ty.num Prov.empty; Ty.arraykey Prov.empty ] in
+      let bnds = Ty.Param_bounds.create ~lower ~upper () in
+      Ok (Refinement.replace_with ty Envir.Ty_param_refine.(singleton t_scrut bnds))
+    in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "union test 1" `Quick test
+  ;;
+
+  let test_cases = [ case_1 ]
+end
+
+module Intersection_test = struct
+  (* class Expr<T>
+     class NumExpr extends Expr<Num>
+     class ArraykeyExpr extends Expr<Arraykey>
+
+     Expr<T> ~~> (NumExpr & ArraykeyExpr)
+     (Num | Arraykey) <= T <= (Num & Arraykey)
+     (Int | String | Float) <= T <= (Int)
+  *)
+  let case_1 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class "NumExpr" ~extends:[ ctor_nm "Expr", [ Ty.num Prov.empty ] ] ()
+          ; mk_class "ArraykeyExpr" ~extends:[ ctor_nm "Expr", [ Ty.arraykey Prov.empty ] ] ()
+          ])
+    in
+    let t_scrut = ty_param_nm "Tscrut" in
+    let ty_param = Envir.Ty_param.(bind empty t_scrut @@ Ty.Param_bounds.top Prov.empty) in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let ty_scrut = Ty.ctor Prov.empty ~name:(ctor_nm "Expr") ~args:[ Ty.generic Prov.empty t_scrut ]
+    and ty_num_expr = Ty.ctor Prov.empty ~name:(ctor_nm "NumExpr") ~args:[]
+    and ty_arraykey_expr = Ty.ctor Prov.empty ~name:(ctor_nm "ArraykeyExpr") ~args:[] in
+    let ty_test = Ty.inter ~prov:Prov.empty [ ty_arraykey_expr; ty_num_expr ] in
+    (* expected result *)
+    let expect =
+      let ty = Ty.inter ~prov:Prov.empty [ ty_num_expr; ty_arraykey_expr ] in
+      let upper = Ty.inter ~prov:Prov.empty [ Ty.num Prov.empty; Ty.arraykey Prov.empty ] in
+      let lower = Ty.union ~prov:Prov.empty [ Ty.num Prov.empty; Ty.arraykey Prov.empty ] in
+      let bnds = Ty.Param_bounds.create ~lower ~upper () in
+      Ok (Refinement.replace_with ty Envir.Ty_param_refine.(singleton t_scrut bnds))
+    in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "intersection test 1" `Quick test
+  ;;
+
+  let test_cases = [ case_1 ]
+end
+
+module Intersection_scrut = struct
   let oracle =
     Oracle.(
       add_classishes_exn
@@ -914,6 +1001,259 @@ module Intersection = struct
         expect
     in
     Alcotest.test_case "refinement / intersection case 3" `Quick test
+  ;;
+
+  let test_cases = [ case_1; case_2 ]
+end
+
+module Existential_test = struct
+  let case_1 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class
+              "MyClass"
+              ~args:
+                [ ( mk_generic "T"
+                  , Variance.Inv
+                  , Ty.Param_bounds.create
+                      ~lower:(Ty.nothing Prov.empty)
+                      ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
+                      ()
+                  , Loc.empty )
+                ]
+              ~extends:[ ctor_nm "ICo", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
+              ()
+          ; mk_class "A" ()
+          ])
+    in
+    let t_scrut = ty_param_nm "T" in
+    let ty_param = Envir.Ty_param.(bind empty t_scrut @@ Ty.Param_bounds.top Prov.empty) in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let ty_scrut = Ty.ctor Prov.empty ~name:(ctor_nm "ICo") ~args:[ Ty.generic Prov.empty t_scrut ] in
+    let param_bounds_test =
+      let lower = Ty.nothing Prov.empty
+      and upper = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
+      Ty.Param_bounds.create ~lower ~upper ()
+    in
+    let ty_test =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    (* expected result *)
+    let ty_expect =
+      let lower = Ty.union ~prov:Prov.empty [ Ty.nothing Prov.empty; Ty.generic Prov.empty t_scrut ] in
+      let upper =
+        Ty.inter ~prov:Prov.empty [ Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[]; Ty.generic Prov.empty t_scrut ]
+      in
+      let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#1" ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let ty_param_refine_expect = Envir.Ty_param_refine.(singleton t_scrut param_bounds_test) in
+    let expect = Ok (Refinement.replace_with ty_expect ty_param_refine_expect) in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "existential as test, case 1" `Quick test
+  ;;
+
+  let case_2 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class
+              "J"
+              ~args:
+                [ ( mk_generic "T"
+                  , Variance.Inv
+                  , Ty.Param_bounds.create
+                      ~lower:(Ty.nothing Prov.empty)
+                      ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
+                      ()
+                  , Loc.empty )
+                ]
+              ()
+          ; mk_class "A" ()
+          ])
+    in
+    let t_scrut = ty_param_nm "T" in
+    let ty_param = Envir.Ty_param.(bind empty t_scrut @@ Ty.Param_bounds.top Prov.empty) in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let ty_scrut = Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty t_scrut ] in
+    let param_bounds_test =
+      let lower = Ty.nothing Prov.empty
+      and upper = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
+      Ty.Param_bounds.create ~lower ~upper ()
+    in
+    let ty_test =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    (* expected result *)
+    let ty_expect =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds:param_bounds_test () ] in
+      let body =
+        Ty.inter
+          ~prov:Prov.(refines ~prov_scrut:Prov.empty ~prov_test:Prov.empty)
+          [ ty_scrut; Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#1" ] ]
+      in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let ty_param_refine_expect = Envir.Ty_param_refine.top in
+    let expect = Ok (Refinement.replace_with ty_expect ty_param_refine_expect) in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "existential as test, case 2" `Quick test
+  ;;
+
+  let test_cases = [ case_1; case_2 ]
+end
+
+module Existential_both = struct
+  let case_1 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class
+              "MyClass"
+              ~args:
+                [ ( mk_generic "T"
+                  , Variance.Inv
+                  , Ty.Param_bounds.create
+                      ~lower:(Ty.nothing Prov.empty)
+                      ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
+                      ()
+                  , Loc.empty )
+                ]
+              ~extends:[ ctor_nm "ICo", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
+              ()
+          ; mk_class "A" ()
+          ])
+    in
+    let ty_param = Envir.Ty_param.empty in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let t_scrut = ty_param_nm "T" in
+    let param_bounds_scrut = Ty.Param_bounds.top Prov.empty in
+    let ty_scrut =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_scrut () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "ICo") ~args:[ Ty.generic Prov.empty t_scrut ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let param_bounds_test =
+      let lower = Ty.nothing Prov.empty
+      and upper = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
+      Ty.Param_bounds.create ~lower ~upper ()
+    in
+    let ty_test =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    (* expected result *)
+    let ty_expect =
+      let body =
+        let lower = Ty.union ~prov:Prov.empty [ Ty.nothing Prov.empty; Ty.generic Prov.empty @@ ty_param_nm "T#1" ] in
+        let upper =
+          Ty.inter
+            ~prov:Prov.empty
+            [ Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[]; Ty.generic Prov.empty @@ ty_param_nm "T#1" ]
+        in
+        let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#2" ] in
+        let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
+        let quants = [ Ty.Param.create ~name:(ty_param_nm "T#2") ~param_bounds () ] in
+        Ty.exists Prov.empty ~quants ~body
+      in
+      let lower = Ty.union ~prov:Prov.empty [ Ty.nothing Prov.empty; Ty.nothing Prov.empty ] in
+      let upper = Ty.inter ~prov:Prov.empty [ Ty.mixed Prov.empty; Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] ] in
+      let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds () ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let ty_param_refine_expect = Envir.Ty_param_refine.top in
+    let expect = Ok (Refinement.replace_with ty_expect ty_param_refine_expect) in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "existential as test, case 1" `Quick test
+  ;;
+
+  let case_2 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class
+              "J"
+              ~args:
+                [ ( mk_generic "T"
+                  , Variance.Inv
+                  , Ty.Param_bounds.create
+                      ~lower:(Ty.nothing Prov.empty)
+                      ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
+                      ()
+                  , Loc.empty )
+                ]
+              ()
+          ; mk_class "A" ()
+          ])
+    in
+    let ty_param = Envir.Ty_param.empty in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* scrutinee & test types *)
+    let t_scrut = ty_param_nm "T" in
+    let param_bounds_scrut = Ty.Param_bounds.top Prov.empty in
+    let ty_scrut =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_scrut () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty t_scrut ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let param_bounds_test =
+      let lower = Ty.nothing Prov.empty
+      and upper = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
+      Ty.Param_bounds.create ~lower ~upper ()
+    in
+    let ty_test =
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let body = Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    (* expected result *)
+    let ty_expect =
+      let body =
+        let quants = [ Ty.Param.create ~name:(ty_param_nm "T#2") ~param_bounds:param_bounds_test () ] in
+        let body =
+          Ty.inter
+            ~prov:Prov.(refines ~prov_scrut:Prov.empty ~prov_test:Prov.empty)
+            [ Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#1" ]
+            ; Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#2" ]
+            ]
+        in
+        Ty.exists Prov.empty ~quants ~body
+      in
+      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds:param_bounds_scrut () ] in
+      Ty.exists Prov.empty ~quants ~body
+    in
+    let ty_param_refine_expect = Envir.Ty_param_refine.top in
+    let expect = Ok (Refinement.replace_with ty_expect ty_param_refine_expect) in
+    let test () = Alcotest.check result "" (Refinement.refine ~ty_scrut ~ty_test ~ctxt) expect in
+    Alcotest.test_case "existential as test, case 2" `Quick test
   ;;
 
   let test_cases = [ case_1; case_2 ]
@@ -1180,7 +1520,100 @@ module Hack_comparison = struct
     Alcotest.test_case "refinement / hack comparison case 3" `Quick test
   ;;
 
-  let test_cases = [ case_1; case_2; case_3 ]
+  (*
+     class Bigly {}
+    class Small extends Bigly {}
+
+    interface ICovContrav<+T1, -T2> {}
+
+    class C<T> implements ICovContrav<T, T> {}
+
+    function refine<T1 as Big, T2 super Small>(
+      ICovContrav<T1, T2> $i,
+    ): ?ICovContrav<T1, T2> {
+      if ($i is C<_>) {
+        hh_show_env();
+      }
+      return null;
+
+    }
+  *)
+  let case_4 =
+    (* Set up context *)
+    let oracle =
+      Oracle.(
+        add_classishes_exn
+          empty
+          [ ctor_nm "Bigly", [], []
+          ; ctor_nm "Small", [], [ ctor_nm "Bigly", [] ]
+          ; ( Name.Ctor.Ctor "ICovContrav"
+            , [ Name.Ty_param.Ty_param "TCov", Variance.cov, Ty.Param_bounds.top Prov.empty, Loc.empty
+              ; Name.Ty_param.Ty_param "TContrav", Variance.contrav, Ty.Param_bounds.top Prov.empty, Loc.empty
+              ]
+            , [] )
+          ; ( Name.Ctor.Ctor "C"
+            , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+            , [ ( ctor_nm "ICovContrav"
+                , Ty.[ generic Prov.empty (ty_param_nm "T"); generic Prov.empty (ty_param_nm "T") ] )
+              ] )
+          ])
+    in
+    let small = Ty.ctor Prov.empty ~name:(ctor_nm "Small") ~args:[]
+    and bigly = Ty.ctor Prov.empty ~name:(ctor_nm "Bigly") ~args:[] in
+    let t_scrut1 = Name.Ty_param.Ty_param "Tscrut1" in
+    let t_scrut1_bounds = Ty.Param_bounds.create ~lower:(Ty.nothing Prov.empty) ~upper:bigly () in
+    let t_scrut2 = Name.Ty_param.Ty_param "Tscrut2" in
+    let t_scrut2_bounds = Ty.Param_bounds.create ~upper:(Ty.mixed Prov.empty) ~lower:small () in
+    let t_test = Name.Ty_param.Ty_param "Ttest" in
+    let t_test_bounds = Ty.Param_bounds.create ~lower:small ~upper:bigly () in
+    let ty_param =
+      Envir.Ty_param.(bind (bind (bind empty t_scrut1 t_scrut1_bounds) t_scrut2 t_scrut2_bounds) t_test t_test_bounds)
+    in
+    let ty_param_refine = Envir.Ty_param_refine.empty in
+    let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
+    (* Scrutinee and test type *)
+    let ty_scrut =
+      Ty.ctor
+        Prov.empty
+        ~name:(ctor_nm "ICovContrav")
+        ~args:Ty.[ generic Prov.empty t_scrut1; generic Prov.empty t_scrut2 ]
+    in
+    let ty_test = Ty.ctor Prov.empty ~name:(ctor_nm "C") ~args:[ Ty.generic Prov.empty t_test ] in
+    (* Expected type parameter refinement *)
+    let expect =
+      let bnds_scrut =
+        Ty.Param_bounds.create
+          ~lower:Ty.(union [ small; small ] ~prov:Prov.empty)
+          ~upper:Ty.(inter [ bigly; bigly ] ~prov:Prov.empty)
+          ()
+      in
+      let bnds_test =
+        let ty_t_scrut = Ty.generic Prov.empty t_scrut1 in
+        Ty.Param_bounds.create
+          ~lower:Ty.(union [ ty_t_scrut; ty_t_scrut ] ~prov:Prov.empty)
+          ~upper:Ty.(inter [ ty_t_scrut; ty_t_scrut ] ~prov:Prov.empty)
+          ()
+      in
+      Ok
+        (Refinement.replace_with
+           Ty.(
+             ctor
+               Prov.empty
+               ~name:(ctor_nm "C")
+               ~args:[ inter [ generic Prov.empty t_test; generic Prov.empty t_test ] ~prov:Prov.empty ])
+           Envir.Ty_param_refine.(bounds @@ Name.Ty_param.Map.of_alist_exn [ t_scrut1, bnds_scrut; t_test, bnds_test ]))
+    in
+    let test () =
+      Alcotest.check
+        result
+        "\ninterface I<T>\nclass A implements I<Four> {}\nI<Ta> ↓ A = { nothing <= Ta <= Four }\n"
+        (Refinement.refine ~ty_scrut ~ty_test ~ctxt)
+        expect
+    in
+    Alcotest.test_case "refinement / hack comparison case 4" `Quick test
+  ;;
+
+  let test_cases = [ case_1; case_2; case_3; case_4 ]
 end
 
 let test_cases =
@@ -1189,8 +1622,12 @@ let test_cases =
     ; Invariant_class_impl_covariant.test_cases
     ; Non_generic_class_impl_covariant.test_cases
     ; Nested.test_cases
-    ; Union.test_cases
-    ; Intersection.test_cases
+    ; Union_scrut.test_cases
+    ; Union_test.test_cases
+    ; Intersection_scrut.test_cases
+    ; Intersection_test.test_cases
+    ; Existential_test.test_cases
+    ; Existential_both.test_cases
     ; Hack_comparison.test_cases
     ]
 ;;

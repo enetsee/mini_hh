@@ -440,7 +440,7 @@ and Param : sig
     { name : Name.Ty_param.t
     ; param_bounds : Param_bounds.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 
   type 'a ops =
     { on_name : 'a -> Name.Ty_param.t -> 'a
@@ -455,7 +455,7 @@ end = struct
     { name : Name.Ty_param.t
     ; param_bounds : Param_bounds.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 
   type 'a ops =
     { on_name : 'a -> Name.Ty_param.t -> 'a

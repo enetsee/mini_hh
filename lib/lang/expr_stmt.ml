@@ -5,35 +5,74 @@ open Reporting
 module rec Expr_node : sig
   type t =
     | Lit of Lit.t
-    | Local of Name.Tm_var.t
+    | Local of Name.Tm_var.t Located.t
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
     | Unary of Unary.t
+    | Lambda of Lambda.t
   [@@deriving eq, compare, sexp, show]
 end = struct
   type t =
     | Lit of Lit.t
-    | Local of Name.Tm_var.t
+    | Local of Name.Tm_var.t Located.t
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
     | Unary of Unary.t
+    | Lambda of Lambda.t
   [@@deriving eq, compare, sexp, show]
 end
 
 and Expr : sig
+  type t = Expr_node.t Located.t [@@deriving eq, compare, sexp, show]
+end = struct
+  type t = Expr_node.t Located.t [@@deriving eq, compare, sexp, show]
+end
+
+(* ~~ Lambdas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Lambda : sig
   type t =
-    { node : Expr_node.t
-    ; loc : Loc.t
+    { signature : Lambda_sig.t Located.t
+    ; body : Seq.t Located.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving compare, create, eq, sexp, show]
 end = struct
   type t =
-    { node : Expr_node.t
-    ; loc : Loc.t
+    { signature : Lambda_sig.t Located.t
+    ; body : Seq.t Located.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving compare, create, eq, sexp, show]
+end
+
+and Lambda_sig : sig
+  type t =
+    { params : Fn_params_def.t Located.t
+    ; return : Ty.t
+    }
+  [@@deriving compare, create, eq, sexp, show]
+end = struct
+  type t =
+    { params : Fn_params_def.t Located.t
+    ; return : Ty.t
+    }
+  [@@deriving compare, create, eq, sexp, show]
+end
+
+and Fn_params_def : sig
+  type t =
+    { required : Fn_param_def.t Located.t list
+    ; optional : (Fn_param_def.t Located.t * Expr.t) Located.t list
+    ; variadic : Fn_param_def.t Located.t option
+    }
+  [@@deriving compare, create, eq, sexp, show]
+end = struct
+  type t =
+    { required : Fn_param_def.t Located.t list
+    ; optional : (Fn_param_def.t Located.t * Expr.t) Located.t list
+    ; variadic : Fn_param_def.t Located.t option
+    }
+  [@@deriving compare, create, eq, sexp, show]
 end
 
 (* ~~ Is refinements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -48,7 +87,7 @@ end = struct
     { scrut : Expr.t
     ; ty_test : Ty.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving compare, create, eq, sexp, show]
 end
 
 (* ~~ As refinements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -118,17 +157,9 @@ end = struct
 end
 
 and Stmt : sig
-  type t =
-    { node : Stmt_node.t
-    ; loc : Loc.t
-    }
-  [@@deriving eq, compare, sexp, show]
+  type t = Stmt_node.t Located.t [@@deriving eq, compare, sexp, show]
 end = struct
-  type t =
-    { node : Stmt_node.t
-    ; loc : Loc.t
-    }
-  [@@deriving eq, compare, sexp, show]
+  type t = Stmt_node.t Located.t [@@deriving eq, compare, sexp, show]
 end
 
 (* ~~ Assigment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

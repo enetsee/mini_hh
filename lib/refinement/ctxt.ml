@@ -4,8 +4,17 @@ type t =
   { ty_param : Envir.Ty_param.t
   ; ty_param_refine : Envir.Ty_param_refine.t
   ; oracle : Oracle.t
+  ; ty_param_source : int
   }
 [@@deriving create, show]
+
+let create = create ~ty_param_source:0
+
+let fresh_generics ({ ty_param_source; _ } as t) n =
+  let ty_param_source = ty_param_source + n in
+  ( { t with ty_param_source }
+  , List.init n ~f:(fun n -> Name.Ty_param.of_string @@ Format.sprintf "T#%n" (ty_param_source + n)) )
+;;
 
 let param_bounds { ty_param; ty_param_refine; _ } id =
   Option.map ~f:(fun bounds ->
