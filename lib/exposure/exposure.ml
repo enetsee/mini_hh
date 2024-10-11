@@ -1,5 +1,6 @@
 open Core
 open Common
+open Lang
 module Err = Err
 
 exception Exposure of Err.t list
@@ -110,15 +111,16 @@ and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
   match Oracle.find_ctor oracle name with
   | Some (params, supers) ->
     let invariant_params =
-      List.filter_map params ~f:(fun (id, var, _, _) -> if Variance.is_inv var then Some id else None)
+      List.filter_map params ~f:(fun Ty_param_def.{ name; variance; _ } ->
+        if Variance.is_inv variance.elem then Some name.elem else None)
     in
     if List.is_empty invariant_params
     then
       (* There are no invariant type parameters we can promote / demote each argument *)
       Result.map ~f:(fun args -> Ty.ctor prov ~name ~args)
       @@ collect_list
-      @@ List.map2_exn args params ~f:(fun ty (_, var, _, _) ->
-        match var with
+      @@ List.map2_exn args params ~f:(fun ty Ty_param_def.{ variance; _ } ->
+        match variance.elem with
         | Variance.Inv -> failwith "impossible"
         | Variance.Cov -> promote_help ty ty_params ~dir ~oracle
         | Variance.Contrav -> promote_help ty ty_params ~dir:(flip dir) ~oracle)

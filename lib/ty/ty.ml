@@ -437,13 +437,13 @@ end
 
 and Param : sig
   type t =
-    { name : Name.Ty_param.t
+    { name : Name.Ty_param.t Located.t
     ; param_bounds : Param_bounds.t
     }
   [@@deriving eq, compare, create, sexp, show]
 
   type 'a ops =
-    { on_name : 'a -> Name.Ty_param.t -> 'a
+    { on_name : 'a -> Name.Ty_param.t Located.t -> 'a
     ; on_param_bounds : 'a -> Param_bounds.t -> 'a
     }
 
@@ -452,13 +452,13 @@ and Param : sig
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
   type t =
-    { name : Name.Ty_param.t
+    { name : Name.Ty_param.t Located.t
     ; param_bounds : Param_bounds.t
     }
   [@@deriving eq, compare, create, sexp, show]
 
   type 'a ops =
-    { on_name : 'a -> Name.Ty_param.t -> 'a
+    { on_name : 'a -> Name.Ty_param.t Located.t -> 'a
     ; on_param_bounds : 'a -> Param_bounds.t -> 'a
     }
 

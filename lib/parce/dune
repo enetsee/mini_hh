@@ -1,5 +1,5 @@
 (library
- (name parser)
+ (name parce)
  (libraries core str fmt menhirLib common reporting name ty lang)
  (inline_tests)
  (preprocess
@@ -34,6 +34,9 @@
    (run
     menhir
     --explain
+    --inspection
+    --table
+    --dump
     --strict
     --unused-tokens
     program.mly

@@ -1,3 +1,9 @@
 open Core
 
-type t = Bool of bool [@@deriving eq, show, compare, sexp, variants]
+type t =
+  | Lnum of string
+  | Dnum of string
+  | Bool of bool
+  | Const_string of string
+  | Null
+[@@deriving eq, show, compare, sexp, variants]

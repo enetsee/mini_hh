@@ -7,167 +7,171 @@
  *
  *)
 %{
+  open Reporting
+  open Common
+  open Lang
 %}
 
 (* Tokens *)
 
 %token EOF                      (* end of file            *)
-%token INCLUDE                  (* include                *)
-%token INCLUDE_ONCE             (* include_once           *)
-%token EVAL                     (* eval                   *)
-%token REQUIRE                  (* require                *)
-%token REQUIRE_ONCE             (* require_once           *)
-%token LOGICAL_OR               (* or                     *)
-%token LOGICAL_XOR              (* xor                    *)
-%token LOGICAL_AND              (* and                    *)
-%token PRINT                    (* print                  *)
-%token YIELD                    (* yield                  *)
-%token YIELD_FROM               (* yield from             *)
-%token PLUS_EQUAL               (* +=                     *)
-%token MINUS_EQUAL              (* -=                     *)
-%token MUL_EQUAL                (* *=                     *)
-%token DIV_EQUAL                (* /=                     *)
-%token CONCAT_EQUAL             (* .=                     *)
-%token MOD_EQUAL                (* %=                     *)
-%token AND_EQUAL                (* &=                     *)
-%token OR_EQUAL                 (* |=                     *)
-%token XOR_EQUAL                (* ^=                     *)
-%token SHL_EQUAL                (* <<=                    *)
-%token SHR_EQUAL                (* >>=                    *)
-%token BOOLEAN_OR               (* ||                     *)
-%token BOOLEAN_AND              (* &&                     *)
-%token IS_EQUAL                 (* ==                     *)
-%token IS_NOT_EQUAL             (* !=                     *)
-%token IS_IDENTICAL             (* ===                    *)
-%token IS_NOT_IDENTICAL         (* !==                    *)
-%token IS_SMALLER_OR_EQUAL      (* <=                     *)
-%token IS_GREATER_OR_EQUAL      (* >=                     *)
-%token SPACESHIP                (* <=>                    *)
-%token SHL                      (* <<                     *)
-%token SHR_PREFIX               (* >> (SHR_PREFIX RANGLE) *)
-%token INSTANCEOF               (* instanceof             *)
-%token INC                      (* ++                     *)
-%token DEC                      (* --                     *)
-%token INT_CAST                 (* (int)                  *)
-%token DOUBLE_CAST              (* (double)               *)
-%token STRING_CAST              (* (string)               *)
-%token ARRAY_CAST               (* (array)                *)
-%token OBJECT_CAST              (* (object)               *)
-%token BOOL_CAST                (* (bool)                 *)
-%token UNSET_CAST               (* (unset)                *)
-%token NEW                      (* new                    *)
-%token CLONE                    (* clone                  *)
-%token EXIT                     (* exit                   *)
-%token IF                       (* if                     *)
-%token ELSEIF                   (* elseif                 *)
-%token ELSE                     (* else                   *)
-%token ENDIF                    (* endif                  *)
-%token ECHO                     (* echo                   *)
-%token DO                       (* do                     *)
-%token WHILE                    (* while                  *)
-%token FOR                      (* for                    *)
-%token FOREACH                  (* foreach                *)
-%token DECLARE                  (* declare                *)
-%token AS                       (* as                     *)
-%token SWITCH                   (* switch                 *)
-%token CASE                     (* case                   *)
-%token DEFAULT                  (* default                *)
-%token BREAK                    (* break                  *)
-%token CONTINUE                 (* continue               *)
-%token GOTO                     (* goto                   *)
-%token FUNCTION                 (* function               *)
-%token CONST                    (* const                  *)
-%token RETURN                   (* return                 *)
-%token TRY                      (* try                    *)
-%token CATCH                    (* catch                  *)
-%token FINALLY                  (* finally                *)
-%token THROW                    (* throw                  *)
-%token USE                      (* use                    *)
-%token INSTEADOF                (* insteadof              *)
-%token GLOBAL                   (* global                 *)
-%token STATIC                   (* static                 *)
-%token ABSTRACT                 (* abstract               *)
-%token FINAL                    (* final                  *)
-%token PRIVATE                  (* private                *)
-%token PROTECTED                (* protected              *)
-%token PUBLIC                   (* public                 *)
-%token VAR                      (* var                    *)
-%token UNSET                    (* unset                  *)
-%token ISSET                    (* isset                  *)
-%token EMPTY                    (* empty                  *)
-%token HALT_COMPILER            (* __halt_compiler        *)
-%token CLASS                    (* class                  *)
-%token TRAIT                    (* trait                  *)
-%token ENUM                     (* enum                   *)
-%token INTERFACE                (* interface              *)
-%token EXTENDS                  (* extends                *)
-%token IMPLEMENTS               (* implements             *)
-%token ARROW                    (* ->                     *)
-%token QUESTION_ARROW           (* ?->                    *)
-%token DOUBLE_ARROW             (* =>                     *)
-%token LONG_DOUBLE_ARROW        (* ==>                    *)
-%token LIST                     (* list                   *)
-%token ARRAY                    (* array                  *)
-%token CALLABLE                 (* callable               *)
-%token LINE                     (* __LINE__               *)
-%token FILE                     (* __FILE__               *)
-%token DIR                      (* __DIR__                *)
-%token CLASS_C                  (* __CLASS__              *)
-%token TRAIT_C                  (* __TRAIT__              *)
-%token METHOD_C                 (* __METHOD__             *)
-%token FUNC_C                   (* __FUNCTION__           *)
+%token<Reporting.Span.t> INCLUDE                  (* include                *)
+%token<Reporting.Span.t> INCLUDE_ONCE             (* include_once           *)
+%token<Reporting.Span.t> EVAL                     (* eval                   *)
+%token<Reporting.Span.t> REQUIRE                  (* require                *)
+%token<Reporting.Span.t> REQUIRE_ONCE             (* require_once           *)
+%token<Reporting.Span.t> LOGICAL_OR               (* or                     *)
+%token<Reporting.Span.t> LOGICAL_XOR              (* xor                    *)
+%token<Reporting.Span.t> LOGICAL_AND              (* and                    *)
+%token<Reporting.Span.t> PRINT                    (* print                  *)
+%token<Reporting.Span.t> YIELD                    (* yield                  *)
+%token<Reporting.Span.t> YIELD_FROM               (* yield from             *)
+%token<Reporting.Span.t> PLUS_EQUAL               (* +=                     *)
+%token<Reporting.Span.t> MINUS_EQUAL              (* -=                     *)
+%token<Reporting.Span.t> MUL_EQUAL                (* *=                     *)
+%token<Reporting.Span.t> DIV_EQUAL                (* /=                     *)
+%token<Reporting.Span.t> CONCAT_EQUAL             (* .=                     *)
+%token<Reporting.Span.t> MOD_EQUAL                (* %=                     *)
+%token<Reporting.Span.t> AND_EQUAL                (* &=                     *)
+%token<Reporting.Span.t> OR_EQUAL                 (* |=                     *)
+%token<Reporting.Span.t> XOR_EQUAL                (* ^=                     *)
+%token<Reporting.Span.t> SHL_EQUAL                (* <<=                    *)
+%token<Reporting.Span.t> SHR_EQUAL                (* >>=                    *)
+%token<Reporting.Span.t> BOOLEAN_OR               (* ||                     *)
+%token<Reporting.Span.t> BOOLEAN_AND              (* &&                     *)
+%token<Reporting.Span.t> IS_EQUAL                 (* ==                     *)
+%token<Reporting.Span.t> IS_NOT_EQUAL             (* !=                     *)
+%token<Reporting.Span.t> IS_IDENTICAL             (* ===                    *)
+%token<Reporting.Span.t> IS_NOT_IDENTICAL         (* !==                    *)
+%token<Reporting.Span.t> IS_SMALLER_OR_EQUAL      (* <=                     *)
+%token<Reporting.Span.t> IS_GREATER_OR_EQUAL      (* >=                     *)
+%token<Reporting.Span.t> SPACESHIP                (* <=>                    *)
+%token<Reporting.Span.t> SHL                      (* <<                     *)
+%token<Reporting.Span.t> SHR_PREFIX               (* >> (SHR_PREFIX RANGLE) *)
+%token<Reporting.Span.t> INSTANCEOF               (* instanceof             *)
+%token<Reporting.Span.t> INC                      (* ++                     *)
+%token<Reporting.Span.t> DEC                      (* --                     *)
+%token<Reporting.Span.t> INT_CAST                 (* (int)                  *)
+%token<Reporting.Span.t> DOUBLE_CAST              (* (double)               *)
+%token<Reporting.Span.t> STRING_CAST              (* (string)               *)
+%token<Reporting.Span.t> ARRAY_CAST               (* (array)                *)
+%token<Reporting.Span.t> OBJECT_CAST              (* (object)               *)
+%token<Reporting.Span.t> BOOL_CAST                (* (bool)                 *)
+%token<Reporting.Span.t> UNSET_CAST               (* (unset)                *)
+%token<Reporting.Span.t> NEW                      (* new                    *)
+%token<Reporting.Span.t> CLONE                    (* clone                  *)
+%token<Reporting.Span.t> EXIT                     (* exit                   *)
+%token<Reporting.Span.t> IF                       (* if                     *)
+%token<Reporting.Span.t> ELSEIF                   (* elseif                 *)
+%token<Reporting.Span.t> ELSE                     (* else                   *)
+%token<Reporting.Span.t> ENDIF                    (* endif                  *)
+%token<Reporting.Span.t> ECHO                     (* echo                   *)
+%token<Reporting.Span.t> DO                       (* do                     *)
+%token<Reporting.Span.t> WHILE                    (* while                  *)
+%token<Reporting.Span.t> FOR                      (* for                    *)
+%token<Reporting.Span.t> FOREACH                  (* foreach                *)
+%token<Reporting.Span.t> DECLARE                  (* declare                *)
+%token<Reporting.Span.t> AS                       (* as                     *)
+%token<Reporting.Span.t> SWITCH                   (* switch                 *)
+%token<Reporting.Span.t> CASE                     (* case                   *)
+%token<Reporting.Span.t> DEFAULT                  (* default                *)
+%token<Reporting.Span.t> BREAK                    (* break                  *)
+%token<Reporting.Span.t> CONTINUE                 (* continue               *)
+%token<Reporting.Span.t> GOTO                     (* goto                   *)
+%token<Reporting.Span.t> FUNCTION                 (* function               *)
+%token<Reporting.Span.t> CONST                    (* const                  *)
+%token<Reporting.Span.t> RETURN                   (* return                 *)
+%token<Reporting.Span.t> TRY                      (* try                    *)
+%token<Reporting.Span.t> CATCH                    (* catch                  *)
+%token<Reporting.Span.t> FINALLY                  (* finally                *)
+%token<Reporting.Span.t> THROW                    (* throw                  *)
+%token<Reporting.Span.t> USE                      (* use                    *)
+%token<Reporting.Span.t> INSTEADOF                (* insteadof              *)
+%token<Reporting.Span.t> GLOBAL                   (* global                 *)
+%token<Reporting.Span.t> STATIC                   (* static                 *)
+%token<Reporting.Span.t> ABSTRACT                 (* abstract               *)
+%token<Reporting.Span.t> FINAL                    (* final                  *)
+%token<Reporting.Span.t> PRIVATE                  (* private                *)
+%token<Reporting.Span.t> PROTECTED                (* protected              *)
+%token<Reporting.Span.t> PUBLIC                   (* public                 *)
+%token<Reporting.Span.t> VAR                      (* var                    *)
+%token<Reporting.Span.t> UNSET                    (* unset                  *)
+%token<Reporting.Span.t> ISSET                    (* isset                  *)
+%token<Reporting.Span.t> EMPTY                    (* empty                  *)
+%token<Reporting.Span.t> HALT_COMPILER            (* __halt_compiler        *)
+%token<Reporting.Span.t> CLASS                    (* class                  *)
+%token<Reporting.Span.t> TRAIT                    (* trait                  *)
+%token<Reporting.Span.t> ENUM                     (* enum                   *)
+%token<Reporting.Span.t> INTERFACE                (* interface              *)
+%token<Reporting.Span.t> EXTENDS                  (* extends                *)
+%token<Reporting.Span.t> IMPLEMENTS               (* implements             *)
+%token<Reporting.Span.t> ARROW                    (* ->                     *)
+%token<Reporting.Span.t> QUESTION_ARROW           (* ?->                    *)
+%token<Reporting.Span.t> DOUBLE_ARROW             (* =>                     *)
+%token<Reporting.Span.t> LONG_DOUBLE_ARROW        (* ==>                    *)
+%token<Reporting.Span.t> LIST                     (* list                   *)
+%token<Reporting.Span.t> ARRAY                    (* array                  *)
+%token<Reporting.Span.t> CALLABLE                 (* callable               *)
+%token<Reporting.Span.t> LINE                     (* __LINE__               *)
+%token<Reporting.Span.t> FILE                     (* __FILE__               *)
+%token<Reporting.Span.t> DIR                      (* __DIR__                *)
+%token<Reporting.Span.t> CLASS_C                  (* __CLASS__              *)
+%token<Reporting.Span.t> TRAIT_C                  (* __TRAIT__              *)
+%token<Reporting.Span.t> METHOD_C                 (* __METHOD__             *)
+%token<Reporting.Span.t> FUNC_C                   (* __FUNCTION__           *)
 %token COMMENT                  (* comment                *)
 %token DOC_COMMENT              (* doc comment            *)
-%token OPEN_TAG                 (* open tag               *)
-%token OPEN_TAG_WITH_ECHO       (* open tag with echo     *)
-%token CLOSE_TAG                (* close tag              *)
-%token CLOSE_TAG_OF_ECHO        (* close tag              *)
+%token<Reporting.Span.t> OPEN_TAG                 (* open tag               *)
+%token<Reporting.Span.t> OPEN_TAG_WITH_ECHO       (* open tag with echo     *)
+%token<Reporting.Span.t> CLOSE_TAG                (* close tag              *)
+%token<Reporting.Span.t> CLOSE_TAG_OF_ECHO        (* close tag              *)
 %token SPACES NEWLINE           (* whitespace             *)
 %token START_HEREDOC            (* heredoc start          *)
 %token END_HEREDOC              (* heredoc end            *)
-%token DOLLAR_OPEN_CURLY_BRACES (* ${                     *)
-%token CURLY_OPEN               (* {$                     *)
-%token COLONCOLON               (* ::                     *)
-%token NAMESPACE                (* namespace              *)
-%token NAMESPACE_C              (* __NAMESPACE__          *)
-%token ANTISLASH                (* \\                     *)
-%token ELLIPSIS                 (* ...                    *)
-%token COALESCE                 (* ??                     *)
-%token POW                      (* **                     *)
-%token POW_EQUAL                (* **=                    *)
-%token EQUAL                    (* '='                    *)
-%token CONCAT                   (* '.'                    *)
-%token PLUS                     (* '+'                    *)
-%token COMMA                    (* ','                    *)
-%token QUESTION                 (* '?'                    *)
-%token COLON                    (* ':'                    *)
-%token OR                       (* '|'                    *)
-%token MINUS                    (* '-'                    *)
-%token MUL                      (* '*'                    *)
-%token DIV                      (* '/'                    *)
-%token MOD                      (* '%'                    *)
-%token BANG                     (* '!'                    *)
-%token LPAREN                   (* '('                    *)
-%token RPAREN                   (* ')'                    *)
-%token LBRACKET                 (* '['                    *)
-%token RBRACKET                 (* ']'                    *)
-%token LBRACE                   (* '{'                    *)
-%token RBRACE                   (* '}'                    *)
-%token LANGLE                   (* '<'                    *)
-%token RANGLE                   (* '>'                    *)
-%token XOR                      (* '^'                    *)
-%token AND                      (* '&'                    *)
-%token SEMICOLON                (* ';'                    *)
-%token AT                       (* '@'                    *)
-%token BACKQUOTE                (* '`'                    *)
-%token DOUBLEQUOTE              (* '"'                    *)
-%token DOLLAR                   (* '$'                    *)
-%token DOLLARDOLLAR             (* '$$'                   *)
-%token TILDE                    (* '~'                    *)
+%token<Reporting.Span.t> DOLLAR_OPEN_CURLY_BRACES (* ${                     *)
+%token<Reporting.Span.t> CURLY_OPEN               (* {$                     *)
+%token<Reporting.Span.t> COLONCOLON               (* ::                     *)
+%token<Reporting.Span.t> NAMESPACE                (* namespace              *)
+%token<Reporting.Span.t> NAMESPACE_C              (* __NAMESPACE__          *)
+%token<Reporting.Span.t> ANTISLASH                (* \\                     *)
+%token<Reporting.Span.t> ELLIPSIS                 (* ...                    *)
+%token<Reporting.Span.t> COALESCE                 (* ??                     *)
+%token<Reporting.Span.t> POW                      (* **                     *)
+%token<Reporting.Span.t> POW_EQUAL                (* **=                    *)
+%token<Reporting.Span.t> EQUAL                    (* '='                    *)
+%token<Reporting.Span.t> CONCAT                   (* '.'                    *)
+%token<Reporting.Span.t> PLUS                     (* '+'                    *)
+%token<Reporting.Span.t> COMMA                    (* ','                    *)
+%token<Reporting.Span.t> QUESTION                 (* '?'                    *)
+%token<Reporting.Span.t> COLON                    (* ':'                    *)
+%token<Reporting.Span.t> OR                       (* '|'                    *)
+%token<Reporting.Span.t> MINUS                    (* '-'                    *)
+%token<Reporting.Span.t> MUL                      (* '*'                    *)
+%token<Reporting.Span.t> DIV                      (* '/'                    *)
+%token<Reporting.Span.t> MOD                      (* '%'                    *)
+%token<Reporting.Span.t> BANG                     (* '!'                    *)
+%token<Reporting.Span.t> LPAREN                   (* '('                    *)
+%token<Reporting.Span.t> RPAREN                   (* ')'                    *)
+%token<Reporting.Span.t> LBRACKET                 (* '['                    *)
+%token<Reporting.Span.t> RBRACKET                 (* ']'                    *)
+%token<Reporting.Span.t> LBRACE                   (* '{'                    *)
+%token<Reporting.Span.t> RBRACE                   (* '}'                    *)
+%token<Reporting.Span.t> LANGLE                   (* '<'                    *)
+%token<Reporting.Span.t> RANGLE                   (* '>'                    *)
+%token<Reporting.Span.t> XOR                      (* '^'                    *)
+%token<Reporting.Span.t> AND                      (* '&'                    *)
+%token<Reporting.Span.t> SEMICOLON                (* ';'                    *)
+%token<Reporting.Span.t> AT                       (* '@'                    *)
+%token<Reporting.Span.t> BACKQUOTE                (* '`'                    *)
+%token<Reporting.Span.t> DOUBLEQUOTE              (* '"'                    *)
+%token<Reporting.Span.t> DOLLAR                   (* '$'                    *)
+%token<Reporting.Span.t> DOLLARDOLLAR             (* '$$'                   *)
+%token<Reporting.Span.t> TILDE                    (* '~'                    *)
 
 (* Extensions *)
-%token
-  SELF PARENT ASYNC AWAIT TYPE NEWTYPE SHAPE PIPE_ANGLE UNKNOWN
+%token UNKNOWN
+%token<Reporting.Span.t>
+  SELF PARENT ASYNC AWAIT TYPE NEWTYPE SHAPE PIPE_ANGLE 
   XHP_ATTRIBUTE XHP_CHILDREN XHP_CATEGORY XHP_ANY XHP_PCDATA XHP_REQUIRED
   XHP_SLASH_GT XHP_GT FORK
   IS (* is *)
@@ -184,9 +188,9 @@
 
 %token<bool ref> FORK_LANGLE
 
-%token<string> XHP_ATTR XHP_TEXT
-%token<string list> XHP_COLONID_DEF XHP_PERCENTID_DEF XHP_OPEN_TAG
-%token<string list option> XHP_CLOSE_TAG
+%token<string * Reporting.Span.t> XHP_ATTR XHP_TEXT
+%token<string list * Reporting.Span.t> XHP_COLONID_DEF XHP_PERCENTID_DEF XHP_OPEN_TAG
+%token<string list option * Reporting.Span.t> XHP_CLOSE_TAG
 
 %left INCLUDE INCLUDE_ONCE REQUIRE REQUIRE_ONCE
 %left LOGICAL_OR
@@ -228,47 +232,47 @@
 %left ELSEIF
 %left ELSE
 
-%token <string> LNUMBER   (* integer number 42 (LNUMBER) *)
-%token <string> DNUMBER   (* floating-point number 42.00 (DNUMBER) *)
-%token <string> IDENT     (* identifier "foo" (IDENT) *)
-%token <string> VARIABLE  (* variable "$foo" (VARIABLE) *)
-%token <string> INLINE_HTML
-%token <string> ENCAPSED_AND_WHITESPACE
+%token <string * Reporting.Span.t> LNUMBER   (* integer number 42 (LNUMBER) *)
+%token <string * Reporting.Span.t > DNUMBER   (* floating-point number 42.00 (DNUMBER) *)
+%token <string * Reporting.Span.t> IDENT     (* identifier "foo" (IDENT) *)
+%token <string * Reporting.Span.t> VARIABLE  (* variable "$foo" (VARIABLE) *)
+%token <string * Reporting.Span.t> INLINE_HTML
+%token <string * Reporting.Span.t > ENCAPSED_AND_WHITESPACE
     (* quoted-string and whitespace (ENCAPSED_AND_WHITESPACE) *)
-%token <string> CONSTANT_ENCAPSED_STRING
+%token <string * Reporting.Span.t> CONSTANT_ENCAPSED_STRING
     (* quoted-string (CONSTANT_ENCAPSED_STRING) *)
-%token <string> VARNAME (* ${ varname } (VARNAME) *)
-%token <string> NUM_STRING (* number (NUM_STRING) *)
+%token <string * Reporting.Span.t> VARNAME (* ${ varname } (VARNAME) *)
+%token <string * Reporting.Span.t> NUM_STRING (* number (NUM_STRING) *)
 
-%start<unit> start
+%start<Lang.Def.t list> start
 %start<unit> dummy
 
 %% (* Rules *)
 
 start:
-| top_statement* EOF { () }
+| top_statement* EOF { $1 }
 ;
 
 top_statement:
-| statement                                    { () }
-| declaration                                  { () }
-| HALT_COMPILER LPAREN RPAREN SEMICOLON        { () }
-| NAMESPACE namespace_name SEMICOLON           { () }
-| NAMESPACE namespace_name LBRACE top_statement* RBRACE { () }
-| NAMESPACE LBRACE top_statement* RBRACE       { () }
-| USE NAMESPACE? mixed_group_use_declaration SEMICOLON    { () }
-| USE NAMESPACE? use_modifier group_use_declaration SEMICOLON { () }
-| USE NAMESPACE? comma_list(use_declaration) SEMICOLON    { () }
-| USE NAMESPACE? use_modifier comma_list(use_declaration) SEMICOLON { () }
-| CONST comma_list(constant_declaration) SEMICOLON       { () }
+| declaration                                  { $1 }
+| statement                                    { Def.dummy "stmt" }
+| HALT_COMPILER LPAREN RPAREN SEMICOLON        { Def.dummy "compiler"}
+| NAMESPACE namespace_name SEMICOLON           { Def.dummy "namespace;"} 
+| NAMESPACE namespace_name LBRACE top_statement* RBRACE { Def.dummy "namespace XXX {...}" }
+| NAMESPACE LBRACE top_statement* RBRACE       { Def.dummy "namespace {...}" }
+| USE NAMESPACE? mixed_group_use_declaration SEMICOLON    { Def.dummy "mixed group use"}
+| USE NAMESPACE? use_modifier group_use_declaration SEMICOLON { Def.dummy "use ..."}
+| USE NAMESPACE? comma_list(use_declaration) SEMICOLON    { Def.dummy "use,use,use" }
+| USE NAMESPACE? use_modifier comma_list(use_declaration) SEMICOLON { Def.dummy "use use,use,use"}
+| CONST comma_list(constant_declaration) SEMICOLON       { Def.dummy "consts"}
 ;
 
 (* Identifiers *)
 
 identifier:
-| IDENT           { () }
-| XHP_COLONID_DEF { () }
-| semi_reserved   { () }
+| IDENT           { $1 }
+| XHP_COLONID_DEF { failwith "" }
+| semi_reserved   { $1 }
 ;
 
 name:
@@ -328,24 +332,30 @@ attributes:
 (* Declarations *)
 
 declaration:
-| attributes         { () }
-| declare_function   { () }
-| declare_class      { () }
-| declare_trait      { () }
-| declare_interface  { () }
-| declare_enum       { () }
-| declare_type       { () }
+| attributes         { Def.dummy "attributs"}
+| declare_function   { Def.dummy "function" }
+| declare_class      { Lang.Def.cls $1 }
+| declare_trait      { Def.dummy "trait"}
+| declare_interface  { Def.dummy "interface" }
+| declare_enum       { Def.dummy "enum" }
+| declare_type       { Def.dummy "class" }
 ;
 
 declare_function:
-| ASYNC declare_function { () }
-| COROUTINE declare_function { () }
+| ASYNC fn=declare_function { fn }
 | FUNCTION AND? identifier [@doc_comment]
     type_parameters?
     LPAREN comma_list_trailing(parameter) RPAREN return_type? [@fn_flags]
     where_constraints?
     LBRACE statement_inner* RBRACE [@fn_flags]
-  { () }
+  { 
+    
+    let name = 
+      let elem = Name.Fn.of_string "dummy" in
+      Located.create_empty elem  in
+    let lambda = Located.create_empty Lambda.empty in
+    Fn_def.create ~name ~lambda ()
+   }
 ;
 
 where_constraints:
@@ -359,11 +369,21 @@ where_constraint:
 ;
 
 declare_class:
-| class_modifier* CLASS identifier type_parameters?
+| class_modifier* span=CLASS ident=identifier type_parameters?
     preceded(EXTENDS,class_name)?
     preceded(IMPLEMENTS, comma_list(class_name))? [@doc_comment]
     LBRACE statement_class* RBRACE
-  { () }
+  { 
+    let name = 
+      let (name_str,span) = ident in
+      let elem = Name.Ctor.of_string name_str in 
+      Located.create ~elem ~span () 
+    in
+
+    let elem = Class_def.create ~name ()  in
+
+    Located.create ~elem ~span () 
+   }
 ;
 
 class_modifier:
@@ -1077,101 +1097,101 @@ shape_field:
 (* Using keywords as identifiers *)
 
 xhp_reserved:
-| XHP_ATTRIBUTE { "attribute" }
-| XHP_CATEGORY  { "category" }
-| XHP_CHILDREN  { "children" }
-| XHP_ANY       { "any" }
-| XHP_PCDATA    { "pcdata" }
+| XHP_ATTRIBUTE { "attribute", $1 }
+| XHP_CATEGORY  { "category", $1 }
+| XHP_CHILDREN  { "children",$1 }
+| XHP_ANY       { "any", $1 }
+| XHP_PCDATA    { "pcdata", $1 }
 ;
 
 reserved_non_modifiers:
 | xhp_reserved { $1 }
-| INCLUDE      { "include" }
-| INCLUDE_ONCE { "include_once" }
-| EVAL         { "eval" }
-| REQUIRE      { "require" }
-| REQUIRE_ONCE { "require_once" }
-| LOGICAL_OR   { "or" }
-| LOGICAL_XOR  { "xor" }
-| LOGICAL_AND  { "and" }
-| INSTANCEOF   { "instanceof" }
-| INOUT        { "inout" }
-| IS           { "is" }
-| NEW          { "new" }
-| CLONE        { "clone" }
-| EXIT         { "exit" }
-| IF           { "if" }
-| ELSEIF       { "elseif" }
-| ELSE         { "else" }
-| ENDIF        { "endif" }
-| ECHO         { "echo" }
-| DO           { "do" }
-| WHILE        { "while" }
-| FOR          { "for" }
-| FOREACH      { "foreach" }
-| DECLARE      { "declare" }
-| AS           { "as" }
-| TRY          { "try" }
-| CATCH        { "catch" }
-| FINALLY      { "finally" }
-| THROW        { "throw" }
-| USE          { "use" }
-| INSTEADOF    { "insteadof" }
-| GLOBAL       { "global" }
-| VAR          { "var" }
-| UNSET        { "unset" }
-| ISSET        { "isset" }
-| EMPTY        { "empty" }
-| CONTINUE     { "continue" }
-| GOTO         { "goto" }
-| FUNCTION     { "function" }
-| CONST        { "const" }
-| RETURN       { "return" }
-| PRINT        { "print" }
-| YIELD        { "yield" }
-| LIST         { "list" }
-| SWITCH       { "switch" }
-| CASE         { "case" }
-| DEFAULT      { "default" }
-| BREAK        { "break" }
-| ARRAY        { "array" }
-| CALLABLE     { "callable" }
-| EXTENDS      { "extends" }
-| IMPLEMENTS   { "implements" }
-| NAMESPACE    { "namespace" }
-| TRAIT        { "trait" }
-| INTERFACE    { "interface" }
-| CLASS        { "class" }
-| TYPE         { "type" }
-| ENUM         { "enum" }
-| LINE         { "__LINE__" }
-| FILE         { "__FILE__" }
-| DIR          { "__DIR__" }
-| CLASS_C      { "__CLASS__" }
-| TRAIT_C      { "__TRAIT__" }
-| METHOD_C     { "__METHOD__" }
-| FUNC_C       { "__FUNCTION__" }
-| NAMESPACE_C  { "__NAMESPACE__" }
-| PARENT       { "parent" }
-| SELF         { "self" }
-| WHERE        { "where" }
-| SHAPE        { "shape" }
-| USING        { "using" }
-| COROUTINE    { "coroutine" }
-| SUSPEND      { "suspend" }
-| NEWTYPE      { "newtype" }
+| INCLUDE      { "include", $1 }
+| INCLUDE_ONCE { "include_once", $1  }
+| EVAL         { "eval", $1  }
+| REQUIRE      { "require", $1  }
+| REQUIRE_ONCE { "require_once", $1  }
+| LOGICAL_OR   { "or", $1  }
+| LOGICAL_XOR  { "xor", $1  }
+| LOGICAL_AND  { "and", $1  }
+| INSTANCEOF   { "instanceof", $1  }
+| INOUT        { "inout", $1  }
+| IS           { "is" , $1 }
+| NEW          { "new", $1  }
+| CLONE        { "clone", $1  }
+| EXIT         { "exit", $1  }
+| IF           { "if" , $1 }
+| ELSEIF       { "elseif", $1  }
+| ELSE         { "else", $1  }
+| ENDIF        { "endif", $1  }
+| ECHO         { "echo", $1  }
+| DO           { "do", $1  }
+| WHILE        { "while", $1  }
+| FOR          { "for", $1  }
+| FOREACH      { "foreach", $1  }
+| DECLARE      { "declare", $1  }
+| AS           { "as", $1  }
+| TRY          { "try" , $1 }
+| CATCH        { "catch", $1  }
+| FINALLY      { "finally", $1  }
+| THROW        { "throw", $1  }
+| USE          { "use", $1  }
+| INSTEADOF    { "insteadof", $1  }
+| GLOBAL       { "global", $1  }
+| VAR          { "var", $1  }
+| UNSET        { "unset" , $1 }
+| ISSET        { "isset", $1  }
+| EMPTY        { "empty", $1  }
+| CONTINUE     { "continue" , $1 }
+| GOTO         { "goto" , $1 }
+| FUNCTION     { "function" , $1 }
+| CONST        { "const" , $1 }
+| RETURN       { "return" , $1 }
+| PRINT        { "print" , $1 }
+| YIELD        { "yield" , $1 }
+| LIST         { "list" , $1 }
+| SWITCH       { "switch" , $1 }
+| CASE         { "case" , $1 }
+| DEFAULT      { "default" , $1 }
+| BREAK        { "break" , $1 }
+| ARRAY        { "array" , $1 }
+| CALLABLE     { "callable" , $1 }
+| EXTENDS      { "extends" , $1 }
+| IMPLEMENTS   { "implements" , $1 }
+| NAMESPACE    { "namespace" , $1 }
+| TRAIT        { "trait" , $1 }
+| INTERFACE    { "interface" , $1 }
+| CLASS        { "class" , $1 }
+| TYPE         { "type" , $1 }
+| ENUM         { "enum" , $1 }
+| LINE         { "__LINE__" , $1 }
+| FILE         { "__FILE__" , $1 }
+| DIR          { "__DIR__" , $1 }
+| CLASS_C      { "__CLASS__" , $1 }
+| TRAIT_C      { "__TRAIT__" , $1 }
+| METHOD_C     { "__METHOD__" , $1 }
+| FUNC_C       { "__FUNCTION__" , $1 }
+| NAMESPACE_C  { "__NAMESPACE__" , $1 }
+| PARENT       { "parent" , $1 }
+| SELF         { "self" , $1 }
+| WHERE        { "where" , $1 }
+| SHAPE        { "shape" , $1 }
+| USING        { "using" , $1 }
+| COROUTINE    { "coroutine" , $1 }
+| SUSPEND      { "suspend" , $1 }
+| NEWTYPE      { "newtype" , $1 }
 ;
 
 semi_reserved:
 | reserved_non_modifiers { $1 }
-| STATIC    { "STATIC" }
-| ABSTRACT  { "ABSTRACT" }
-| FINAL     { "FINAL" }
-| PRIVATE   { "PRIVATE" }
-| PROTECTED { "PROTECTED" }
-| PUBLIC    { "PUBLIC" }
-| ASYNC     { "async" }
-| SUPER     { "super" }
+| span=STATIC    { ("STATIC",span) }
+| span=ABSTRACT  { ("ABSTRACT",span) }
+| span=FINAL     { ("FINAL",span) }
+| span=PRIVATE   { ("PRIVATE",span) }
+| span=PROTECTED { ("PROTECTED",span) }
+| span=PUBLIC    { ("PUBLIC",span) }
+| span=ASYNC     { ("async",span) }
+| span=SUPER     { ("super",span) }
 ;
 
 (* To silence some warnings *)

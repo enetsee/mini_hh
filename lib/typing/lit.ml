@@ -1,9 +1,15 @@
 open Core
+open Reporting
+open Lang
 
 (* We can always synthesize a type for a literal *)
-let synth lit =
+let synth (lit, span) =
   match lit with
-  | Lang.Lit.Bool _ -> Ty.bool Reporting.Prov.empty
+  | Lit.Bool _ -> Ty.bool @@ Prov.lit_bool span
+  | Lit.Lnum _ -> Ty.bool @@ Prov.lit_lnum span
+  | Lit.Dnum _ -> Ty.bool @@ Prov.lit_dnum span
+  | Lit.Const_string _ -> Ty.bool @@ Prov.lit_const_string span
+  | Lit.Null -> Ty.null @@ Prov.lit_null span
 ;;
 
 let check lit ~against ~env ~ctxt =

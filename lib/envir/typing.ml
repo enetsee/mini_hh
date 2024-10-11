@@ -16,6 +16,8 @@ let empty =
   }
 ;;
 
+(* ~~ Locals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
 let bind_local ({ local; _ } as t) key ty =
   let local = Local.bind_local local key ty in
   { t with local }
@@ -23,3 +25,5 @@ let bind_local ({ local; _ } as t) key ty =
 
 let find_local { local; _ } key = Local.find local key
 let find_local_refinement { ty_refine; _ } local = Ty_refine.find_local ty_refine local
+
+(* ~~ Type parameters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

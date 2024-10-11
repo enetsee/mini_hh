@@ -5,7 +5,22 @@ type t =
   ; bol : int
   ; offset : int
   }
-[@@deriving compare, create, equal, fields, sexp, show, yojson]
+[@@deriving create, equal, fields, sexp, show, yojson]
+
+let compare { line = line1; bol = bol1; offset = offset1 } { line = line2; bol = bol2; offset = offset2 } =
+  let c = Int.compare line1 line2 in
+  if c <> 0 then c else Int.compare (offset1 + bol1) (offset2 + bol2)
+;;
+
+let min t1 t2 =
+  let c = compare t1 t2 in
+  if c > 0 then t2 else t1
+;;
+
+let max t1 t2 =
+  let c = compare t1 t2 in
+  if c < 0 then t2 else t1
+;;
 
 let empty = { line = 0; bol = 0; offset = 0 }
 let is_empty { line; bol; offset } = line = 0 && bol = 0 && offset = 0

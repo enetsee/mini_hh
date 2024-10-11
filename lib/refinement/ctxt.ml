@@ -1,4 +1,5 @@
 open Core
+open Reporting
 
 type t =
   { ty_param : Envir.Ty_param.t
@@ -25,7 +26,9 @@ let param_bounds { ty_param; ty_param_refine; _ } id =
   @@ Envir.Ty_param.find ty_param id
 ;;
 
-let bind_param ty_param Ty.Param.{ name; param_bounds } = Envir.Ty_param.bind ty_param name param_bounds
+let bind_param ty_param Ty.Param.{ name = Located.{ elem; _ }; param_bounds } =
+  Envir.Ty_param.bind ty_param elem param_bounds
+;;
 
 let bind_all ({ ty_param; _ } as t) ty_params =
   let ty_param = List.fold_left ty_params ~init:ty_param ~f:bind_param in

@@ -129,10 +129,10 @@ end = struct
       and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param_lhs ty_param_rhs
       and ty_refine, ty_param_refine =
         match binop with
-        | Lang.Binop.Logical.And _ ->
+        | Lang.Binop.Logical.And ->
           ( Envir.Ty_refine.meet ty_refine_lhs ty_refine_rhs
           , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
-        | Lang.Binop.Logical.Or _ ->
+        | Lang.Binop.Logical.Or ->
           ( Envir.Ty_refine.join ty_refine_lhs ty_refine_rhs
           , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
       in
@@ -177,7 +177,7 @@ end = struct
   ;;
 
   let synth Lang.Assign.{ lvalue; rhs } ~ctxt ~env ~errs =
-    match lvalue with
+    match lvalue.Located.elem with
     | Local local -> synth_local local rhs ~ctxt ~env ~errs
   ;;
 end

@@ -5,7 +5,7 @@ module IE = MenhirLib.IncrementalEngine
 
 module Err = struct
   type t =
-    | Bad_parse_state
+    | Bad_parse_state of string
     | File_not_found of string
     | Parse of string option * Span.t
 end
@@ -25,10 +25,10 @@ let error_msg state =
   | _ -> None
 ;;
 
-let fail _ = function
+let fail lexbuf = function
   | I.HandlingError env ->
     (match I.stack env with
-     | (lazy Nil) -> Error Err.Bad_parse_state
+     | (lazy Nil) -> Error (Err.Bad_parse_state (Lexing.lexeme lexbuf))
      | (lazy (Cons (I.Element (state, _, start_pos, end_pos), _))) ->
        let start_ = from_menhir_pos start_pos
        and end_ = from_menhir_pos end_pos in
@@ -38,39 +38,21 @@ let fail _ = function
   | _ -> assert false
 ;;
 
-let loop st lexbuf result =
-  let supplier = I.lexer_lexbuf_to_supplier (Lexer.token st) lexbuf in
+let loop lexbuf result =
+  let supplier = I.lexer_lexbuf_to_supplier Lexer.token lexbuf in
   I.loop_handle (fun x -> Ok x) (fail lexbuf) supplier result
 ;;
 
 let parse_string string =
   let lexbuf = Lexing.from_string string in
-  let st =
-    Lexer.new_state
-      ~strict_lexer:true
-      ~verbose_lexer:true
-      ~case_sensitive:true
-      ~xhp_builtin:true
-      ~facebook_lang_extensions:true
-      ()
-  in
-  loop st lexbuf @@ Program.Incremental.start lexbuf.lex_curr_p
+  loop lexbuf @@ Program.Incremental.program lexbuf.lex_curr_p
 ;;
 
 let parse_file path =
   try
     In_channel.with_file path ~f:(fun chan ->
       let lexbuf = Lexing.from_channel chan in
-      let st =
-        Lexer.new_state
-          ~strict_lexer:true
-          ~verbose_lexer:true
-          ~case_sensitive:true
-          ~xhp_builtin:true
-          ~facebook_lang_extensions:true
-          ()
-      in
-      loop st lexbuf @@ Program.Incremental.start lexbuf.lex_curr_p)
+      loop lexbuf @@ Program.Incremental.program lexbuf.lex_curr_p)
   with
   | _ -> Error (Err.File_not_found path)
 ;;

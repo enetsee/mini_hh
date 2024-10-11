@@ -5,7 +5,8 @@ open Reporting
 module rec Expr_node : sig
   type t =
     | Lit of Lit.t
-    | Local of Name.Tm_var.t Located.t
+    | Local of Name.Tm_var.t
+    | This
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
@@ -15,7 +16,8 @@ module rec Expr_node : sig
 end = struct
   type t =
     | Lit of Lit.t
-    | Local of Name.Tm_var.t Located.t
+    | Local of Name.Tm_var.t
+    | This
     | Is of Is.t
     | As of As.t
     | Binary of Binary.t
@@ -33,46 +35,60 @@ end
 (* ~~ Lambdas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Lambda : sig
   type t =
-    { signature : Lambda_sig.t Located.t
-    ; body : Seq.t Located.t
+    { lambda_sig : Lambda_sig.t Located.t
+    ; body : Seq.t
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  val empty : t
 end = struct
   type t =
-    { signature : Lambda_sig.t Located.t
-    ; body : Seq.t Located.t
+    { lambda_sig : Lambda_sig.t Located.t
+    ; body : Seq.t
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  let empty = { lambda_sig = Located.create_empty Lambda_sig.empty; body = Seq.empty }
 end
 
 and Lambda_sig : sig
   type t =
-    { params : Fn_params_def.t Located.t
+    { ty_params : Ty_param_def.t list
+    ; params : Fn_param_defs.t
     ; return : Ty.t
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  val empty : t
 end = struct
   type t =
-    { params : Fn_params_def.t Located.t
+    { ty_params : Ty_param_def.t list
+    ; params : Fn_param_defs.t
     ; return : Ty.t
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  let empty = { ty_params = []; params = Fn_param_defs.empty; return = Ty.nothing Prov.empty }
 end
 
-and Fn_params_def : sig
+and Fn_param_defs : sig
   type t =
     { required : Fn_param_def.t Located.t list
-    ; optional : (Fn_param_def.t Located.t * Expr.t) Located.t list
+    ; optional : (Fn_param_def.t Located.t * Expr.t) list
     ; variadic : Fn_param_def.t Located.t option
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  val empty : t
 end = struct
   type t =
     { required : Fn_param_def.t Located.t list
-    ; optional : (Fn_param_def.t Located.t * Expr.t) Located.t list
+    ; optional : (Fn_param_def.t Located.t * Expr.t) list
     ; variadic : Fn_param_def.t Located.t option
     }
   [@@deriving compare, create, eq, sexp, show]
+
+  let empty = { required = []; optional = []; variadic = None }
 end
 
 (* ~~ Is refinements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -81,7 +97,7 @@ and Is : sig
     { scrut : Expr.t
     ; ty_test : Ty.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end = struct
   type t =
     { scrut : Expr.t
@@ -112,14 +128,14 @@ and Binary : sig
     ; lhs : Expr.t
     ; rhs : Expr.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end = struct
   type t =
     { binop : Binop.t
     ; lhs : Expr.t
     ; rhs : Expr.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end
 
 (* ~~ Unary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -145,6 +161,7 @@ and Stmt_node : sig
     | Assign of Assign.t
     | If of If.t
     | Seq of Seq.t
+    | Noop
   [@@deriving eq, compare, sexp, show, variants]
 end = struct
   type t =
@@ -153,6 +170,7 @@ end = struct
     | Assign of Assign.t
     | If of If.t
     | Seq of Seq.t
+    | Noop
   [@@deriving eq, compare, sexp, show, variants]
 end
 
@@ -165,16 +183,16 @@ end
 (* ~~ Assigment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Assign : sig
   type t =
-    { lvalue : Lvalue.t
+    { lvalue : Lvalue.t Located.t
     ; rhs : Expr.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end = struct
   type t =
-    { lvalue : Lvalue.t
+    { lvalue : Lvalue.t Located.t
     ; rhs : Expr.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end
 
 (* ~~ If ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -197,8 +215,12 @@ end
 (* ~~ Sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Seq : sig
   type t = Seq of Stmt.t list [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
+
+  val empty : t
 end = struct
   type t = Seq of Stmt.t list [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
+
+  let empty = Seq []
 end
 
 (* ~~ L-values ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

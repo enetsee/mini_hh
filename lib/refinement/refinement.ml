@@ -61,8 +61,8 @@ and refine_existential_scrut prov_exists Ty.Exists.{ quants; body } ty_test ~ctx
   let subst, quants =
     let subst, quants =
       List.unzip
-      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name; param_bounds } fresh_name ->
-        (name, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = fresh_name; param_bounds })
+      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name = Located.{ elem; span }; param_bounds } fresh_name ->
+        (elem, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = Located.{ elem = fresh_name; span }; param_bounds })
     in
     let subst = Name.Ty_param.Map.of_alist_exn subst in
     subst, quants
@@ -76,7 +76,7 @@ and refine_existential_scrut prov_exists Ty.Exists.{ quants; body } ty_test ~ctx
       let quants =
         List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
           let param_bounds =
-            match Envir.Ty_param_refine.find refn name with
+            match Envir.Ty_param_refine.find refn name.Located.elem with
             | Envir.Ty_param_refine.Bounds bounds_delta ->
               (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
               Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_exists
@@ -86,7 +86,9 @@ and refine_existential_scrut prov_exists Ty.Exists.{ quants; body } ty_test ~ctx
           Ty.Param.{ name; param_bounds })
       in
       (* 2) Unbind the quantifiers in the refinement *)
-      let refn = Envir.Ty_param_refine.unbind_all refn @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name) in
+      let refn =
+        Envir.Ty_param_refine.unbind_all refn @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
+      in
       (* 3) Pack the existential *)
       let ty_test = Ty.exists ~quants ~body prov_exists in
       Replace_with (ty_test, refn)
@@ -103,8 +105,8 @@ and refine_existential_test ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctx
   let subst, quants =
     let subst, quants =
       List.unzip
-      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name; param_bounds } fresh_name ->
-        (name, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = fresh_name; param_bounds })
+      @@ List.map2_exn quants generics ~f:(fun Ty.Param.{ name = Located.{ elem; span }; param_bounds } fresh_name ->
+        (elem, Ty.generic Prov.empty fresh_name), Ty.Param.{ name = Located.{ elem = fresh_name; span }; param_bounds })
     in
     let subst = Name.Ty_param.Map.of_alist_exn subst in
     subst, quants
@@ -124,7 +126,7 @@ and refine_existential_test ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctx
       let quants =
         List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
           let param_bounds =
-            match Envir.Ty_param_refine.find refn name with
+            match Envir.Ty_param_refine.find refn name.Located.elem with
             | Envir.Ty_param_refine.Bounds bounds_delta ->
               (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
               Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_exists
@@ -134,7 +136,9 @@ and refine_existential_test ty_scrut prov_exists Ty.Exists.{ quants; body } ~ctx
           Ty.Param.{ name; param_bounds })
       in
       (* 2) Unbind the quantifiers in the refinement *)
-      let refn = Envir.Ty_param_refine.unbind_all refn @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name) in
+      let refn =
+        Envir.Ty_param_refine.unbind_all refn @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
+      in
       (* 3) Pack the existential *)
       let ty_test = Ty.exists ~quants ~body prov_exists in
       Replace_with (ty_test, refn)
@@ -251,7 +255,7 @@ and refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt =
 and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
   let prov_scrut, node_scrut = Ty.prj ty_scrut
   and prov_test, node_test = Ty.prj ty_test in
-  match node_scrut, node_test, variance with
+  match node_scrut, node_test, variance.elem with
   | Ty.Node.Generic g_scrut, Ty.Node.Generic g_test, _ ->
     (* Two generics appearing in the same position means they must be equal. To reflect this we need our refinement
        to:

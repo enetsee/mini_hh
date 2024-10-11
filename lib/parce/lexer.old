@@ -14,6 +14,7 @@
  * license.txt for more details.
  *)
 
+open Reporting
 open Program 
 
 (* Lexer State
@@ -118,6 +119,21 @@ let lexeme lexbuf ?(s=0) ?(e=0) token =
   let endp = if e <= 0 then curr_pos + e else start_pos + e in
   (token, startp, endp)
 
+let current_loc = 
+    let prev_pos = ref Reporting.Pos.empty in 
+    fun lexbuf ->
+    let p = Lexing.lexeme_start_p lexbuf in
+    let new_pos = 
+      Reporting.Pos.(
+        { line = p.Lexing.pos_lnum
+        ; offset= p.Lexing.pos_cnum 
+        ; bol =  p.Lexing.pos_bol
+        } 
+      )
+    in 
+    let span = Reporting.Span.({ start_ = !prev_pos; end_ = new_pos}) in 
+    prev_pos := new_pos;
+    span
 (*****************************************************************************)
 (* Helpers *)
 (*****************************************************************************)
@@ -206,15 +222,15 @@ let case_str st lexeme =
   then lexeme
   else lowercase lexeme
 
-let xhp_or_t_ident st ~f lexeme =
+let xhp_or_t_ident st ~f lexeme span =
   if st.xhp_builtin
-  then f lexeme
-  else IDENT (case_str st lexeme)
+  then f lexeme span
+  else IDENT (case_str st lexeme, span)
 
-let lang_ext_or_t_ident st ~f lexeme =
+let lang_ext_or_t_ident st ~f lexeme span =
   if st.facebook_lang_extensions
-  then f lexeme
-  else IDENT (case_str st lexeme)
+  then f lexeme span
+  else IDENT (case_str st lexeme, span)
 
 (* Keywords
  * ========
@@ -235,7 +251,7 @@ let lang_ext_or_t_ident st ~f lexeme =
  * todo: callable, goto
  *)
 
-type keyword_kind =
+(* type keyword_kind =
   | Lang_Normal
   | Lang_XHP
   | Lang_Facebook
@@ -389,18 +405,105 @@ let keyword_table =
    ; "class_xdebug",    (fun ii -> CLASS_XDEBUG ii)
    ; "resource_xdebug", (fun ii -> RESOURCE_XDEBUG ii)
    *)
-  ]
+  ] *)
 
-let ident_or_keyword st lexeme =
+let ident_or_keyword st lexeme span =
   let lexeme' = case_str st lexeme in
-  match Hashtbl.find keyword_table lexeme' with
-  | Lang_Normal,   token -> token
-  | Lang_XHP,      token when st.xhp_builtin && lexeme = lexeme' -> token
-  | Lang_Facebook, token when st.facebook_lang_extensions -> token
-  | Lang_FB_sensitive, token
-    when st.facebook_lang_extensions && lexeme = lexeme' -> token
-  | _ -> IDENT lexeme
-  | exception Not_found -> IDENT lexeme
+  match lexeme' with
+  (* Lang_Normal *)
+  | "while"  -> WHILE span
+  | "do" -> DO span
+  | "for" -> FOR span
+  | "foreach" -> FOREACH span
+  | "self" -> SELF span
+  | "parent" -> PARENT span
+  | "if" -> IF span
+  | "else" -> ELSE span
+  | "elseif" -> ELSEIF span
+  | "break" -> BREAK span
+  | "continue" -> CONTINUE span
+  | "switch" -> SWITCH span
+  | "case" -> CASE span
+  | "default" -> DEFAULT span
+  | "return" -> RETURN span
+  | "try" -> TRY span
+  | "catch" -> CATCH span
+  | "finally" -> FINALLY span
+  | "throw" -> THROW span
+  | "exit" -> EXIT span
+  | "as" -> AS span
+  | "include" -> INCLUDE span
+  | "include_once" -> INCLUDE_ONCE span
+  | "require" -> REQUIRE span
+  | "require_once" -> REQUIRE_ONCE span
+  | "class" -> CLASS span
+  | "interface" -> INTERFACE span
+  | "extends" -> EXTENDS span
+  | "implements" -> IMPLEMENTS span
+  | "new" -> NEW span
+  | "clone" -> CLONE span
+  | "instanceof" -> INSTANCEOF span
+  (* php 5.4 traits ('use' and 'as' are used for traits and other things) *)
+  | "trait" -> TRAIT span
+  | "insteadof" -> INSTEADOF span
+  (* php 5.3 namespace *)
+  | "namespace" -> NAMESPACE span
+  (* used for traits and namespace *)
+  | "use" -> USE span
+  | "abstract" -> ABSTRACT span
+  | "final" -> FINAL span
+  | "public" -> PUBLIC span
+  | "protected" -> PROTECTED span
+  | "private" -> PRIVATE span
+  | "echo" -> ECHO span
+  | "print" -> PRINT span
+  | "eval" -> EVAL span
+  | "global" -> GLOBAL span
+  | "function" -> FUNCTION span
+  | "empty" -> EMPTY span
+  | "const" -> CONST span
+  | "var" -> VAR span
+  | "declare" -> DECLARE span
+  | "static" -> STATIC span
+  | "unset" -> UNSET span
+  | "isset" -> ISSET span
+  | "__line__" -> LINE span
+  | "__file__" -> FILE span
+  | "__dir__" -> DIR span
+  | "__function__" -> FUNC_C span
+  | "__method__" -> METHOD_C span
+  | "__class__" -> CLASS_C span
+  | " __trait__"    ->  TRAIT_C span
+  | "__namespace__" -> NAMESPACE_C span (* was called NS_C *)
+  (* Lang_XHP *)
+  | "attribute" when st.xhp_builtin && lexeme = lexeme' ->  XHP_ATTRIBUTE span
+  | "children" when st.xhp_builtin && lexeme = lexeme'  ->  XHP_CHILDREN span
+  | "category" when st.xhp_builtin && lexeme = lexeme' -> XHP_CATEGORY span
+  (* for children declarations *)
+  | "any"   when st.xhp_builtin && lexeme = lexeme' ->    XHP_ANY span
+  (* "empty" is already a PHP keyword, see EMPTY *)
+  | "pcdata"  when st.xhp_builtin && lexeme = lexeme' ->    XHP_PCDATA span
+  (* Lang_Facebook *)
+  | "yield" when st.facebook_lang_extensions -> YIELD span
+  | "await" when st.facebook_lang_extensions -> AWAIT span
+  | "using" when st.facebook_lang_extensions -> USING span
+  | "newtype" when st.facebook_lang_extensions -> NEWTYPE span
+  | "is"  when st.facebook_lang_extensions -> IS span
+  | "inout"  when st.facebook_lang_extensions -> INOUT span
+  (* Lang_FB_sensitive *)
+  (* for attribute declarations and Hack first class enums *)
+  | "enum" when st.facebook_lang_extensions && lexeme = lexeme' -> ENUM span
+  | "async" when st.facebook_lang_extensions && lexeme = lexeme' ->  ASYNC span
+  | "super" when st.facebook_lang_extensions && lexeme = lexeme'  -> SUPER span
+  | "coroutine" when st.facebook_lang_extensions && lexeme = lexeme' ->  COROUTINE span
+  | "suspend" when st.facebook_lang_extensions && lexeme = lexeme' -> SUSPEND span
+  (* php-facebook-ext: *)
+  | "concurrent" when st.facebook_lang_extensions && lexeme = lexeme' -> CONCURRENT span
+  (* php-facebook-ext: *)
+  | "type" when st.facebook_lang_extensions && lexeme = lexeme' -> TYPE span
+  | "shape" when st.facebook_lang_extensions && lexeme = lexeme' -> SHAPE span
+  | "where" when st.facebook_lang_extensions && lexeme = lexeme'  -> WHERE span
+  | _ -> IDENT (lexeme,span)
 
 (* The logic to modify _last_non_whitespace_like_token is in the
  * caller of the lexer, that is in Parse_php.tokens.
@@ -484,9 +587,9 @@ let is_in_binary_operator_position st =
     (* if we are after a number or any kind of scalar, then it's ok to have a
      * binary operator *)
   | LNUMBER _ | DNUMBER _ | CONSTANT_ENCAPSED_STRING _
-  | DOUBLEQUOTE | BACKQUOTE
+  | DOUBLEQUOTE _ | BACKQUOTE _
     (* same for ']' or ')'; anything that "terminates" an expression *)
-  | RBRACKET | RPAREN
+  | RBRACKET _ | RPAREN _
   | IDENT _ | VARIABLE _ -> true
   | _ -> false
 
@@ -496,15 +599,15 @@ let is_in_binary_operator_position st =
  * be to not have those ugly lexing rules for cast, but this would
  * lead to some grammar ambiguities or require other parsing hacks anyway.
  *)
-let lang_ext_or_cast st lexbuf token =
+let lang_ext_or_cast st lexbuf token span =
   if st.facebook_lang_extensions then
     match st.last_non_whitespace_like_token with
-    | FUNCTION ->
+    | FUNCTION _ ->
       (* just keep the open parenthesis *)
       set_lexeme_length lexbuf 1;
-      LPAREN
-    | _ -> token
-  else token
+      LPAREN (current_loc lexbuf)
+    | _ -> token span
+  else token span
 
 }
 
@@ -578,51 +681,51 @@ rule st_in_scripting st = parse
 (* ----------------------------------------------------------------------- *)
 (* Symbols *)
 (* ----------------------------------------------------------------------- *)
-  | '+'   { PLUS }
-  | '-'   { MINUS }
-  | '*'   { MUL }
-  | '/'   { DIV }
-  | '%'   { MOD }
-  | "++"  { INC }
-  | "--"  { DEC }
-  | "="   { EQUAL }
-  | "+="  { PLUS_EQUAL }
-  | "-="  { MINUS_EQUAL }
-  | "*="  { MUL_EQUAL }
-  | "/="  { DIV_EQUAL }
-  | "%="  { MOD_EQUAL }
-  | "&="  { AND_EQUAL }
-  | "|="  { OR_EQUAL }
-  | "^="  { XOR_EQUAL }
-  | "<<=" { SHL_EQUAL }
-  | ">>=" { SHR_EQUAL }
-  | ".="  { CONCAT_EQUAL }
-  | "=="  { IS_EQUAL }
-  | "!="  { IS_NOT_EQUAL }
-  | "===" { IS_IDENTICAL }
-  | "!==" { IS_NOT_IDENTICAL }
-  | "<>"  { IS_NOT_EQUAL }
-  | "<=>" { SPACESHIP }
-  | "<="  { IS_SMALLER_OR_EQUAL }
-  | ">="  { IS_GREATER_OR_EQUAL }
-  | "<"   { LANGLE }
-  | ">"   { RANGLE }
-  | "&&"  { BOOLEAN_AND }
-  | "||"  { BOOLEAN_OR }
-  | "|>"  { PIPE_ANGLE }
-  | "<<"  { SHL }
-  | ">>"  { set_lexeme_length lexbuf 1; SHR_PREFIX }
-  | "**"  { POW }
-  | "**=" { POW_EQUAL }
-  | "&"   { AND }
-  | "|"   { OR }
-  | "^"   { XOR }
-  | "OR"  { LOGICAL_OR }
-  | "AND" { LOGICAL_AND }
-  | "XOR" { LOGICAL_XOR }
-  | "or"  { LOGICAL_OR }
-  | "and" { LOGICAL_AND }
-  | "xor" { LOGICAL_XOR }
+  | '+'   { PLUS (current_loc lexbuf) }
+  | '-'   { MINUS (current_loc lexbuf) }
+  | '*'   { MUL (current_loc lexbuf) }
+  | '/'   { DIV (current_loc lexbuf) }
+  | '%'   { MOD (current_loc lexbuf) }
+  | "++"  { INC (current_loc lexbuf) }
+  | "--"  { DEC (current_loc lexbuf) }
+  | "="   { EQUAL (current_loc lexbuf) }
+  | "+="  { PLUS_EQUAL (current_loc lexbuf) }
+  | "-="  { MINUS_EQUAL (current_loc lexbuf)}
+  | "*="  { MUL_EQUAL (current_loc lexbuf) }
+  | "/="  { DIV_EQUAL (current_loc lexbuf) }
+  | "%="  { MOD_EQUAL (current_loc lexbuf) }
+  | "&="  { AND_EQUAL (current_loc lexbuf) }
+  | "|="  { OR_EQUAL (current_loc lexbuf) }
+  | "^="  { XOR_EQUAL (current_loc lexbuf) }
+  | "<<=" { SHL_EQUAL (current_loc lexbuf) }
+  | ">>=" { SHR_EQUAL (current_loc lexbuf) }
+  | ".="  { CONCAT_EQUAL (current_loc lexbuf) }
+  | "=="  { IS_EQUAL (current_loc lexbuf) }
+  | "!="  { IS_NOT_EQUAL  (current_loc lexbuf)}
+  | "===" { IS_IDENTICAL  (current_loc lexbuf)}
+  | "!==" { IS_NOT_IDENTICAL (current_loc lexbuf) }
+  | "<>"  { IS_NOT_EQUAL (current_loc lexbuf) }
+  | "<=>" { SPACESHIP (current_loc lexbuf) }
+  | "<="  { IS_SMALLER_OR_EQUAL (current_loc lexbuf) }
+  | ">="  { IS_GREATER_OR_EQUAL (current_loc lexbuf) }
+  | "<"   { LANGLE (current_loc lexbuf) }
+  | ">"   { RANGLE (current_loc lexbuf) }
+  | "&&"  { BOOLEAN_AND (current_loc lexbuf) }
+  | "||"  { BOOLEAN_OR (current_loc lexbuf) }
+  | "|>"  { PIPE_ANGLE (current_loc lexbuf) }
+  | "<<"  { SHL (current_loc lexbuf) }
+  | ">>"  { set_lexeme_length lexbuf 1; SHR_PREFIX (current_loc lexbuf)}
+  | "**"  { POW (current_loc lexbuf)}
+  | "**=" { POW_EQUAL (current_loc lexbuf) }
+  | "&"   { AND (current_loc lexbuf) }
+  | "|"   { OR  (current_loc lexbuf)}
+  | "^"   { XOR (current_loc lexbuf) }
+  | "OR"  { LOGICAL_OR  (current_loc lexbuf)}
+  | "AND" { LOGICAL_AND (current_loc lexbuf) }
+  | "XOR" { LOGICAL_XOR (current_loc lexbuf)}
+  | "or"  { LOGICAL_OR (current_loc lexbuf) }
+  | "and" { LOGICAL_AND (current_loc lexbuf) }
+  | "xor" { LOGICAL_XOR (current_loc lexbuf) }
 
  (* Flex/Bison allow to use single characters directly as-is in the grammar
   * by adding this in the lexer:
@@ -633,42 +736,42 @@ rule st_in_scripting st = parse
   * a name in the parser, and return them in the lexer.
   *)
 
-  | '.'  { CONCAT }
-  | ','  { COMMA }
-  | '@'  { AT }
+  | '.'  { CONCAT (current_loc lexbuf)}
+  | ','  { COMMA (current_loc lexbuf)}
+  | '@'  { AT (current_loc lexbuf)}
 
   (* was called DOUBLE_ARROW but we actually now have a real ==> *)
-  | "=>" { DOUBLE_ARROW }
-  | "~"  { TILDE }
-  | ";"  { SEMICOLON }
-  | "!"  { BANG }
-  | "::" { COLONCOLON } (* was called T_PAAMAYIM_NEKUDOTAYIM *)
-  | "\\" { ANTISLASH  } (* was called T_NS_SEPARATOR *)
+  | "=>" { DOUBLE_ARROW (current_loc lexbuf)}
+  | "~"  { TILDE (current_loc lexbuf) }
+  | ";"  { SEMICOLON (current_loc lexbuf)}
+  | "!"  { BANG (current_loc lexbuf)}
+  | "::" { COLONCOLON (current_loc lexbuf)} (* was called T_PAAMAYIM_NEKUDOTAYIM *)
+  | "\\" { ANTISLASH  (current_loc lexbuf)} (* was called T_NS_SEPARATOR *)
 
-  | '(' { LPAREN }
-  | ')' { RPAREN }
+  | '(' { LPAREN (current_loc lexbuf)}
+  | ')' { RPAREN (current_loc lexbuf)}
 
-  | '[' { LBRACKET }
-  | ']' { RBRACKET }
+  | '[' { LBRACKET (current_loc lexbuf)}
+  | ']' { RBRACKET (current_loc lexbuf)}
 
-  | ":" { COLON }
-  | "?" { QUESTION }
-  | ":" { COLON }
-  | "??" { QUESTION_QUESTION }
-  | "??=" { QUESTION_QUESTION_EQUAL }
+  | ":" { COLON (current_loc lexbuf)}
+  | "?" { QUESTION (current_loc lexbuf)}
+  | ":" { COLON (current_loc lexbuf)}
+  | "??" { QUESTION_QUESTION (current_loc lexbuf)}
+  | "??=" { QUESTION_QUESTION_EQUAL (current_loc lexbuf)}
 
   (* semantic grep or var args extension *)
-  | "..." { ELLIPSIS }
+  | "..." { ELLIPSIS (current_loc lexbuf)}
 
   (* facebook-ext: short lambdas *)
-  | "==>" { LONG_DOUBLE_ARROW }
+  | "==>" { LONG_DOUBLE_ARROW (current_loc lexbuf)}
 
   (* we may come from a st_looking_for_xxx context, like in string
    * interpolation, so seeing a } we pop_mode!  *)
   | '}'
-    { pop_mode st; RBRACE }
+    { pop_mode st; RBRACE (current_loc lexbuf)}
   | '{'
-    { push_mode st ST_IN_SCRIPTING; LBRACE }
+    { push_mode st ST_IN_SCRIPTING; LBRACE (current_loc lexbuf)}
   (*| (("->" | "?->") as sym) (WHITESPACE* as white) (LABEL as label)
     { (* todo: use yyback() instead of using pending_token with push_token.
        * buggy: push_mode st ST_LOOKING_FOR_PROPERTY; *)
@@ -677,14 +780,14 @@ rule st_in_scripting st = parse
       push_token st (SPACES (whiteinfo));
       OBJECT_OPERATOR(syminfo)
     }*)
-  | "->" { ARROW }
-  | "?->" { QUESTION_ARROW }
+  | "->" { ARROW (current_loc lexbuf)}
+  | "?->" { QUESTION_ARROW (current_loc lexbuf)}
 
   (* see also VARIABLE below. lex use longest matching strings so this
    * rule is used only in a last resort, for code such as $$x, ${, etc
    *)
-  | "$" { DOLLAR }
-  | "$$" { DOLLARDOLLAR }
+  | "$" { DOLLAR (current_loc lexbuf)}
+  | "$$" { DOLLARDOLLAR (current_loc lexbuf)}
 
   (* XHP "elements".
    *
@@ -707,16 +810,16 @@ rule st_in_scripting st = parse
    *)
   | ":" (XHPTAG as tag)
     { if st.xhp_builtin && not (is_in_binary_operator_position st) then
-        XHP_COLONID_DEF (string_split ':' tag)
+        XHP_COLONID_DEF (string_split ':' tag, current_loc lexbuf)
       else
-        (set_lexeme_length lexbuf 1; COLON)
+        (set_lexeme_length lexbuf 1; COLON (current_loc lexbuf))
     }
 
   | "%" (XHPTAG as tag)
     { if st.xhp_builtin && not (is_in_binary_operator_position st) then
-        XHP_PERCENTID_DEF (string_split ':' tag)
+        XHP_PERCENTID_DEF (string_split ':' tag , current_loc lexbuf)
       else
-        (set_lexeme_length lexbuf 1; MOD)
+        (set_lexeme_length lexbuf 1; MOD(current_loc lexbuf))
     }
 
    (* xhp: we need to disambiguate the different use of '<' to know whether
@@ -742,27 +845,27 @@ rule st_in_scripting st = parse
            *
            * RPAREN? no, because it's ok to do (1) < (2)!
            *)
-        | LPAREN | ECHO | PRINT | CLONE | SEMICOLON | COMMA
-        | LBRACE | RBRACE | RETURN | YIELD | AWAIT | EQUAL | LBRACKET
-        | CONCAT_EQUAL | DOUBLE_ARROW | LONG_DOUBLE_ARROW | QUESTION | COLON
-        | QUESTION_QUESTION | QUESTION_QUESTION_EQUAL
-        | PIPE_ANGLE | IS_NOT_IDENTICAL | IS_IDENTICAL
+        | LPAREN _ | ECHO _ | PRINT _ | CLONE _ | SEMICOLON _ | COMMA _
+        | LBRACE _ | RBRACE _ | RETURN _ | YIELD _ | AWAIT _ | EQUAL _ | LBRACKET _
+        | CONCAT_EQUAL _ | DOUBLE_ARROW _  | LONG_DOUBLE_ARROW _ | QUESTION _ | COLON _
+        | QUESTION_QUESTION _ | QUESTION_QUESTION_EQUAL _
+        | PIPE_ANGLE _ | IS_NOT_IDENTICAL _ | IS_IDENTICAL _
         | EOF (* when in sgrep/spatch mode, < is the first token,
                  and last_non_whitespace_like_token defaults to EOF *)
           when st.xhp_builtin ->
             let xs = string_split ':' tag in
             push_mode st (ST_IN_XHP_TAG xs);
-            XHP_OPEN_TAG xs
+            XHP_OPEN_TAG (xs , current_loc lexbuf)
         | _ ->
             set_lexeme_length lexbuf 1;
-            LANGLE
+            LANGLE (current_loc lexbuf)
       }
 
   | "@required"
     { if st.xhp_builtin then
-        XHP_REQUIRED
+        XHP_REQUIRED (current_loc lexbuf)
       else
-        (set_lexeme_length lexbuf 1; AT)
+        (set_lexeme_length lexbuf 1; AT(current_loc lexbuf))
     }
 
   (* Keywords and ident
@@ -774,8 +877,8 @@ rule st_in_scripting st = parse
    * at least the uppercase form to be used as identifier, hence those
    * two rules below.
    *)
-  | "SELF"   { IDENT (case_str st "SELF") }
-  | "PARENT" { IDENT (case_str st "PARENT") }
+  | "SELF"   { IDENT (case_str st "SELF",(current_loc lexbuf)) }
+  | "PARENT" { IDENT (case_str st "PARENT",(current_loc lexbuf)) }
 
   (* ugly: some code is using ASYNC as a constant, so one way to fix
    * the conflict is to return the ASYNC only when it's used
@@ -785,13 +888,13 @@ rule st_in_scripting st = parse
    * "async" as a ASYNC only when it's followed by a FUNCTION
    * but this is also ugly.
    *)
-  | "async" { ASYNC }
+  | "async" { ASYNC (current_loc lexbuf)}
 
   | LABEL
     { match st.last_non_whitespace_like_token with
-      | ARROW | ANTISLASH (*| LONG_DOUBLE_ARROW*) ->
-        IDENT (Lexing.lexeme lexbuf)
-      | _ -> ident_or_keyword st (Lexing.lexeme lexbuf)
+      | ARROW _ | ANTISLASH _ (*| LONG_DOUBLE_ARROW*) ->
+        IDENT (Lexing.lexeme lexbuf, (current_loc lexbuf))
+      | _ -> ident_or_keyword st (Lexing.lexeme lexbuf) (current_loc lexbuf)
     }
 
   (* Could put a special rule for "$this", but there are multiple places here
@@ -800,10 +903,10 @@ rule st_in_scripting st = parse
    * later when we generate a Var or This.
    *)
   | "$" (LABEL as s)
-    { VARIABLE (case_str st s) }
+    { VARIABLE (case_str st s, current_loc lexbuf) }
 
   | "$$" LABEL0
-    { set_lexeme_length lexbuf 1; DOLLAR }
+    { set_lexeme_length lexbuf 1; DOLLAR (current_loc lexbuf)}
 
   (* Constant
      -------- *)
@@ -811,11 +914,11 @@ rule st_in_scripting st = parse
     { (* more? cf original lexer *)
       let s = Lexing.lexeme lexbuf in
       match int_of_string s with
-      | _ -> LNUMBER s
-      | exception Failure _ -> DNUMBER s
+      | _ -> LNUMBER (s, current_loc lexbuf)
+      | exception Failure _ -> DNUMBER (s,current_loc lexbuf)
     }
   | DNUM | EXPONENT_DNUM
-    { DNUMBER (Lexing.lexeme lexbuf) }
+    { DNUMBER (Lexing.lexeme lexbuf, current_loc lexbuf) }
 
 
   (* Strings
@@ -844,17 +947,17 @@ rule st_in_scripting st = parse
 
   (* static strings *)
   | 'b'? (['"'] ((DOUBLE_QUOTES_CHARS* ("{"*|"$"* )) as s) ['"'])
-      { CONSTANT_ENCAPSED_STRING s }
+      { CONSTANT_ENCAPSED_STRING (s, current_loc lexbuf) }
 
   | 'b'? (['\''] (([^'\'' '\\']|('\\' ANY_CHAR))* as s)  ['\''])
       { (* more? cf original lexer *)
-        CONSTANT_ENCAPSED_STRING s }
+        CONSTANT_ENCAPSED_STRING (s, current_loc lexbuf) }
 
   (* dynamic strings *)
   | '"'
-    { push_mode st ST_DOUBLEQUOTE; DOUBLEQUOTE }
+    { push_mode st ST_DOUBLEQUOTE; DOUBLEQUOTE (current_loc lexbuf) }
   | '`'
-    { push_mode st ST_BACKQUOTE; BACKQUOTE }
+    { push_mode st ST_BACKQUOTE; BACKQUOTE (current_loc lexbuf)}
   | 'b'? "<<<" TABS_AND_SPACES (LABEL as s) NEWLINE
     { set_mode st (ST_START_HEREDOC s); START_HEREDOC }
 
@@ -863,7 +966,7 @@ rule st_in_scripting st = parse
       (* could use another token, but simpler to reuse *)
       START_HEREDOC }
   | "re\"" (* regular expression literal *)
-    { push_mode st ST_DOUBLEQUOTE; DOUBLEQUOTE }
+    { push_mode st ST_DOUBLEQUOTE; DOUBLEQUOTE (current_loc lexbuf)}
 
   (* Misc
    * ----
@@ -879,28 +982,28 @@ rule st_in_scripting st = parse
    * string(). So what they have done is this ugly lexing hack.
    *)
   | "(" WHITESPACE* ("int"|"integer") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf INT_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> INT_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* ("real"|"double"|"float") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf DOUBLE_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> DOUBLE_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* "string" WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf STRING_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> STRING_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* "binary" WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf STRING_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> STRING_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* (['v' 'd']? "array"|"vec"|"dict"|"keyset") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf ARRAY_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> ARRAY_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* "object" WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf OBJECT_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> OBJECT_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* ("bool"|"boolean") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf BOOL_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> BOOL_CAST span) (current_loc lexbuf)}
   (* PHP is case insensitive for many things *)
   | "(" WHITESPACE* "Array" WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf ARRAY_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> ARRAY_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* "Object" WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf OBJECT_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> OBJECT_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* ("Bool"|"Boolean") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf BOOL_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> BOOL_CAST span) (current_loc lexbuf)}
   | "(" WHITESPACE* ("unset") WHITESPACE* ")"
-    { lang_ext_or_cast st lexbuf UNSET_CAST }
+    { lang_ext_or_cast st lexbuf (fun span -> UNSET_CAST span) (current_loc lexbuf)}
   | "?>"
     { (* because of XHP and my token merger:
          old: | "</script" WHITESPACE * ">" NEWLINE?
@@ -917,10 +1020,10 @@ rule st_in_scripting st = parse
            old: (CLOSE_TAG)
            note that CLOSE_TAG was skipped anyway in Parse_php.parse_php
          *)
-        CLOSE_TAG (*SEMICOLON*)
+        CLOSE_TAG(current_loc lexbuf) (*SEMICOLON*)
       | ST_IN_SCRIPTING2 ->
         set_mode st ST_INITIAL;
-        CLOSE_TAG_OF_ECHO
+        CLOSE_TAG_OF_ECHO(current_loc lexbuf)
       | _ -> assert false
     }
 
@@ -942,12 +1045,12 @@ and initial st = parse
           consistent with how I treat newlines elsewhere *)
        unlex_characters lexbuf 1;
        set_mode st ST_IN_SCRIPTING;
-       OPEN_TAG
+       OPEN_TAG(current_loc lexbuf)
      }
   | "<?hh//"
      { unlex_characters lexbuf 2;
        set_mode st ST_IN_SCRIPTING;
-       OPEN_TAG
+       OPEN_TAG(current_loc lexbuf)
      }
 
   | "<?PHP"([' ''\t'] | NEWLINE)
@@ -955,19 +1058,19 @@ and initial st = parse
       {
         (* "BAD USE OF <PHP at initial state, replace by <?php"; *)
         set_mode st ST_IN_SCRIPTING;
-        OPEN_TAG
+        OPEN_TAG(current_loc lexbuf)
       }
 
   | ([^'<'] | "<" [^ '?' '%' 's' '<'])+ | "<s" | "<"
     { (* more? cf original lexer *)
-      INLINE_HTML (Lexing.lexeme lexbuf) }
+      INLINE_HTML (Lexing.lexeme lexbuf, current_loc lexbuf) }
 
   | "<?="
     { (* less: if short_tags normally, otherwise INLINE_HTML *)
       set_mode st ST_IN_SCRIPTING2;
       (* todo? ugly, may be better ot generate a real ECHO token with maybe a
        * FakeToken or ExpandedToken. *)
-      OPEN_TAG_WITH_ECHO
+      OPEN_TAG_WITH_ECHO(current_loc lexbuf)
     }
 
   | "<?" | "<script" WHITESPACE+ "language" WHITESPACE* "=" WHITESPACE*
@@ -975,7 +1078,7 @@ and initial st = parse
     { (* XXX if short_tags normally otherwise INLINE_HTML *)
       (* pr2 "BAD USE OF <? at initial state, replace by <?php"; *)
       set_mode st ST_IN_SCRIPTING;
-      OPEN_TAG;
+      OPEN_TAG(current_loc lexbuf);
     }
 
   (*------------------------------------------------------------------------ *)
@@ -993,16 +1096,16 @@ and initial st = parse
 (*****************************************************************************)
 
 and st_looking_for_property st = parse
-  | "->" { ARROW }
-  | "?->" { QUESTION_ARROW }
-  | LABEL { pop_mode st; IDENT (case_str st (Lexing.lexeme lexbuf)) }
+  | "->" { ARROW(current_loc lexbuf) }
+  | "?->" { QUESTION_ARROW(current_loc lexbuf)}
+  | LABEL { pop_mode st; IDENT (case_str st (Lexing.lexeme lexbuf), current_loc lexbuf) }
 
 (* | ANY_CHAR { (* XXX yyback(0) ?? *) pop_mode(); } *)
 
 and st_looking_for_varname st = parse
   | LABEL
     { set_mode st ST_IN_SCRIPTING;
-      VARNAME (Lexing.lexeme lexbuf) }
+      VARNAME (Lexing.lexeme lexbuf, current_loc lexbuf) }
   | _
     { unlex_characters lexbuf 1;
       set_mode st ST_IN_SCRIPTING;
@@ -1013,10 +1116,10 @@ and st_looking_for_varname st = parse
 and st_var_offset st = parse
   | LNUM | HEXNUM | BINNUM
     { (* /* Offset must be treated as a string */ *)
-      NUM_STRING (Lexing.lexeme lexbuf) }
-  | "$" (LABEL as s) { VARIABLE (case_str st s) }
-  | LABEL            { IDENT (case_str st (Lexing.lexeme lexbuf))  }
-  | "]"              { pop_mode st; RBRACKET }
+      NUM_STRING (Lexing.lexeme lexbuf, current_loc lexbuf) }
+  | "$" (LABEL as s) { VARIABLE (case_str st s, current_loc lexbuf) }
+  | LABEL            { IDENT (case_str st (Lexing.lexeme lexbuf), current_loc lexbuf)  }
+  | "]"              { pop_mode st; RBRACKET (current_loc lexbuf) }
   | eof              { EOF }
   | _
     { error st "unrecognised symbol, in st_var_offset rule: %a" error_lexeme lexbuf;
@@ -1027,30 +1130,30 @@ and st_var_offset st = parse
 (*****************************************************************************)
 
 and st_double_quotes st = parse
-  | DOUBLE_QUOTES_CHARS+  { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+  | DOUBLE_QUOTES_CHARS+  { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf) }
   (* todo? was in original scanner ? *)
-  | "{"                   { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf)  }
-  | "$" (LABEL as s)      { VARIABLE (case_str st s) }
+  | "{"                   { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf)  }
+  | "$" (LABEL as s)      { VARIABLE (case_str st s, current_loc lexbuf) }
 
   | "$" (LABEL as s) "["
     { push_mode st ST_VAR_OFFSET;
       return_many st lexbuf [
-        lexeme lexbuf ~e:(-1) (VARIABLE (case_str st s));
-        lexeme lexbuf ~s:(-1) LBRACKET;
+        lexeme lexbuf ~e:(-1) (VARIABLE (case_str st s, current_loc lexbuf));
+        lexeme lexbuf ~s:(-1) (LBRACKET(current_loc lexbuf));
       ]
     }
   (* bugfix: can have strings like "$$foo$" *)
   | "$"
-    { ENCAPSED_AND_WHITESPACE "$" }
+    { ENCAPSED_AND_WHITESPACE ("$", current_loc lexbuf) }
 
   | "{$"
     { unlex_characters lexbuf 1;
       push_mode st ST_IN_SCRIPTING;
-      CURLY_OPEN;
+      CURLY_OPEN(current_loc lexbuf);
     }
   | "${"
     { push_mode st ST_LOOKING_FOR_VARNAME;
-      DOLLAR_OPEN_CURLY_BRACES;
+      DOLLAR_OPEN_CURLY_BRACES(current_loc lexbuf);
     }
 
   | '"'
@@ -1059,7 +1162,7 @@ and st_double_quotes st = parse
        * ST_IN_SCRIPTING
        *)
       pop_mode st;
-      DOUBLEQUOTE
+      DOUBLEQUOTE(current_loc lexbuf)
     }
   | eof { EOF }
   | _
@@ -1071,34 +1174,34 @@ and st_double_quotes st = parse
 (* ----------------------------------------------------------------------- *)
 (* mostly copy paste of st_double_quotes; just the end regexp is different *)
 and st_backquote st = parse
-  | BACKQUOTE_CHARS+  { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
-  | "$" (LABEL as s)  { VARIABLE (case_str st s) }
+  | BACKQUOTE_CHARS+  { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf, current_loc lexbuf) }
+  | "$" (LABEL as s)  { VARIABLE (case_str st s, current_loc lexbuf) }
 
   | "$" (LABEL as s) "["
     { push_mode st ST_VAR_OFFSET;
       return_many st lexbuf [
-        lexeme lexbuf ~e:(-1) (VARIABLE s);
-        lexeme lexbuf ~s:(-1) LBRACKET;
+        lexeme lexbuf ~e:(-1) (VARIABLE (s, current_loc lexbuf));
+        lexeme lexbuf ~s:(-1) (LBRACKET(current_loc lexbuf));
       ]
     }
 
   (* bugfix: can have strings like "$$foo$" *)
-  | "$" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+  | "$" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf) }
 
   | "{$"
     { unlex_characters lexbuf 1;
       push_mode st ST_IN_SCRIPTING;
-      CURLY_OPEN
+      CURLY_OPEN(current_loc lexbuf)
     }
 
   | "${"
     { push_mode st ST_LOOKING_FOR_VARNAME;
-      DOLLAR_OPEN_CURLY_BRACES
+      DOLLAR_OPEN_CURLY_BRACES(current_loc lexbuf)
     }
 
   | '`'
     { set_mode st ST_IN_SCRIPTING;
-      BACKQUOTE
+      BACKQUOTE(current_loc lexbuf)
     }
 
   | eof { EOF }
@@ -1125,49 +1228,49 @@ and st_start_heredoc st stopdoc = parse
           lexeme lexbuf ~s:(-1) NEWLINE
         ]
       ) else
-        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf)
+        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf)
     }
   | (LABEL as s) ";" ['\n' '\r']
     { if s = stopdoc then (
         set_mode st ST_IN_SCRIPTING;
         return_many st lexbuf [
           lexeme lexbuf ~e:(-2) END_HEREDOC;
-          lexeme lexbuf ~s:(-2) ~e:(-1) SEMICOLON;
+          lexeme lexbuf ~s:(-2) ~e:(-1) (SEMICOLON(current_loc lexbuf))   ;
           lexeme lexbuf ~s:(-1) NEWLINE;
         ]
       ) else
-        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf)
+        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf)
     }
 
   | [^ '\n' '\r' '$' '{' '\\']+
-    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf) }
 
   | "\\" ANY_CHAR
-    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf) }
 
   | "$" (LABEL as s)
-    { VARIABLE (case_str st s) }
+    { VARIABLE (case_str st s,current_loc lexbuf) }
 
   | "$" (LABEL as s) "["
     { push_mode st ST_VAR_OFFSET;
       return_many st lexbuf [
-        lexeme lexbuf ~e:(-1) (VARIABLE (case_str st s));
-        lexeme lexbuf ~s:(-1) LBRACKET;
+        lexeme lexbuf ~e:(-1) (VARIABLE (case_str st s,current_loc lexbuf));
+        lexeme lexbuf ~s:(-1) (LBRACKET(current_loc lexbuf));
       ]
     }
 
   (* bugfix: can have strings like "$$foo$", or {{$foo}} *)
-  | "$" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
-  | "{" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+  | "$" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf, current_loc lexbuf) }
+  | "{" { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf, current_loc lexbuf) }
   | ['\n' '\r'] { NEWLINE }
   | "{$"
     { unlex_characters lexbuf 1;
       push_mode st ST_IN_SCRIPTING;
-      CURLY_OPEN;
+      CURLY_OPEN(current_loc lexbuf);
     }
   | "${"
     { push_mode st ST_LOOKING_FOR_VARNAME;
-      DOLLAR_OPEN_CURLY_BRACES;
+      DOLLAR_OPEN_CURLY_BRACES(current_loc lexbuf);
     }
   | eof { EOF }
   | _
@@ -1188,22 +1291,22 @@ and st_start_nowdoc st stopdoc = parse
           lexeme lexbuf ~s:(-1) NEWLINE
         ]
       ) else
-        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf)
+        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf)
     }
   | (LABEL as s) ";" ['\n' '\r']
     { if s = stopdoc then (
         set_mode st ST_IN_SCRIPTING;
         return_many st lexbuf [
           lexeme lexbuf ~e:(-2) END_HEREDOC;
-          lexeme lexbuf ~s:(-2) ~e:(-1) SEMICOLON;
+          lexeme lexbuf ~s:(-2) ~e:(-1) (SEMICOLON(current_loc lexbuf));
           lexeme lexbuf ~s:(-1) NEWLINE;
         ]
       ) else
-        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf)
+        ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf)
     }
 
   | [^ '\n' '\r']+
-    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf) }
+    { ENCAPSED_AND_WHITESPACE (Lexing.lexeme lexbuf,current_loc lexbuf) }
 
   | ['\n' '\r']
     { NEWLINE }
@@ -1248,23 +1351,23 @@ and st_in_xhp_tag st current_tag = parse
     }
 
   (* attribute management *)
-  | XHPATTR { XHP_ATTR (Lexing.lexeme lexbuf) }
-  | "="     { EQUAL }
+  | XHPATTR { XHP_ATTR (Lexing.lexeme lexbuf,current_loc lexbuf) }
+  | "="     { EQUAL(current_loc lexbuf) }
 
   (* not sure if XHP strings needs the interpolation support *)
   | '"'
     { push_mode st ST_DOUBLEQUOTE;
-      DOUBLEQUOTE
+      DOUBLEQUOTE(current_loc lexbuf)
     }
   | "{"
     { push_mode st ST_IN_SCRIPTING;
-      LBRACE
+      LBRACE(current_loc lexbuf)
     }
 
   (* a singleton tag *)
   | "/>"
     { pop_mode st;
-      XHP_SLASH_GT
+      XHP_SLASH_GT(current_loc lexbuf)
     }
 
   (* When we see a ">", it means it's just the end of
@@ -1272,7 +1375,7 @@ and st_in_xhp_tag st current_tag = parse
    *)
   | ">"
     { set_mode st (ST_IN_XHP_TEXT current_tag);
-      XHP_GT
+      XHP_GT(current_loc lexbuf)
     }
 
   | eof { EOF }
@@ -1289,7 +1392,7 @@ and st_in_xhp_text st current_tag = parse
   | "<" (XHPTAG as tag)
     { let xs = string_split ':' tag in
       push_mode st (ST_IN_XHP_TAG xs);
-      XHP_OPEN_TAG xs
+      XHP_OPEN_TAG (xs, current_loc lexbuf)
     }
 
   | "</" (XHPTAG as tag) ' '* ">"
@@ -1298,13 +1401,13 @@ and st_in_xhp_text st current_tag = parse
         error st "XHP: wrong closing tag for, %a != %a"
                  join_tag xs join_tag current_tag;
       pop_mode st;
-      XHP_CLOSE_TAG (Some xs)
+      XHP_CLOSE_TAG (Some xs, current_loc lexbuf)
     }
   (* shortcut for closing tag ? *)
   | "</>"
     { (* no check :( *)
       pop_mode st;
-      XHP_CLOSE_TAG None
+      XHP_CLOSE_TAG (None, current_loc lexbuf)
     }
 
   | "<!--"
@@ -1314,10 +1417,10 @@ and st_in_xhp_text st current_tag = parse
     }
 
   (* PHP interpolation. How the user can produce a { ? &;something ? *)
-  | "{" { push_mode st ST_IN_SCRIPTING; LBRACE }
+  | "{" { push_mode st ST_IN_SCRIPTING; LBRACE(current_loc lexbuf) }
 
   (* opti: *)
-  | [^'<' '{']+ { XHP_TEXT (Lexing.lexeme lexbuf) }
+  | [^'<' '{']+ { XHP_TEXT (Lexing.lexeme lexbuf, current_loc lexbuf) }
 
   | eof { EOF }
 

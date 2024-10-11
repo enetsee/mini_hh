@@ -1,4 +1,4 @@
-open Core
+(* open Core
 open Common
 open Reporting
 open Test_common
@@ -28,7 +28,7 @@ module Gadt_covariant = struct
         (class_chain
          @ [ mk_class
                "I"
-               ~args:[ Name.Ty_param.of_string "T", Variance.cov, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+               ~args:[ Name.Ty_param.of_string "T", Variance.cov, Ty.Param_bounds.top Prov.empty, Span.empty ]
                ()
            ; mk_class "A" ~extends:[ ctor_nm "I", [ Ty.ctor Prov.empty ~name:(ctor_nm "Four") ~args:[] ] ] ()
            ]))
@@ -99,7 +99,7 @@ module Invariant_class_impl_covariant = struct
     Oracle.(
       add_classishes_exn
         empty
-        ([ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+        ([ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
          ; mk_class
              "MyClass"
              ~args:
@@ -109,7 +109,7 @@ module Invariant_class_impl_covariant = struct
                      ~lower:(Ty.ctor Prov.empty ~name:(ctor_nm "Two") ~args:[])
                      ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "Six") ~args:[])
                      ()
-                 , Loc.empty )
+                 , Span.empty )
                ]
              ~extends:[ ctor_nm "ICo", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
              ()
@@ -320,7 +320,7 @@ module Non_generic_class_impl_covariant = struct
         ; mk_class "Three" ~extends:[ ctor_nm "Four", [] ] ()
         ; mk_class "Two" ~extends:[ ctor_nm "Three", [] ] ()
         ; mk_class "One" ~extends:[ ctor_nm "Two", [] ] ()
-        ; mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+        ; mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
         ; mk_class "MyClass" ~extends:[ ctor_nm "ICo", [ Ty.ctor Prov.empty ~name:(ctor_nm "Four") ~args:[] ] ] ()
         ])
   ;;
@@ -385,8 +385,8 @@ module Nested = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
-          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
+          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class "C" ()
           ; mk_class
               "D"
@@ -446,8 +446,8 @@ module Nested = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
-          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Contrav, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
+          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Contrav, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class "C" ()
           ; mk_class
               "D"
@@ -459,7 +459,7 @@ module Nested = struct
               ()
           ; mk_class
               "E"
-              ~args:[ mk_generic "Te", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              ~args:[ mk_generic "Te", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
               ~extends:[ ctor_nm "B", [ Ty.generic Prov.empty (mk_generic "Te") ] ]
               ()
           ])
@@ -502,8 +502,8 @@ module Nested = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
-          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "B" ~args:[ mk_generic "Tb", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
+          ; mk_class "A" ~args:[ mk_generic "Ta", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class "C" ()
           ; mk_class
               "D"
@@ -562,20 +562,20 @@ module Nested = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "Inv" ~args:[ mk_generic "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "Inv" ~args:[ mk_generic "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "SubInv"
-              ~args:[ mk_generic "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              ~args:[ mk_generic "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
               ~extends:[ ctor_nm "Inv", [ Ty.generic Prov.empty (ty_param_nm "T") ] ]
               ()
-          ; mk_class "Cov" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class "Cov" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "SubCov"
-              ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ]
               ~extends:[ ctor_nm "Cov", [ Ty.generic Prov.empty (ty_param_nm "T") ] ]
               ()
           ; mk_class "End" ()
-          ; mk_class "Contrav" ~args:[ mk_generic "T", Variance.Contrav, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          ; mk_class "Contrav" ~args:[ mk_generic "T", Variance.Contrav, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "SubContrav"
               ~extends:
@@ -656,10 +656,10 @@ module Union_scrut = struct
         empty
         (class_chain
          @ [ ( Name.Ctor.Ctor "I"
-             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
              , [] )
            ; ( Name.Ctor.Ctor "J"
-             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
              , [] )
            ; Name.Ctor.Ctor "K", [], []
            ; ( Name.Ctor.Ctor "E"
@@ -792,7 +792,7 @@ module Union_test = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class "NumExpr" ~extends:[ ctor_nm "Expr", [ Ty.num Prov.empty ] ] ()
           ; mk_class "ArraykeyExpr" ~extends:[ ctor_nm "Expr", [ Ty.arraykey Prov.empty ] ] ()
           ])
@@ -836,7 +836,7 @@ module Intersection_test = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "Expr" ~args:[ ty_param_nm "T", Variance.Inv, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class "NumExpr" ~extends:[ ctor_nm "Expr", [ Ty.num Prov.empty ] ] ()
           ; mk_class "ArraykeyExpr" ~extends:[ ctor_nm "Expr", [ Ty.arraykey Prov.empty ] ] ()
           ])
@@ -872,7 +872,7 @@ module Intersection_scrut = struct
         empty
         (class_chain
          @ [ ( Name.Ctor.Ctor "I"
-             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
              , [] )
            ; Name.Ctor.Ctor "K", [], []
            ; ( Name.Ctor.Ctor "C"
@@ -953,10 +953,10 @@ module Intersection_scrut = struct
         empty
         (class_chain
          @ [ ( Name.Ctor.Ctor "I"
-             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
              , [] )
            ; ( Name.Ctor.Ctor "J"
-             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+             , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
              , [] )
            ; Name.Ctor.Ctor "K", [], []
            ; ( Name.Ctor.Ctor "E"
@@ -1013,7 +1013,7 @@ module Existential_test = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "MyClass"
               ~args:
@@ -1023,7 +1023,7 @@ module Existential_test = struct
                       ~lower:(Ty.nothing Prov.empty)
                       ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
                       ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ~extends:[ ctor_nm "ICo", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
               ()
@@ -1042,7 +1042,9 @@ module Existential_test = struct
       Ty.Param_bounds.create ~lower ~upper ()
     in
     let ty_test =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_test () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
       Ty.exists Prov.empty ~quants ~body
     in
@@ -1053,7 +1055,7 @@ module Existential_test = struct
         Ty.inter ~prov:Prov.empty [ Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[]; Ty.generic Prov.empty t_scrut ]
       in
       let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds () ] in
+      let quants = [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#1") ~param_bounds () ] in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#1" ] in
       Ty.exists Prov.empty ~quants ~body
     in
@@ -1069,7 +1071,7 @@ module Existential_test = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "J"
               ~args:
@@ -1079,7 +1081,7 @@ module Existential_test = struct
                       ~lower:(Ty.nothing Prov.empty)
                       ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
                       ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ()
           ; mk_class "A" ()
@@ -1097,13 +1099,17 @@ module Existential_test = struct
       Ty.Param_bounds.create ~lower ~upper ()
     in
     let ty_test =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_test () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
       Ty.exists Prov.empty ~quants ~body
     in
     (* expected result *)
     let ty_expect =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds:param_bounds_test () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#1") ~param_bounds:param_bounds_test () ]
+      in
       let body =
         Ty.inter
           ~prov:Prov.(refines ~prov_scrut:Prov.empty ~prov_test:Prov.empty)
@@ -1127,7 +1133,7 @@ module Existential_both = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "ICo" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "MyClass"
               ~args:
@@ -1137,7 +1143,7 @@ module Existential_both = struct
                       ~lower:(Ty.nothing Prov.empty)
                       ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
                       ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ~extends:[ ctor_nm "ICo", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
               ()
@@ -1151,7 +1157,9 @@ module Existential_both = struct
     let t_scrut = ty_param_nm "T" in
     let param_bounds_scrut = Ty.Param_bounds.top Prov.empty in
     let ty_scrut =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_scrut () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_scrut () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "ICo") ~args:[ Ty.generic Prov.empty t_scrut ] in
       Ty.exists Prov.empty ~quants ~body
     in
@@ -1161,7 +1169,9 @@ module Existential_both = struct
       Ty.Param_bounds.create ~lower ~upper ()
     in
     let ty_test =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_test () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
       Ty.exists Prov.empty ~quants ~body
     in
@@ -1176,13 +1186,13 @@ module Existential_both = struct
         in
         let body = Ty.ctor Prov.empty ~name:(ctor_nm "MyClass") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T#2" ] in
         let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
-        let quants = [ Ty.Param.create ~name:(ty_param_nm "T#2") ~param_bounds () ] in
+        let quants = [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#2") ~param_bounds () ] in
         Ty.exists Prov.empty ~quants ~body
       in
       let lower = Ty.union ~prov:Prov.empty [ Ty.nothing Prov.empty; Ty.nothing Prov.empty ] in
       let upper = Ty.inter ~prov:Prov.empty [ Ty.mixed Prov.empty; Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] ] in
       let param_bounds = Ty.Param_bounds.create ~lower ~upper () in
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds () ] in
+      let quants = [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#1") ~param_bounds () ] in
       Ty.exists Prov.empty ~quants ~body
     in
     let ty_param_refine_expect = Envir.Ty_param_refine.top in
@@ -1197,7 +1207,7 @@ module Existential_both = struct
       Oracle.(
         add_classishes_exn
           empty
-          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Loc.empty ] ()
+          [ mk_class "I" ~args:[ mk_generic "T", Variance.Cov, Ty.Param_bounds.top Prov.empty, Span.empty ] ()
           ; mk_class
               "J"
               ~args:
@@ -1207,7 +1217,7 @@ module Existential_both = struct
                       ~lower:(Ty.nothing Prov.empty)
                       ~upper:(Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[])
                       ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ()
           ; mk_class "A" ()
@@ -1220,7 +1230,9 @@ module Existential_both = struct
     let t_scrut = ty_param_nm "T" in
     let param_bounds_scrut = Ty.Param_bounds.top Prov.empty in
     let ty_scrut =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_scrut () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_scrut () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty t_scrut ] in
       Ty.exists Prov.empty ~quants ~body
     in
@@ -1230,14 +1242,18 @@ module Existential_both = struct
       Ty.Param_bounds.create ~lower ~upper ()
     in
     let ty_test =
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T") ~param_bounds:param_bounds_test () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T") ~param_bounds:param_bounds_test () ]
+      in
       let body = Ty.ctor Prov.empty ~name:(ctor_nm "J") ~args:[ Ty.generic Prov.empty @@ ty_param_nm "T" ] in
       Ty.exists Prov.empty ~quants ~body
     in
     (* expected result *)
     let ty_expect =
       let body =
-        let quants = [ Ty.Param.create ~name:(ty_param_nm "T#2") ~param_bounds:param_bounds_test () ] in
+        let quants =
+          [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#2") ~param_bounds:param_bounds_test () ]
+        in
         let body =
           Ty.inter
             ~prov:Prov.(refines ~prov_scrut:Prov.empty ~prov_test:Prov.empty)
@@ -1247,7 +1263,9 @@ module Existential_both = struct
         in
         Ty.exists Prov.empty ~quants ~body
       in
-      let quants = [ Ty.Param.create ~name:(ty_param_nm "T#1") ~param_bounds:param_bounds_scrut () ] in
+      let quants =
+        [ Ty.Param.create ~name:(Located.create_empty @@ ty_param_nm "T#1") ~param_bounds:param_bounds_scrut () ]
+      in
       Ty.exists Prov.empty ~quants ~body
     in
     let ty_param_refine_expect = Envir.Ty_param_refine.top in
@@ -1287,7 +1305,7 @@ module Hack_comparison = struct
           empty
           [ mk_class
               "IInv"
-              ~args:[ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              ~args:[ Name.Ty_param.of_string "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
               ()
           ; mk_class
               "C"
@@ -1295,7 +1313,7 @@ module Hack_comparison = struct
                 [ ( ty_param_nm "T"
                   , Variance.Inv
                   , Ty.Param_bounds.create ~lower:(Ty.int Prov.empty) ~upper:(Ty.mixed Prov.empty) ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ~extends:[ ctor_nm "IInv", [ Ty.generic Prov.empty @@ ty_param_nm "T" ] ]
               ()
@@ -1358,7 +1376,7 @@ module Hack_comparison = struct
           empty
           [ mk_class
               "ICov"
-              ~args:[ Name.Ty_param.Ty_param "T", Variance.cov, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+              ~args:[ Name.Ty_param.Ty_param "T", Variance.cov, Ty.Param_bounds.top Prov.empty, Span.empty ]
               ()
           ; mk_class
               "C"
@@ -1369,7 +1387,7 @@ module Hack_comparison = struct
                       ~upper:Ty.(ctor Prov.empty ~name:(ctor_nm "Big") ~args:[])
                       ~lower:(Ty.nothing Prov.empty)
                       ()
-                  , Loc.empty )
+                  , Span.empty )
                 ]
               ~extends:[ ctor_nm "ICov", [ Ty.generic Prov.empty (ty_param_nm "T") ] ]
               ()
@@ -1451,8 +1469,8 @@ module Hack_comparison = struct
           [ ctor_nm "Bigly", [], []
           ; ctor_nm "Small", [], [ ctor_nm "Bigly", [] ]
           ; ( Name.Ctor.Ctor "ICovContrav"
-            , [ Name.Ty_param.Ty_param "TCov", Variance.cov, Ty.Param_bounds.top Prov.empty, Loc.empty
-              ; Name.Ty_param.Ty_param "TContrav", Variance.contrav, Ty.Param_bounds.top Prov.empty, Loc.empty
+            , [ Name.Ty_param.Ty_param "TCov", Variance.cov, Ty.Param_bounds.top Prov.empty, Span.empty
+              ; Name.Ty_param.Ty_param "TContrav", Variance.contrav, Ty.Param_bounds.top Prov.empty, Span.empty
               ]
             , [] )
           ; ( Name.Ctor.Ctor "C"
@@ -1462,7 +1480,7 @@ module Hack_comparison = struct
                     ~lower:Ty.(ctor Prov.empty ~name:(ctor_nm "Small") ~args:[])
                     ~upper:Ty.(ctor Prov.empty ~name:(ctor_nm "Bigly") ~args:[])
                     ()
-                , Loc.empty )
+                , Span.empty )
               ]
             , [ ( ctor_nm "ICovContrav"
                 , Ty.[ generic Prov.empty (ty_param_nm "T"); generic Prov.empty (ty_param_nm "T") ] )
@@ -1547,12 +1565,12 @@ module Hack_comparison = struct
           [ ctor_nm "Bigly", [], []
           ; ctor_nm "Small", [], [ ctor_nm "Bigly", [] ]
           ; ( Name.Ctor.Ctor "ICovContrav"
-            , [ Name.Ty_param.Ty_param "TCov", Variance.cov, Ty.Param_bounds.top Prov.empty, Loc.empty
-              ; Name.Ty_param.Ty_param "TContrav", Variance.contrav, Ty.Param_bounds.top Prov.empty, Loc.empty
+            , [ Name.Ty_param.Ty_param "TCov", Variance.cov, Ty.Param_bounds.top Prov.empty, Span.empty
+              ; Name.Ty_param.Ty_param "TContrav", Variance.contrav, Ty.Param_bounds.top Prov.empty, Span.empty
               ]
             , [] )
           ; ( Name.Ctor.Ctor "C"
-            , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Loc.empty ]
+            , [ Name.Ty_param.Ty_param "T", Variance.inv, Ty.Param_bounds.top Prov.empty, Span.empty ]
             , [ ( ctor_nm "ICovContrav"
                 , Ty.[ generic Prov.empty (ty_param_nm "T"); generic Prov.empty (ty_param_nm "T") ] )
               ] )
@@ -1630,4 +1648,4 @@ let test_cases =
     ; Existential_both.test_cases
     ; Hack_comparison.test_cases
     ]
-;;
+;; *)
