@@ -1,45 +1,47 @@
-open Core
-open Reporting
+(* open Core
+   open Reporting *)
 
-module rec Expr : sig
-  include Sigs.Synthesizes with type t := Lang.Expr.t and type out := Ty.t and type env_out := Envir.Typing.t
-  include Sigs.Checks with type t := Lang.Expr.t and type env_out := Envir.Typing.t
-end = struct
-  let synth Located.{ elem; _ } ~ctxt ~env ~errs =
+(* module rec Expr : sig 
+  (** *)
+   val synth: Lang.Expr.t -> ctxt:Ctxt.Global.t -> Ty.t * Ctxt.Cont.t * Ctxt.Cont.t * Ctxt.Global.t 
+end  = struct
+  let synth Located.{elem;span} ~ctxt =
     match elem with
-    | Lang.Expr_node.Is is_ -> Is.synth is_ ~ctxt ~env ~errs
+    | 
+end *)
+
+(*
+   module rec Expr : sig
+  val synth : Lang.Expr.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
+  val check : Lang.Expr.t -> against:Ty.t -> ctxt:Ctxt.t -> Ctxt.t
+end = struct
+  let synth Located.{ elem; _ } ~ctxt =
+    match elem with
+    (* | Lang.Expr_node.Is is_ -> Is.synth is_ ~ctxt *)
     | _ -> failwith "Nope"
   ;;
 
   (* Just subsumption case for now *)
-  let check t ~against ~ctxt ~env ~errs =
-    let ty_sub, env, errs = synth t ~ctxt ~env ~errs in
-    (* TODO(mjt) move to algebraic effects and hide all this *)
-    let subtyping_res =
-      let Envir.Typing.{ ty_param; ty_param_refine; subtyping = env; _ } = env
-      and Ctxt.{ oracle; _ } = ctxt in
-      let ctxt = Subtyping.Ctxt.create ~oracle ~ty_param ~ty_param_refine ()
-      and ty_super = against in
-      Subtyping.Tell.is_subtype ~ty_sub ~ty_super ~ctxt ~env
-    in
-    match subtyping_res with
-    | Error err -> env, Err.Subtyping err :: errs
-    | Ok subtyping_env -> Envir.Typing.{ env with subtyping = subtyping_env }, errs
+  let check t ~against ~ctxt =
+    let ty_sub, env, errs = synth t ~ctxt in
+    Ctxt.tell_is_subtype ctxt ~ty_sub ~ty_super
   ;;
 end
 
 (* ~~ Is refinement expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Is : sig
-  include Sigs.Synthesizes with type t := Lang.Is.t and type out := Ty.t and type env_out := Envir.Typing.t
+  val synth : Lang.Is.t Located.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
 end = struct
   (** Typing `is` can give us:
       - a type refinement if the scrutinee is a local
       - type parameter refinements if the test / scrutinee involve generics
 
       TODO(mjt) support properties *)
-  let synth Lang.Is.{ scrut; ty_test } ~ctxt ~env ~errs =
+  let synth Located.{ elem = Lang.Is.{ scrut; ty_test }; span } ~ctxt =
+    (* `is` tests have type bool *)
+    let ty = Ty.bool @@ Prov.expr_is span in
     (* Get the type of the scrutinee expression *)
-    let ty_scrut, env, errs = Expr.synth scrut ~ctxt ~env ~errs in
+    let ty_scrut, env, errs = Expr.synth scrut ~ctxt in
     (* Refine the scrutinee under the test type, bind any type params from the opened existential *)
     let _refinement_res =
       let Envir.Typing.{ ty_param; ty_param_refine; _ } = env
@@ -72,11 +74,11 @@ and As : sig end = struct end
 
 (* ~~ Binary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Binary : sig
-  include Sigs.Synthesizes with type t := Lang.Binary.t and type out := Ty.t and type env_out := Envir.Typing.t
+  val synth : Lang.Binary.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
 end = struct
   (** Typing logical binary expression carries through the refinements from each operand *)
-  let synth_logical (binop, lhs, rhs) ~ctxt ~env ~errs =
-    let delta_lhs, errs = Expr.check lhs ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs in
+  let synth_logical (binop, lhs, rhs) ~ctxt =
+    let delta_lhs, errs = Expr.check lhs ~against:(Ty.bool Prov.empty) ~ctxt in
     (* Type the rhs operand under the refinements from the first *)
     let delta_rhs, errs =
       (* TODO(mtj) hide all this *)
@@ -141,9 +143,9 @@ end = struct
     Ty.bool Prov.empty, delta, errs
   ;;
 
-  let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt ~env ~errs =
+  let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt =
     match binop with
-    | Logical binop -> synth_logical (binop, lhs, rhs) ~ctxt ~env ~errs
+    | Logical binop -> synth_logical (binop, lhs, rhs) ~ctxt
   ;;
 end
 
@@ -322,4 +324,4 @@ end = struct
     let delta, errs = synth_help stmts ~ctxt ~env ~delta:Envir.Local.empty ~errs in
     (), delta, errs
   ;;
-end
+end *)

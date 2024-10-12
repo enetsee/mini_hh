@@ -112,13 +112,13 @@ and As : sig
     { scrut : Expr.t
     ; ty_assert : Ty.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end = struct
   type t =
     { scrut : Expr.t
     ; ty_assert : Ty.t
     }
-  [@@deriving eq, compare, sexp, show]
+  [@@deriving eq, compare, create, sexp, show]
 end
 
 (* ~~ Binary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

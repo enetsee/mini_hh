@@ -1,6 +1,6 @@
 (library
  (name ty)
- (libraries core fmt dnf name reporting)
+ (libraries core fmt name reporting)
  (inline_tests)
  (preprocess
   (pps

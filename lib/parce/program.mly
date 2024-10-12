@@ -124,7 +124,7 @@
 // %left EQUAL 
 // %nonassoc ARROW QUESTION_ARROW LBRACKET
 // %nonassoc LPAREN LBRACE
-%left IS // AS 
+%left IS AS 
 // %left AS
 %left LOGICAL_OR
 %left LOGICAL_AND
@@ -484,6 +484,14 @@ open_expr(left):
     let span = Span.join span_start span_end in
     let node = Is.create ~scrut ~ty_test () in
     let elem = Expr_node.Is node in
+    Located.create ~elem ~span ()
+  }
+  | scrut=left AS ty_span=ty_expr {
+    let (ty_assert,span_end) = ty_span in
+    let span_start = Located.span_of scrut in
+    let span = Span.join span_start span_end in
+    let node = As.create ~scrut ~ty_assert () in
+    let elem = Expr_node.As node in
     Located.create ~elem ~span ()
   }
   | lhs=left LOGICAL_AND rhs=expr {

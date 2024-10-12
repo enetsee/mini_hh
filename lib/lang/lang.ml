@@ -8,6 +8,7 @@ module Expr_node = Expr_node
 module Lambda = Lambda
 module Lambda_sig = Lambda_sig
 module Is = Is
+module As = As
 module Binary = Binary
 module Binop = Binop
 module Unary = Unary

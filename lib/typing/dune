@@ -5,10 +5,8 @@
   fmt
   name
   reporting
-  dnf
   ty
   lang
-  envir
   oracle
   subtyping
   refinement

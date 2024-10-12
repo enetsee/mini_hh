@@ -57,7 +57,7 @@ let is_up = function
 
 (* ~~ Implementation  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 let promote_generic (prov, generic) ty_params ~dir =
-  match Envir.Ty_param.find ty_params generic, dir with
+  match Ty.Param.Ctxt.find ty_params generic, dir with
   | None, _ -> Ok (Ty.generic prov generic)
   | Some Ty.Param_bounds.{ upper; _ }, Up -> Ok upper
   | Some Ty.Param_bounds.{ lower; _ }, Down -> Ok lower

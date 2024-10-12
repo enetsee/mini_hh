@@ -1,6 +1,6 @@
 type t =
-  { ty_param : Envir.Ty_param.t
-  ; ty_param_refine : Envir.Ty_param_refine.t
+  { ty_param : Ty.Param.Ctxt.t
+  ; ty_param_refine : Ty.Param.Refinement.t
   ; oracle : Oracle.t
   }
 [@@deriving create, show]

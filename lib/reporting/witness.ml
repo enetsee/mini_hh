@@ -8,8 +8,13 @@ module Lit = struct
   [@@deriving compare, eq, sexp, show, variants, yojson]
 end
 
+module Expr = struct
+  type t = Is of Span.t [@@deriving compare, eq, sexp, show, variants, yojson]
+end
+
 type t =
   | Lit of Lit.t
+  | Expr of Expr.t
   | Witness of Span.t
 [@@deriving compare, eq, sexp, show, variants, yojson]
 
@@ -18,3 +23,4 @@ let lit_bool span = lit (Lit.bool span)
 let lit_lnum span = lit (Lit.lnum span)
 let lit_dnum span = lit (Lit.dnum span)
 let lit_const_string span = lit (Lit.const_string span)
+let expr_is span = expr @@ Expr.is span

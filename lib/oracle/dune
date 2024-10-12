@@ -1,6 +1,6 @@
 (library
  (name oracle)
- (libraries core fmt common name reporting ty envir)
+ (libraries core fmt common name reporting ty lang)
  (inline_tests)
  (preprocess
   (pps

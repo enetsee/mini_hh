@@ -1,6 +1,6 @@
 (library
  (name exposure)
- (libraries core fmt name ty envir oracle)
+ (libraries core fmt name ty oracle)
  (inline_tests)
  (preprocess
   (pps

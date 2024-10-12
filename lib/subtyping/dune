@@ -1,6 +1,6 @@
 (library
  (name subtyping)
- (libraries core fmt name dnf ty envir oracle)
+ (libraries core fmt name ty oracle)
  (inline_tests)
  (preprocess
   (pps
