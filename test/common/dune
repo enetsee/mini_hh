@@ -1,4 +1,4 @@
 (library
  (name test_common)
- (libraries core fmt str alcotest common name lang ty oracle refinement)
+ (libraries core fmt str alcotest common name lang ty ctxt oracle refinement)
  (synopsis "Helpers for tests"))

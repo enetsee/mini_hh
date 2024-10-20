@@ -1,6 +1,6 @@
 (library
- (name exposure)
- (libraries core fmt name ty ctxt oracle)
+ (name ctxt)
+ (libraries core fmt name reporting ty lang oracle)
  (inline_tests)
  (preprocess
   (pps

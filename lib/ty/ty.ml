@@ -451,50 +451,50 @@ and Param : sig
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 
-  module Ctxt : sig
-    (** A type parameteter context is a map from type paramter names to
-        type parameter bounds *)
-    type t
+  (* module Ctxt : sig
+     (** A type parameteter context is a map from type paramter names to
+     type parameter bounds *)
+     type t
 
-    val pp : t Fmt.t
-    val empty : t
-    val is_empty : t -> bool
-    val bind : t -> Name.Ty_param.t -> Param_bounds.t -> t
-    val merge_disjoint_exn : t -> t -> t
-    val meet : t -> t -> prov:Reporting.Prov.t -> t
-    val find : t -> Name.Ty_param.t -> Param_bounds.t option
-    val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
-  end
+     val pp : t Fmt.t
+     val empty : t
+     val is_empty : t -> bool
+     val bind : t -> Name.Ty_param.t -> Param_bounds.t -> t
+     val merge_disjoint_exn : t -> t -> t
+     val meet : t -> t -> prov:Reporting.Prov.t -> t
+     val find : t -> Name.Ty_param.t -> Param_bounds.t option
+     val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
+     end
 
-  module Refinement : sig
-    (** Represents the refinement to the bounds of a type parameter occuring in the type parameter context
-        Any type parameter which is bound in that context but doesn't explicitly appear in the refinement context
-        has an implicit refinement of [nothing] and [mixed] i.e. [top] for type parameter bounds *)
-    type t [@@deriving compare, eq, sexp, show]
+     module Refinement : sig
+     (** Represents the refinement to the bounds of a type parameter occuring in the type parameter context
+     Any type parameter which is bound in that context but doesn't explicitly appear in the refinement context
+     has an implicit refinement of [nothing] and [mixed] i.e. [top] for type parameter bounds *)
+     type t [@@deriving compare, eq, sexp, show]
 
-    val top : t
+     val top : t
 
-    (** Same as top *)
-    val empty : t
+     (** Same as top *)
+     val empty : t
 
-    val bottom : t
-    val singleton : Name.Ty_param.t -> Param_bounds.t -> t
-    val bounds : (Name.Ty_param.t * Param_bounds.t) list -> t
-    val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
-    val meet : t -> t -> prov:Prov.t -> t
-    val meet_many : t list -> prov:Prov.t -> t
-    val join : t -> t -> prov:Prov.t -> t
-    val join_many : t list -> prov:Prov.t -> t
-    val unbind : t -> Name.Ty_param.t -> t
-    val unbind_all : t -> Name.Ty_param.t list -> t
+     val bottom : t
+     val singleton : Name.Ty_param.t -> Param_bounds.t -> t
+     val bounds : (Name.Ty_param.t * Param_bounds.t) list -> t
+     val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
+     val meet : t -> t -> prov:Prov.t -> t
+     val meet_many : t list -> prov:Prov.t -> t
+     val join : t -> t -> prov:Prov.t -> t
+     val join_many : t list -> prov:Prov.t -> t
+     val unbind : t -> Name.Ty_param.t -> t
+     val unbind_all : t -> Name.Ty_param.t list -> t
 
-    type result =
-      | Bounds_top
-      | Bounds_bottom
-      | Bounds of Param_bounds.t
+     type result =
+     | Bounds_top
+     | Bounds_bottom
+     | Bounds of Param_bounds.t
 
-    val find : t -> Name.Ty_param.t -> result
-  end
+     val find : t -> Name.Ty_param.t -> result
+     end *)
 end = struct
   type t =
     { name : Name.Ty_param.t Located.t
@@ -525,7 +525,7 @@ end = struct
     { name; param_bounds }
   ;;
 
-  module Ctxt = struct
+  (* module Ctxt = struct
     type t = Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
 
     let pp t = Name.Ty_param.Map.pp Param_bounds.pp t
@@ -642,7 +642,7 @@ end = struct
       | Bounds bounds when Map.is_empty bounds -> Top
       | t -> t
     ;;
-  end
+  end *)
 end
 
 and Param_bounds : sig
@@ -804,6 +804,26 @@ end = struct
     in
     let ops = id_ops () in
     { ops with ty }
+  ;;
+end
+
+module Refinement = struct
+  type t =
+    | Intersect_with of Prov.t * Annot.t
+    (** If we refine to a type which is not a subtype of the scrutinees type
+        we end up with an intersection *)
+    | Replace_with of Annot.t
+    (** If we refine to a type which is a subtype of the scrutinees type it would
+        be redundant to construct an intersection - we can simply use the refined
+        type. *)
+  [@@deriving compare, eq, sexp, show, variants]
+
+  let and_then ~t_fst ~t_snd =
+    match t_fst, t_snd with
+    | _, Replace_with _ -> t_fst
+    | Intersect_with (prov1, ty1), Intersect_with (prov2, ty2) ->
+      Intersect_with (prov2, Annot.inter ~prov:prov1 [ ty1; ty2 ])
+    | Replace_with ty1, Intersect_with (prov, ty2) -> Replace_with (Annot.inter ~prov [ ty1; ty2 ])
   ;;
 end
 

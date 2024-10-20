@@ -1,0 +1,26 @@
+module Global = struct
+  type t =
+    { oracle : Oracle.t
+    ; ty_param_source : int
+    }
+  [@@deriving create, show]
+end
+
+module Cont = struct
+  module Rfmnt = struct
+    type t =
+      { this_ : Ty.Param_bounds.t option
+      ; ty_param : Ty.Param.Refinement.t
+      }
+    [@@deriving create, show]
+
+    let param_rfmnt { ty_param; _ } nm = Ty.Param.Refinement.find ty_param nm
+  end
+
+  type t =
+    { ty_param : Ty.Param.Ctxt.t
+    ; is_rfmnt : Rfmnt.t
+    ; as_rfmnt : Rfmnt.t
+    }
+  [@@deriving create, show]
+end

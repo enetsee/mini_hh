@@ -1,8 +1,8 @@
 open Core
 
-let synth local ~ctxt =
+let synth local =
   (* Find the type of the term variable and any refinements *)
-  match Ctxt.(find_local ctxt local) with
+  match Eff.find_local local with
   | None -> Error (Err.unbound_local local)
   | Some ty -> Ok ty
 ;;

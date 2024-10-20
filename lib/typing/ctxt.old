@@ -4,6 +4,16 @@ module Fn = struct
   type t = { ret_ty : Ty.t } [@@deriving create, show]
 end
 
+module Formula = struct
+  type t =
+    | Atom of Ty.t
+    | Inter of t * t
+    | Union of t * t
+    | Top
+    | Bottom
+  [@@deriving compare, eq, sexp, show, variants]
+end
+
 module Local = struct
   (** A local environment is a map from term variables names to *)
   type t = Ty.t Name.Tm_var.Map.t [@@deriving compare, eq, sexp, show]
@@ -45,6 +55,13 @@ module Local = struct
     and k2 = Map.key_set t2 in
     Set.symmetric_diff k1 k2
   ;;
+
+  module Refinement = struct
+    (** A local refinement is a map from term variables names to formula over types*)
+    type t = Formula.t Name.Tm_var.Map.t [@@deriving compare, eq, sexp, show]
+
+    let empty = Name.Tm_var.Map.empty
+  end
 end
 
 (* module Ty_refine = struct
@@ -86,22 +103,35 @@ end
 end *)
 
 module Cont = struct
+  module Rfmnt = struct
+    type t =
+      { local : Local.Refinement.t
+      ; this_ : Ty.Param_bounds.t option
+      ; ty_param : Ty.Param.Refinement.t
+      }
+    [@@deriving create, show]
+
+    let empty = { this_ = None; local = Local.Refinement.empty; ty_param = Ty.Param.Refinement.empty }
+  end
+
   type t =
-    { local : Local.t (* ; ty_refine : Ty_refine.t *)
+    { local : Local.t
     ; ty_param : Ty.Param.Ctxt.t
-    ; ty_param_refine : Ty.Param.Refinement.t
-    ; this_refine : Refinement.t
+    ; is_rfmnt : Rfmnt.t
+    ; as_rfmnt : Rfmnt.t
     }
+  [@@deriving create, show]
+
+  let empty = { local = Local.empty; ty_param = Ty.Param.Ctxt.empty; is_rfmnt = Rfmnt.empty; as_rfmnt = Rfmnt.empty }
 end
 
 module Global = struct
   type t =
-    { oracle : Oracle.t
-    ; subtyping_state : Subtyping.State.t
-    ; errs : Err.t list
-    (** Subtyping state which will maintain constraints asubtyping_env nd solutions to type variables when we have them *)
-    ; classish : Name.Ctor.t option (** The name of the classish construct we are within, if any *)
-    ; fn : Fn.t option (** The current function context if any *)
+    { oracle : Oracle.t (** Global source of information about inheritence and implementation *)
+    ; errs : Err.t list (** Accumulated errors & warnings *)
+    ; this : Ty.Param_bounds.t option (** The bounds which apply to [$this], if any *)
+    ; fn : Fn.t option (** The function context, if any *)
+    ; ty_param_source : int (** Source of fresh names for type params *)
     }
   [@@deriving create, show]
 end
@@ -111,14 +141,24 @@ let find_local Cont.{ local; _ } tm_var =
   Local.find local tm_var
 ;;
 
-let tell_is_subtype
-  Global.({ oracle; subtyping_state = state; errs; _ } as ctxt)
-  Cont.{ ty_param; ty_param_refine; _ }
-  ~ty_sub
-  ~ty_super
-  =
-  let subtyping_ctxt = Subtyping.Ctxt.create ~oracle ~ty_param ~ty_param_refine () in
-  match Subtyping.Tell.is_subtype ~ty_sub ~ty_super ~ctxt:subtyping_ctxt ~state with
-  | Error err -> { ctxt with errs = Err.subtyping err :: errs }
-  | Ok subtyping_state -> { ctxt with subtyping_state }
+let refine ~ty_scrut ~ty_test ~glbl ~cont:_ =
+  let refinement_glbl =
+    let Global.{ oracle; ty_param_source; _ } = glbl in
+    Refinement.Ctxt.Global.create ~oracle ~ty_param_source ()
+  and refinement_cont = failwith "" in
+  Refinement.refine ~ty_scrut ~ty_test ~cont:refinement_cont ~glbl:refinement_glbl
 ;;
+
+let tell_is_subtype ~ty_sub ~ty_super ~glbl ~cont:_ =
+  (* let subtyping_ctxt = Subtyping.Ctxt.create ~oracle ~ty_param ~ty_param_refine () in *)
+  let subtyping_glbl =
+    let Global.{ oracle; ty_param_source; _ } = glbl in
+    Subtyping.Ctxt.Global.create ~oracle ~ty_param_source ()
+  and subtyping_cont = failwith "" in
+  match Subtyping.Tell.is_subtype ~ty_sub ~ty_super ~cont:subtyping_cont ~glbl:subtyping_glbl with
+  | Error err -> Global.{ glbl with errs = Err.subtyping err :: glbl.errs }
+  | Ok _ -> glbl
+;;
+
+(* let refine _ _ ~ty_scut ~ty_test =
+   match Refinement.refine ~ty_scrut ~ty_test *)

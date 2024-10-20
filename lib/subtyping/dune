@@ -1,6 +1,6 @@
 (library
  (name subtyping)
- (libraries core fmt name ty oracle)
+ (libraries core fmt name ty ctxt)
  (inline_tests)
  (preprocess
   (pps

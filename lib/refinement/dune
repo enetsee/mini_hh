@@ -1,6 +1,6 @@
 (library
  (name refinement)
- (libraries core fmt name ty oracle exposure subtyping)
+ (libraries core fmt name ty ctxt state oracle exposure subtyping)
  (inline_tests)
  (preprocess
   (pps

@@ -1,14 +1,66 @@
-(* open Core
-   open Reporting *)
+open Core
+open Reporting
+open Ctxt
 
-(* module rec Expr : sig 
-  (** *)
-   val synth: Lang.Expr.t -> ctxt:Ctxt.Global.t -> Ty.t * Ctxt.Cont.t * Ctxt.Cont.t * Ctxt.Global.t 
-end  = struct
-  let synth Located.{elem;span} ~ctxt =
+type expr_typing =
+  { ty : Ty.t
+  ; is_opt : Cont.Refinement.t option
+  ; as_opt : Cont.Refinement.t option
+  }
+
+module rec Expr : sig
+  (** Sythesize a type [Ty.t] for and expression *)
+  val synth : Lang.Expr.t -> expr_typing
+end = struct
+  let synth Located.{ elem; span } =
+    let open Lang.Expr_node in
     match elem with
-    | 
-end *)
+    | Is is_expr -> Is.synth (is_expr, span)
+    | As as_expr -> As.synth (as_expr, span)
+    | _ -> failwith "TODO"
+  ;;
+end
+
+and Is : sig
+  val synth : Lang.Is.t * Span.t -> expr_typing
+end = struct
+  let mk_is_refinement expr_scrut ty_refinement ty_param_refinement_opt =
+    match Located.elem expr_scrut with
+    | Lang.Expr_node.Local tm_var ->
+      let local = Local.Refinement.singleton tm_var ty_refinement
+      and ty_param = Option.value ~default:Ty_param.Refinement.empty ty_param_refinement_opt in
+      Some (Cont.Refinement.create ~local ~ty_param ())
+    | Lang.Expr_node.This ->
+      let local = Local.Refinement.empty
+      and ty_param = Option.value ~default:Ty_param.Refinement.empty ty_param_refinement_opt in
+      Some (Cont.Refinement.create ~this:ty_refinement ~local ~ty_param ())
+    | _ -> None
+  ;;
+
+  let synth (Lang.Is.{ scrut; ty_test }, span) =
+    (* [Is] expressions have type bool *)
+    let ty = Ty.bool @@ Prov.expr_is span in
+    (* First we type the expression in scrutinee posisition; this may have some global side-effects, captured in
+       [ctxt] and have conditional and unconditional refinements captured in [is_] and [as_].
+       Note that in the case that we do have an is refinement then the outer expression can't produce one since
+       the subexpression can't be a local or [$this] *)
+    let { ty = ty_scrut; is_opt = is_opt_scrut; as_opt } = Expr.synth scrut in
+    (* The refinements from typing from the scrutinee subexpression apply when typing the [is] expression to in the expression *)
+    let _ : unit = Eff.locally_refine ~is_opt:is_opt_scrut ~as_opt in
+    (* [is] expressions may also give us conditional refinements *)
+    let ty_refinement, ty_param_refinement_opt = Eff.refine_by ~ty_scrut ~ty_test in
+    (* Build the result is refinement *)
+    let is_opt = Option.first_some is_opt_scrut @@ mk_is_refinement scrut ty_refinement ty_param_refinement_opt in
+    (* Any [as] refinement coming from the typing of the scrutinee subexpression also applies to the whole [is] expression *)
+    { ty; as_opt; is_opt }
+  ;;
+end
+
+and As : sig
+  val synth : Lang.As.t * Span.t -> expr_typing
+end = struct
+  let synth (_, _span) = failwith ""
+end
 
 (*
    module rec Expr : sig

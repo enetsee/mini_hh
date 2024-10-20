@@ -12,8 +12,8 @@ let synth (lit, span) =
   | Lit.Null -> Ty.null @@ Prov.lit_null span
 ;;
 
-let check lit ~against ~ctxt =
+let check lit ~against =
   (* Subsumption case - sythesize a type (`ty`) then generate the subtype constraint  `ty <: against` *)
   let ty_sub = synth lit in
-  Ctxt.tell_is_subtype ctxt ~ty_sub ~ty_super:against
+  Eff.tell_is_subtype ~ty_sub ~ty_super:against
 ;;
