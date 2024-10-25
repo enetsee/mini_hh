@@ -106,6 +106,7 @@ rule token = parse
   | "where"                 { WHERE (current_loc lexbuf) }
   | "optional"              { OPTIONAL (current_loc lexbuf) }
   | "some"                  { SOME (current_loc lexbuf) }
+  | "let"                   { LET (current_loc lexbuf) } 
 
  (* ~~ Symbols & punctuation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | '+'                     { PLUS (current_loc lexbuf) }

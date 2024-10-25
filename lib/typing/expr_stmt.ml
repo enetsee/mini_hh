@@ -1,131 +1,332 @@
 open Core
 open Reporting
-open Ctxt
-
-type expr_typing =
-  { ty : Ty.t
-  ; is_opt : Cont.Refinement.t option
-  ; as_opt : Cont.Refinement.t option
-  }
 
 module rec Expr : sig
-  (** Sythesize a type [Ty.t] for and expression *)
-  val synth : Lang.Expr.t -> expr_typing
+  val synth : Lang.Expr.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+
+  val check
+    :  Lang.Expr.t
+    -> against:Ty.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let synth Located.{ elem; span } =
+  let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
     let open Lang.Expr_node in
     match elem with
-    | Is is_expr -> Is.synth (is_expr, span)
-    | As as_expr -> As.synth (as_expr, span)
+    | Lit lit ->
+      let ty = Lit.synth (lit, span) in
+      ty, Ctxt.Cont.Expr_delta.empty
+    | Local tm_var ->
+      let ty =
+        match Ctxt.Cont.find_local cont_ctxt tm_var with
+        | Some ty ->
+          let prov_tm_var = Prov.lvalue_tm_var span in
+          Ty.map_prov ty ~f:(fun prov_def -> Prov.use ~prov_def ~prov_tm_var)
+        | _ ->
+          let _ : unit =
+            let tm_var = Located.create ~elem:tm_var ~span () in
+            let err = Err.unbound_local tm_var in
+            Eff.log_error err
+          in
+          Ty.nothing (Prov.lvalue_tm_var span)
+      in
+      ty, Ctxt.Cont.Expr_delta.empty
+    | Is is_expr -> Is.synth (is_expr, span) ~def_ctxt ~cont_ctxt
+    | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~cont_ctxt
     | _ -> failwith "TODO"
+  ;;
+
+  let check expr ~against ~def_ctxt ~cont_ctxt =
+    let ty, refn = synth expr ~def_ctxt ~cont_ctxt in
+    let _valid_opt = Eff.tell_is_subtype ~ty_sub:ty ~ty_super:against cont_ctxt in
+    ty, refn
   ;;
 end
 
 and Is : sig
-  val synth : Lang.Is.t * Span.t -> expr_typing
+  val synth : Lang.Is.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let mk_is_refinement expr_scrut ty_refinement ty_param_refinement_opt =
+  let refine_by span expr_scrut ~ty_scrut ~ty_test cont_ctxt =
+    let ty_refinement, ty_param_refinement_opt =
+      match Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt () with
+      | Error subtyping_error ->
+        (* Refinement gave us a subtyping error which means that the type of the scrutinee is provably disjoint from
+           the test type, meaning refinement is impossible. We raise a warning rather than an error here because you
+           could always take the scrutinee type up to [mixed] and it would go away. *)
+        let _ : unit =
+          let warn = Warn.impossible_refinement subtyping_error in
+          Eff.log_warning warn
+        in
+        (* Since the scrutinee type is disjoint from the test type we refine to [nothing] *)
+        let ty_nothing = Ty.nothing (Prov.witness span) in
+        Ty.Refinement.Replace_with ty_nothing, None
+      | Ok (ty_refn, ty_param_refn_opt) -> ty_refn, Option.map ~f:snd ty_param_refn_opt
+    in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
-      let local = Local.Refinement.singleton tm_var ty_refinement
-      and ty_param = Option.value ~default:Ty_param.Refinement.empty ty_param_refinement_opt in
-      Some (Cont.Refinement.create ~local ~ty_param ())
+      let local = Ctxt.Local.Refinement.singleton tm_var ty_refinement
+      and ty_param =
+        let default = Ctxt.Ty_param.Refinement.empty in
+        Option.value ~default ty_param_refinement_opt
+      in
+      Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
-      let local = Local.Refinement.empty
-      and ty_param = Option.value ~default:Ty_param.Refinement.empty ty_param_refinement_opt in
-      Some (Cont.Refinement.create ~this:ty_refinement ~local ~ty_param ())
+      let local = Ctxt.Local.Refinement.empty in
+      let this =
+        let upper =
+          match ty_refinement with
+          | Ty.Refinement.Intersect_with (_, ty) -> ty
+          | Ty.Refinement.Replace_with ty -> ty
+        in
+        let bounds = Ty.Param_bounds.create ~lower:(Ty.nothing (Prov.witness span)) ~upper () in
+        Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this bounds
+      in
+      let ty_param =
+        match ty_param_refinement_opt with
+        | None -> this
+        | Some that -> Ctxt.Ty_param.Refinement.meet this that ~prov:(Prov.witness span)
+      in
+      Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | _ -> None
   ;;
 
-  let synth (Lang.Is.{ scrut; ty_test }, span) =
+  let synth (Lang.Is.{ scrut; ty_test }, span) ~def_ctxt ~cont_ctxt =
     (* [Is] expressions have type bool *)
-    let ty = Ty.bool @@ Prov.expr_is span in
-    (* First we type the expression in scrutinee posisition; this may have some global side-effects, captured in
-       [ctxt] and have conditional and unconditional refinements captured in [is_] and [as_].
-       Note that in the case that we do have an is refinement then the outer expression can't produce one since
-       the subexpression can't be a local or [$this] *)
-    let { ty = ty_scrut; is_opt = is_opt_scrut; as_opt } = Expr.synth scrut in
-    (* The refinements from typing from the scrutinee subexpression apply when typing the [is] expression to in the expression *)
-    let _ : unit = Eff.locally_refine ~is_opt:is_opt_scrut ~as_opt in
-    (* [is] expressions may also give us conditional refinements *)
-    let ty_refinement, ty_param_refinement_opt = Eff.refine_by ~ty_scrut ~ty_test in
-    (* Build the result is refinement *)
-    let is_opt = Option.first_some is_opt_scrut @@ mk_is_refinement scrut ty_refinement ty_param_refinement_opt in
-    (* Any [as] refinement coming from the typing of the scrutinee subexpression also applies to the whole [is] expression *)
-    { ty; as_opt; is_opt }
+    let prov = Prov.expr_is span in
+    let ty = Ty.bool prov in
+    (* First we type the expression in scrutinee posisition; this may have some global side-effects, captured in [ctxt]
+       and have conditional and unconditional refinements captured in [is_] and [as_]. Note that in the case that we do
+       have an is refinement then the outer expression can't produce one since the subexpression can't be a local or
+       [$this] *)
+    let ty_scrut, expr_delta_scrut = Expr.synth scrut ~def_ctxt ~cont_ctxt in
+    (* The refinements from typing from the scrutinee subexpression apply when typing the [is] expression to in the
+       expression *)
+    let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
+    (* Build the result is refinement and put it into a delta *)
+    let expr_delta_is =
+      let rfmt = refine_by span scrut ~ty_scrut ~ty_test cont_ctxt in
+      Ctxt.Cont.Expr_delta.create ?rfmt ()
+    in
+    let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_is ~prov in
+    (* Any [as] refinement coming from the typing of the scrutinee subexpression also applies to the whole [is]
+       expression *)
+    ty, delta
   ;;
 end
 
 and As : sig
-  val synth : Lang.As.t * Span.t -> expr_typing
+  val synth : Lang.As.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let synth (_, _span) = failwith ""
+  let synth (_, _span) ~def_ctxt:_ ~cont_ctxt:_ = failwith ""
 end
 
-(*
-   module rec Expr : sig
-  val synth : Lang.Expr.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
-  val check : Lang.Expr.t -> against:Ty.t -> ctxt:Ctxt.t -> Ctxt.t
+and Stmt : sig
+  val synth : Lang.Stmt.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
 end = struct
-  let synth Located.{ elem; _ } ~ctxt =
+  let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
+    let open Lang.Stmt_node in
     match elem with
-    (* | Lang.Expr_node.Is is_ -> Is.synth is_ ~ctxt *)
-    | _ -> failwith "Nope"
-  ;;
-
-  (* Just subsumption case for now *)
-  let check t ~against ~ctxt =
-    let ty_sub, env, errs = synth t ~ctxt in
-    Ctxt.tell_is_subtype ctxt ~ty_sub ~ty_super
+    | Expr expr ->
+      let _ty, expr_delta = Expr.synth expr ~def_ctxt ~cont_ctxt in
+      let next = Ctxt.Cont.Delta.of_expr_delta expr_delta in
+      Ctxt.Delta.create ~next ()
+    | Return expr_opt ->
+      let expr_delta_opt = Option.map expr_opt ~f:(fun expr -> snd @@ Expr.synth expr ~def_ctxt ~cont_ctxt) in
+      let exit = Option.value_map ~default:Ctxt.Cont.Delta.empty ~f:Ctxt.Cont.Delta.of_expr_delta expr_delta_opt in
+      Ctxt.Delta.create ~exit ()
+    | Assign assign_stmt -> Assign.synth (assign_stmt, span) ~def_ctxt ~cont_ctxt
+    | If if_stmt -> If.synth (if_stmt, span) ~def_ctxt ~cont_ctxt
+    | Seq seq_stmt -> Seq.synth (seq_stmt, span) ~def_ctxt ~cont_ctxt
+    | Unpack unpack_stmt -> Unpack.synth (unpack_stmt, span) ~def_ctxt ~cont_ctxt
   ;;
 end
 
-(* ~~ Is refinement expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Is : sig
-  val synth : Lang.Is.t Located.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
+and Assign : sig
+  val synth : Lang.Assign.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
 end = struct
-  (** Typing `is` can give us:
-      - a type refinement if the scrutinee is a local
-      - type parameter refinements if the test / scrutinee involve generics
+  let synth_tm_var tm_var rhs ~def_ctxt ~cont_ctxt =
+    let ty_rhs, expr_delta = Expr.synth rhs ~def_ctxt ~cont_ctxt in
+    (* Now bind the new new local and any [as] refinement resulting from typing the rhs expression
+       in the [next] continuation *)
+    let next =
+      let local =
+        let prov_lvalue = Prov.lvalue_tm_var @@ Located.span_of tm_var in
+        let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) ty_rhs in
+        Some (Ctxt.Local.singleton tm_var ty)
+      in
+      let delta = Ctxt.Cont.Delta.of_expr_delta expr_delta in
+      { delta with local }
+    in
+    Ctxt.Delta.create ~next ()
+  ;;
 
-      TODO(mjt) support properties *)
-  let synth Located.{ elem = Lang.Is.{ scrut; ty_test }; span } ~ctxt =
-    (* `is` tests have type bool *)
-    let ty = Ty.bool @@ Prov.expr_is span in
-    (* Get the type of the scrutinee expression *)
-    let ty_scrut, env, errs = Expr.synth scrut ~ctxt in
-    (* Refine the scrutinee under the test type, bind any type params from the opened existential *)
-    let _refinement_res =
-      let Envir.Typing.{ ty_param; ty_param_refine; _ } = env
-      and Ctxt.{ oracle; _ } = ctxt in
-      let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in
-      Refinement.refine ~ty_scrut ~ty_test ~ctxt
-    in
-    (* match refinement_res with
-    | Error err ->
-      (* The refinemnt gave us a subtyping error but we will assume we can just  *)
-    let ty_refine =
-      Option.value_map ~default:Envir.Ty_refine.empty ~f:(fun id -> Envir.Ty_refine.of_local id ty_test)
-      @@ Lang.Expr.local_opt scrut
-    in *)
-    let delta =
-      Envir.Typing.create
-        ~local:Envir.Local.empty
-        ~ty_refine:Envir.Ty_refine.empty
-        ~ty_param:Envir.Ty_param.empty
-        ~ty_param_refine:Envir.Ty_param_refine.empty
-        ~subtyping:()
-        ()
-    in
-    Ty.bool Prov.empty, delta, errs
+  let synth (Lang.Assign.{ lvalue; rhs }, _span) ~def_ctxt ~cont_ctxt =
+    match lvalue.elem with
+    | Lang.Lvalue.Local tm_var ->
+      let tm_var = Located.create ~elem:tm_var ~span:lvalue.span () in
+      synth_tm_var tm_var rhs ~def_ctxt ~cont_ctxt
   ;;
 end
 
-(* ~~ As refinement expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and As : sig end = struct end
+and Unpack : sig
+  val synth : Lang.Unpack.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+end = struct
+  let get_bounds span quants names =
+    let rec aux n_names quants names ~k =
+      match quants, names with
+      (* ~~ Continue ~~ *)
+      | quant :: quants, new_name :: names ->
+        aux (n_names + 1) quants names ~k:(fun (ty_params, subst) ->
+          let Ty.Param.{ name; param_bounds } = quant in
+          let ty_param = Ty.Param.create ~name:new_name ~param_bounds () in
+          let ty =
+            let Located.{ span; elem } = new_name in
+            let prov = Prov.witness span in
+            Ty.generic prov elem
+          in
+          let subst = Map.add_exn subst ~key:(Located.elem name) ~data:ty in
+          k (ty_param :: ty_params, subst))
+      (* ~~ Success ~~ *)
+      | [], [] -> k ([], Name.Ty_param.Map.empty)
+      (* ~~ Failure ~~ *)
+      | [], rest ->
+        (* We have more names than quantifiers so just use bottom for any remaining name and raise an error *)
+        let _ : unit =
+          let n_quants = n_names in
+          let n_names = n_names + List.length rest in
+          let err = Err.unpack_arity ~span ~n_quants ~n_names in
+          Eff.log_error err
+        in
+        let ty_params =
+          List.map rest ~f:(fun new_name ->
+            let param_bounds = Ty.Param_bounds.bottom (Prov.witness @@ Located.span_of new_name) in
+            Ty.Param.create ~name:new_name ~param_bounds ())
+        in
+        k (ty_params, Name.Ty_param.Map.empty)
+      | _, [] ->
+        (* We have more quantifiers than names so leave the remaining quantifiers unbound and raise an error *)
+        let _ : unit =
+          let n_quants = n_names + List.length quants in
+          let err = Err.unpack_arity ~span ~n_quants ~n_names in
+          Eff.log_error err
+        in
+        k ([], Name.Ty_param.Map.empty)
+    in
+    aux 0 quants names ~k:Fn.id
+  ;;
+
+  let synth (Lang.Unpack.{ ty_params; tm_var; rhs }, span) ~def_ctxt ~cont_ctxt =
+    (* First type the rhs *)
+    let ty_rhs, expr_delta = Expr.synth rhs ~def_ctxt ~cont_ctxt in
+    (* TODO(mjt) Nooooooooo don't inspect the type - this needs to go when we introduce inference...
+       Not sure how to do this but probably some variation on hh's [destructures_to] constraint.
+       The interesting thing is that we'll need to introduce fresh type parameters and
+       fresh type variables to use in the parameter bounds. Not sure if that will work out... *)
+    let ty_params, body_ty =
+      let prov_packed, ty_node = Ty.prj ty_rhs in
+      match Ty.Node.exists_val ty_node with
+      | Some Ty.Exists.{ quants; body } ->
+        (* Extract the bounds from the quantifiers and make the subsitution in the body *)
+        let bounds, subst = get_bounds span quants ty_params in
+        ( bounds
+        , Ty.(
+            map_prov ~f:(fun prov_unpacked -> Prov.unpack ~prov_packed ~prov_unpacked)
+            @@ apply_subst body ~subst ~combine_prov:(fun _ p -> p)) )
+      | _ ->
+        ( List.map ty_params ~f:(fun (Located.{ span; _ } as name) ->
+            let param_bounds = Ty.Param_bounds.bottom @@ Prov.witness span in
+            Ty.Param.create ~name ~param_bounds ())
+        , ty_rhs )
+    in
+    (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression *)
+    let next =
+      let ty_param = Ctxt.Ty_param.(bind_all empty ty_params) in
+      (* TODO(mjt) should we be storing term var locations in [local] too? *)
+      let local =
+        let span = Located.span_of tm_var in
+        let prov_lvalue = Prov.lvalue_tm_var span in
+        let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) body_ty in
+        Ctxt.Local.singleton tm_var ty
+      in
+      let with_ = Ctxt.Cont.Delta.create ~local ~ty_param () in
+      let init = Ctxt.Cont.Delta.of_expr_delta expr_delta in
+      Ctxt.Cont.Delta.extend init ~with_
+    in
+    Ctxt.Delta.create ~next ()
+  ;;
+end
+
+and If : sig
+  val synth : Lang.If.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+end = struct
+  let synth (Lang.If.{ cond; then_; else_ }, span) ~def_ctxt ~cont_ctxt =
+    (* Check the condition expression against [bool] *)
+    let _ty_cond, expr_delta =
+      let against = Ty.bool (Prov.expr_if_cond span) in
+      Expr.check cond ~against ~def_ctxt ~cont_ctxt
+    in
+    let delta_then_ =
+      (* In the [then_] branch both the [is] and [as] refinements resulting from typing the condition expression apply *)
+      let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta in
+      let delta = Stmt.synth then_ ~def_ctxt ~cont_ctxt in
+      (* Any type parameters in the delta came about because we unpacked an existential. To prevent these escaping the
+         continuation we have to promote any occurrences of these type parameters inside types in the local environment
+         to the upper or lower bound of the type parametes or, if any type parameter occurs invariantly, promote / demote
+         the constructor to the first sub- or supertype which doesn't mention the type parameter *)
+      Exposure.promote_delta delta
+    and delta_else_ =
+      (* In the [else_] branch on the [as] refinement resulting from typing the condition expression applies; in hh
+         we also have negated types for classes and some primitives but this adds a lot of complexity so we just drop
+         the refinements for now *)
+      let expr_delta = Ctxt.Cont.Expr_delta.drop_rfmt expr_delta in
+      let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta in
+      Stmt.synth else_ ~def_ctxt ~cont_ctxt
+    in
+    (* Before [join]ing the deltas we need to find that any local bound in only one of the brances was already
+       bound in the initial context *)
+    let prov = Prov.stmt_if_join span in
+    Ctxt.Delta.join delta_then_ delta_else_ ~prov
+  ;;
+end
+
+and Seq : sig
+  val synth : Lang.Seq.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+end = struct
+  let rec synth_help span_return span_all stmts ~def_ctxt ~acc_ctxt ~acc_delta =
+    match stmts with
+    | [] -> acc_delta
+    | stmt :: stmts ->
+      (* Type the statement under the [next] continuation of the accumulated context, if it exists. *)
+      (match Ctxt.next acc_ctxt with
+       | Some cont_ctxt ->
+         let delta = Stmt.synth stmt ~def_ctxt ~cont_ctxt in
+         (* Appending the delta to the context means that we will see any local or type parameter bound in the current
+            statement and any refinement made to a local or $this and any corresponding refinement to type parameters *)
+         let acc_ctxt = Ctxt.update acc_ctxt ~delta
+         and acc_delta = Ctxt.Delta.extend acc_delta ~with_:delta in
+         synth_help (Some (Located.span_of stmt)) span_all stmts ~def_ctxt ~acc_ctxt ~acc_delta
+       | None ->
+         (* We don't have a next continuation which means the previous statment cause an [exit]. All subsequent
+            statements are unreachable so we finish typing and raise a warning *)
+         let _ : unit =
+           let span_current = Located.span_of stmt in
+           let span_dead = Span.meet span_current span_all in
+           let warn = Warn.unreachable ~span_return ~span_dead in
+           Eff.log_warning warn
+         in
+         acc_delta)
+  ;;
+
+  let synth (Lang.Seq.Seq stmts, span) ~def_ctxt ~cont_ctxt =
+    let acc_ctxt = Ctxt.create ~next:cont_ctxt ()
+    and acc_delta = Ctxt.Delta.empty in
+    synth_help None span stmts ~def_ctxt ~acc_ctxt ~acc_delta
+  ;;
+end
 
 (* ~~ Binary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Binary : sig
+(* and Binary : sig
   val synth : Lang.Binary.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
 end = struct
   (** Typing logical binary expression carries through the refinements from each operand *)
@@ -198,182 +399,5 @@ end = struct
   let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt =
     match binop with
     | Logical binop -> synth_logical (binop, lhs, rhs) ~ctxt
-  ;;
-end
-
-(* ~~ Unary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Unary : sig end = struct end
-
-(* ~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Stmt : sig
-  include Sigs.Synthesizes with type t := Lang.Stmt.t and type out := unit and type env_out := Envir.Local.t
-end = struct
-  let synth Located.{ elem; _ } ~ctxt ~env ~errs =
-    match elem with
-    | Lang.Stmt_node.Assign assign -> Assign.synth assign ~ctxt ~env ~errs
-    | Lang.Stmt_node.Seq seq -> Seq.synth seq ~ctxt ~env ~errs
-    | _ -> failwith "Nope"
-  ;;
-end
-
-(* ~~ Assigment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Assign : sig
-  include Sigs.Synthesizes with type t := Lang.Assign.t and type out := unit and type env_out := Envir.Local.t
-end = struct
-  let synth_local local rhs ~ctxt ~env ~errs =
-    (* Synthesize a type for the right hand side under the initial environment. *)
-    let ty, Envir.Typing.{ local = env_delta; _ }, errs = Expr.synth rhs ~ctxt ~env ~errs in
-    (* Bind the lvalue in the local env *)
-    let env_delta = Envir.Local.bind_local env_delta local ty in
-    (* Refinments arising from the expression are applicable and the new binding
-       are applicable to the a `next` continuation *)
-    (), env_delta, errs
-  ;;
-
-  let synth Lang.Assign.{ lvalue; rhs } ~ctxt ~env ~errs =
-    match lvalue.Located.elem with
-    | Local local -> synth_local local rhs ~ctxt ~env ~errs
-  ;;
-end
-
-(* ~~ If ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and If : sig
-  include Sigs.Synthesizes with type t := Lang.If.t and type out := unit and type env_out := Envir.Local.t
-end = struct
-  let defined then_ else_ ~(outer : Envir.Local.t) ~errs =
-    (* Find the symmetric difference of the bindings in the then and else branches
-       and determine which weren't already bound *)
-    Sequence.fold ~init:errs ~f:(fun errs k ->
-      let k =
-        match k with
-        | Either.First k -> k
-        | Either.Second k -> k
-      in
-      if Envir.Local.is_bound outer k then errs else Err.(Unbound_at_join k) :: errs)
-    @@ Envir.Local.symm_diff then_ else_
-  ;;
-
-  let synth Lang.If.{ cond; then_; else_ } ~ctxt ~env ~errs =
-    (* Check the type of the conditional exprssion is a subtype of bool *)
-    let env_delta, errs = Expr.check cond ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs in
-    (* Check the `then` branch under the delta. This means: 
-       - appending the local environments, prefering bindings resulting from typing the conditional expresssion
-       
-       function foo(MyA $x): void {
-         if (($x as MyB) is MyB) {
-           ...
-         }
-       }
-
-      - appending the type parameter environments; any new type parameters _must_ have resulted from implicitly opening
-        and existential with an `is` refinement in the conditional expression so they cannot already be bound
-
-      - take the conjunction of the type refinement environments since it's possible we refined already refined to a 
-         smaller subtype
-
-       class MyA {}
-       class MyB extends MyA {}
-       class MyC extends MyB {}
-
-       function blah(MyA $a): void {
-         if($a is MyC) {
-           if ($a is MyB) {
-            ...
-           }
-         }
-       }
-
-      - take the conjunction of the type parameter refinement environments since it's posible a type parameter appearing
-        in the type of an `is` expression scrutinee was already refined to some smaller subtype:
-
-        interface MyInferface<+T> {}
-        class MyA {}
-        class MyB extends MyA implements MyInferface<arraykey> {}
-        class MyC extends MyB implements MyInferface<int> {}
-
-        function blah<T>(MyInferface<T> $i): void {
-          if ($i is MyC) {
-            expect<T>(1); // Ok, T == int
-            if ($i is MyB) {
-              expect<T>('a'); // error, T == int /\ arraykey 
-            }
-          }
-        }
-    *)
-    let then_env =
-      let Envir.Typing.{ local; ty_refine; ty_param; ty_param_refine; _ } = env
-      and Envir.Typing.
-            { local = local_delta
-            ; ty_refine = ty_refine_delta
-            ; ty_param = ty_param_delta
-            ; ty_param_refine = ty_param_refine_delta
-            ; subtyping
-            }
-        =
-        env_delta
-      in
-      Envir.Typing.create
-        ~local:(Envir.Local.merge_right local local_delta)
-        ~ty_param:(Envir.Local.merge_disjoint_exn ty_param ty_param_delta)
-        ~ty_refine:(Envir.Ty_refine.meet ty_refine ty_refine_delta)
-        ~ty_param_refine:(Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta ~prov:Prov.empty)
-        ~subtyping
-        ()
-    (* Check the `else` branch under:
-       - The conjunction of the complement of the type refinements resulting from typing the conditional expression.
-       - The oringal local env since any locals from the delta since they could only occur using `$x as Foo is Foo`.
-       - The original type parameter environment since refinement wasn't true no existentials are opened in the else branch
-       - The original type parameter refinement environment for the same reason as above
-    *)
-    and else_env =
-      let Envir.Typing.{ ty_refine; _ } = env
-      and Envir.Typing.{ ty_refine = ty_refine_delta; _ } = env_delta in
-      let ty_refine = Envir.Ty_refine.(meet ty_refine (cmp ty_refine_delta)) in
-      Envir.Typing.{ env with ty_refine }
-    in
-    (* Type the `then` branch then ensure locals bound in the branch don't contain references to type parameters scoped
-       to the branch by promoting any such types to the least supertype not containing a type parameter which will
-       be discarded *)
-    let local_env_then, errs =
-      let _, local_env_then, errs = Stmt.synth then_ ~ctxt ~env:then_env ~errs in
-      let Envir.Typing.{ ty_param; _ } = env_delta in
-      let Ctxt.{ oracle; _ } = ctxt in
-      Envir.Local.map local_env_then ~f:(fun ty -> Exposure.promote_exn ty ty_param ~oracle), errs
-    in
-    let _, local_env_else, errs = Stmt.synth else_ ~ctxt ~env:else_env ~errs in
-    (* Ensure newly bound locals are defined both branches if not already bound *)
-    let errs =
-      let Envir.Typing.{ local; _ } = env in
-      defined ~outer:local local_env_then local_env_else ~errs
-    in
-    (), Envir.Local.join local_env_then local_env_else ~prov:Prov.empty, errs
-  ;;
-end
-
-(* ~~ Sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-and Seq : sig
-  include Sigs.Synthesizes with type t := Lang.Seq.t and type out := unit and type env_out := Envir.Local.t
-end = struct
-  let rec synth_help stmts ~ctxt ~env ~delta ~errs =
-    match stmts with
-    | [] -> delta, errs
-    | stmt :: stmts ->
-      (* Type the remaining statements with any locals bound in the current statement; we don't propagate any type
-         refinements, newly bound type parameters or type paramter refinements resulting from `is` expressions.
-         N.B. we _do_ propogate `as` refinements which cause the type of existing locals to be modified *)
-      let env =
-        let Envir.Typing.{ local; _ } = env in
-        let local = Envir.Local.merge_right local delta in
-        Envir.Typing.{ env with local }
-      in
-      let _, delta, errs = Stmt.synth stmt ~ctxt ~env ~errs in
-      let delta2, errs = synth_help stmts ~ctxt ~env ~delta ~errs in
-      (* TODO(mjt) remember to only drop next when moving to continuations *)
-      delta2, errs
-  ;;
-
-  let synth Lang.Seq.(Seq stmts) ~ctxt ~env ~errs =
-    let delta, errs = synth_help stmts ~ctxt ~env ~delta:Envir.Local.empty ~errs in
-    (), delta, errs
   ;;
 end *)

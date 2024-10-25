@@ -13,7 +13,7 @@ module Err = struct
         { ctor_name : Name.Ctor.t
         ; span : Span.t
         }
-  [@@deriving eq, compare, sexp, variants]
+  [@@deriving eq, compare, sexp, show, variants]
 end
 
 module Entry = struct
@@ -28,7 +28,6 @@ module Entry = struct
   [@@deriving show]
 
   let of_classish_def Classish_def.{ ty_params; extends; implements; kind; _ } span =
-    (* TODO(mjt) this should survive errors *)
     let f (supers, spans, errs) Located.{ elem = Ty.Ctor.{ name; args }; span } =
       match Map.add supers ~key:name ~data:args with
       | `Ok supers -> supers, Map.add_exn spans ~key:name ~data:span, errs
@@ -82,9 +81,9 @@ let param_bounds_opt t ~ctor =
       (Map.map ~f:Ty.Param_bounds.(meet_many ~prov:Reporting.Prov.empty)
        @@ Name.Ty_param.Map.of_alist_multi
        @@ List.filter_opt
-       @@ List.map2_exn args params ~f:(fun arg Ty_param_def.{ bounds; _ } ->
+       @@ List.map2_exn args params ~f:(fun arg Ty_param_def.{ param_bounds; _ } ->
          match arg.node with
-         | Ty.Node.Generic g -> Some (g, bounds)
+         | Ty.Node.Generic g -> Some (g, param_bounds)
          | _ -> None))
   | None -> None
 ;;

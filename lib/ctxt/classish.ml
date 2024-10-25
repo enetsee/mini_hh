@@ -2,7 +2,6 @@ open Reporting
 
 type t =
   { name : Name.Ctor.t Located.t (** The name of the enclosing class, interface or trait. *)
-  ; this : Ty.Param_bounds.t option
   (** The declared bounds for [this]:
 
       For a class, the upper-bound of [this] is just the enclosing class since we will use subsumption for everything

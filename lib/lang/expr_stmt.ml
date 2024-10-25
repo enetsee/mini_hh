@@ -157,21 +157,25 @@ end
 and Stmt_node : sig
   type t =
     | Expr of Expr.t
-    | Return of Expr.t option
     | Assign of Assign.t
     | If of If.t
     | Seq of Seq.t
-    | Noop
+    | Return of Expr.t option
+    | Unpack of Unpack.t
   [@@deriving eq, compare, sexp, show, variants]
+
+  val noop : t
 end = struct
   type t =
     | Expr of Expr.t
-    | Return of Expr.t option
     | Assign of Assign.t
     | If of If.t
     | Seq of Seq.t
-    | Noop
+    | Return of Expr.t option
+    | Unpack of Unpack.t
   [@@deriving eq, compare, sexp, show, variants]
+
+  let noop = Seq (Seq [])
 end
 
 and Stmt : sig
@@ -180,7 +184,7 @@ end = struct
   type t = Stmt_node.t Located.t [@@deriving eq, compare, sexp, show]
 end
 
-(* ~~ Assigment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+(* ~~ Assignment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Assign : sig
   type t =
     { lvalue : Lvalue.t Located.t
@@ -221,6 +225,23 @@ end = struct
   type t = Seq of Stmt.t list [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
 
   let empty = Seq []
+end
+
+(* ~~ Unpack ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Unpack : sig
+  type t =
+    { tm_var : Name.Tm_var.t Located.t
+    ; ty_params : Name.Ty_param.t Located.t list
+    ; rhs : Expr.t
+    }
+  [@@deriving eq, compare, create, sexp, show]
+end = struct
+  type t =
+    { tm_var : Name.Tm_var.t Located.t
+    ; ty_params : Name.Ty_param.t Located.t list
+    ; rhs : Expr.t
+    }
+  [@@deriving eq, compare, create, sexp, show]
 end
 
 (* ~~ L-values ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

@@ -48,7 +48,7 @@
       | [] , _ , _ ,_ -> is_abstract, is_final , span 
     in
     aux mods None None None
-      
+     
 
   let ty_param_bounds_of_constraints (cstrs: Ty_param_bound_def.t Located.t list) =
     let rec aux cstrs ~k = 
@@ -66,6 +66,46 @@
       and upper = Ty.inter ~prov:(Prov.witnesses span_uppers) uppers in
       Ty.Param_bounds.create ~lower ~upper ()
     )
+
+  let ty_param_bounds_of_where_constraints (where_constraints: (Name.Ty_param.t Located.t * Ty_param_bound_def.t Located.t) list) = 
+    let rec aux acc = function
+     | [] -> Map.to_alist acc
+     | (Located.{elem;span},bound)::rest -> 
+       let acc = Map.add_multi acc ~key:elem ~data:(span,bound) in
+       aux acc rest
+    in
+    List.map ~f:(fun (elem, span_cstrs) -> 
+      let spans , cstrs = List.unzip span_cstrs in
+      let span = List.hd_exn spans in
+      let param_bounds =  ty_param_bounds_of_constraints cstrs in
+      let name = Located.create ~elem ~span () in
+      Ty.Param.create ~name ~param_bounds () 
+  ) 
+    @@ aux Name.Ty_param.Map.empty where_constraints
+
+  let unzip_class_elems elems = 
+    let rec aux elems ~k = 
+      match elems with
+      | [] -> k ([],[],[],[],[],[]) 
+      | next::rest  -> 
+        aux rest ~k:(fun (req_exts, req_impls, uses, methods,props, ty_consts)  ->
+        match next with
+       | `Require_extends elem -> 
+         k @@ (elem::req_exts, req_impls, uses, methods,props,ty_consts) 
+       | `Require_implements elem -> 
+         k @@ (req_exts, elem::req_impls, uses, methods,props,ty_consts) 
+       | `Use elem -> 
+         k @@ (req_exts, req_impls, elem::uses, methods,props,ty_consts) 
+       | `Method elem ->
+         k @@ (req_exts, req_impls, uses, elem::methods,props,ty_consts) 
+       | `Property elem -> 
+         k @@ (req_exts, req_impls, uses, methods,elem::props,ty_consts) 
+       | `Type_constant elem ->
+         k @@ (req_exts, req_impls, uses, methods,props,elem::ty_consts) 
+       )
+  in
+  aux elems ~k:(fun x -> x)
+      
 %}
 
 (* ~~ Keywords ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -79,6 +119,7 @@
   IF ELSE
   SOME 
   IS 
+  LET
 
   // WHILE DO FOR FOREACH BREAK CONTINUE SWITCH CASE DEFAULT EXIT
   // PROTECTED NEWTYPE ENUM SHAPE 
@@ -163,7 +204,7 @@ class_def: (* Classish_def.t Located.t *)
   | mods=class_modifier* span_class=CLASS name=ty_ctor_name ty_params_opt=ty_param_defs?
     extends=preceded(EXTENDS,ty_ctor)?
     implements_opt=preceded(IMPLEMENTS, comma_list(ty_ctor))? 
-    LBRACE class_elem* span_end=RBRACE
+    LBRACE class_elems=class_elem* span_end=RBRACE
   { 
     let (is_abstract,is_final,span_start_opt) = build_class_kind mods in 
     let span_start = Option.value ~default:span_class span_start_opt in
@@ -180,9 +221,18 @@ class_def: (* Classish_def.t Located.t *)
       let extends = Option.map ~f:locate extends in
       let ty_params = Option.value_map  ~default:[] ~f:fst ty_params_opt in
       let implements = Option.value_map ~default:[] ~f:(List.map ~f:locate) implements_opt in
-      Classish_def.create ~kind ~name ~ty_params ?extends ~implements ()
-    in
-    Located.create ~elem ~span () 
+      let ( require_extends
+        , require_implements
+        , uses
+        , methods
+        , properties
+        , ty_consts
+        ) = unzip_class_elems class_elems in
+      Classish_def.create ~kind ~name ~ty_params ?extends ~implements 
+        ~require_extends ~require_implements ~uses ~methods ~properties 
+        ~ty_consts ()
+    in  
+    Located.create ~elem ~span ()
    }
 ;
 
@@ -275,7 +325,7 @@ class_elem:
       Located.create ~elem ~span ()
     in
     let span = Span.join span_start span_end 
-    and elem = Property_def.create ~visibility ~static_or_instance ~ty ?default_value () in
+    and elem = Property_def.create ~name ~visibility ~static_or_instance ~ty ?default_value () in
     `Property (Located.create ~elem ~span ())
   }
   | ty_const=ty_const { `Type_constant ty_const }
@@ -332,7 +382,8 @@ fn_def: (* Fn_def.t Located.t *)
   let lambda = 
     Lambda.create ~lambda_sig ~body () 
   in
-  let elem  = Fn_def.create ~name ~lambda () in
+  let where_constraints = Option.value ~default:[] where_constraints_opt in
+  let elem  = Fn_def.create ~name ~lambda ~where_constraints () in
   Located.create ~elem ~span ()
 }
 
@@ -388,7 +439,7 @@ fn_param_def: (* Fn_param_def.t Located.t *)
 
 statement:
   | span=SEMICOLON { 
-    let elem = Stmt_node.Noop in 
+    let elem = Stmt_node.noop in 
     Located.create ~elem ~span () 
   }
   | e=expr span_end=SEMICOLON {
@@ -407,6 +458,17 @@ statement:
     let elem = Stmt_node.Assign assign in
     let span_start = Located.span_of lvalue in
     let span = Span.join span_start span_end in
+    Located.create ~elem ~span ()
+  }
+  | span_start=LET LBRACE ty_params=nonempty_comma_list(ty_param_name) COMMA 
+    str_span=LOCAL RBRACE EQUAL rhs=expr span_end=SEMICOLON {
+    let tm_var = 
+    let str , span = str_span in
+    let elem = Name.Tm_var.of_string str in
+    Located.create ~elem ~span () in
+    let unpack = Unpack.create ~tm_var ~ty_params ~rhs () in
+    let elem = Stmt_node.Unpack unpack in
+    let span = Span.join span_start span_end in 
     Located.create ~elem ~span ()
   }
   | seq { $1 }
@@ -428,7 +490,7 @@ statement_if:
     let span_end = Located.span_of then_ in
     let span = Span.join span_start span_end in
     let else_ = 
-      let elem = Stmt_node.Noop in 
+      let elem = Stmt_node.noop in 
       Located.create ~elem ~span:span_end () 
     in
     let node = If.create ~cond ~then_ ~else_ () in
@@ -552,10 +614,27 @@ lvalue:
 (* ~~ Type parameter definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 where_constraints: (* (Name.Ty_param.t Located.t * Ty.Param_bounds.t) list *)
-  | WHERE cstrs=nonempty_comma_list(constrained_ty_param) {
-    cstrs
+  | WHERE cstrs=nonempty_comma_list(where_constraint) {
+    ty_param_bounds_of_where_constraints cstrs
   }
 ;
+
+where_constraint: (* Name.Ty_param.t Located.t * Ty_param_bound_def.t Located.t *)
+  | name=ty_param_name AS ty_span=ty_expr { 
+    let span_start = Located.span_of name in 
+    let ty,span_end = ty_span in 
+    let span = Span.join span_start span_end in
+    let elem = Ty_param_bound_def.as_ ty in
+    name, Located.create ~span ~elem () 
+  }
+  | name=ty_param_name SUPER ty_span=ty_expr {
+    let span_start = Located.span_of name in 
+    let ty,span_end = ty_span in 
+    let span = Span.join span_start span_end in
+    let elem = Ty_param_bound_def.super ty in
+    name, Located.create ~span ~elem () 
+  }
+
 
 ty_param_defs: (* Ty_param_def.t list * Span.t *)
   | span_start=LANGLE params=comma_list_trailing(ty_param_def) span_end=RANGLE 
@@ -564,14 +643,14 @@ ty_param_defs: (* Ty_param_def.t list * Span.t *)
 
 ty_param_def: (* Ty_param_def.t *)
   | var=ty_param_variance name_bounds=constrained_ty_param {
-    let name ,bounds = name_bounds in 
+    let name ,param_bounds = name_bounds in 
     let variance = 
       let elem = fst var
       (* If we have now variance modifier use the location of the parameter name *)
       and span = Option.value ~default:(Located.span_of name) @@ snd var in
       Located.create ~elem ~span ()
     in 
-    Ty_param_def.create ~name ~variance ~bounds ()
+    Ty_param_def.create ~name ~variance ~param_bounds ()
   }
 ;
   

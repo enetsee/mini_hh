@@ -4,25 +4,123 @@ open Reporting
 module Refinement = struct
   type t =
     { local : Local.Refinement.t
-    ; this : Ty.Refinement.t option
     ; ty_param : Ty_param.Refinement.t
     }
   [@@deriving create, show]
 
-  let empty = { this = None; local = Local.Refinement.empty; ty_param = Ty_param.Refinement.empty }
+  let empty = { local = Local.Refinement.empty; ty_param = Ty_param.Refinement.empty }
   let param_rfmnt { ty_param; _ } nm = Ty_param.Refinement.find ty_param nm
+  let tm_var_rfmt { local; _ } nm = Local.Refinement.find local nm
+
+  let invalidate_local ({ local; _ } as t) tm_var =
+    let local = Local.Refinement.invalidate local tm_var in
+    { t with local }
+  ;;
+
+  let meet { local = local1; ty_param = ty_param1 } { local = local2; ty_param = ty_param2 } ~prov =
+    let local = Local.Refinement.meet local1 local2 ~prov
+    and ty_param = Ty_param.Refinement.meet ty_param1 ty_param2 ~prov in
+    { local; ty_param }
+  ;;
+
+  let join { local = local1; ty_param = ty_param1 } { local = local2; ty_param = ty_param2 } ~prov =
+    let local = Local.Refinement.join local1 local2 ~prov
+    and ty_param = Ty_param.Refinement.join ty_param1 ty_param2 ~prov in
+    { local; ty_param }
+  ;;
 end
 
 (** The per-continuation context *)
 type t =
   { local : Local.t (** Local variables bound in this continuation *)
   ; ty_param : Ty_param.t (** Type parameters bound in this continuation via unpacked existentials *)
-  ; is_refinements : Refinement.t list (** The stack of refinements corresponding to successive type tests, if any *)
-  ; as_refinement_opt : Refinement.t option (** The refinement corresponding to type assertion, if any *)
+  ; rfmts : Refinement.t list (** The stack of refinements corresponding to successive type tests, if any *)
   }
 [@@deriving create, show]
 
+module Expr_delta = struct
+  (** The incremental change in the per-continuation context after typing an expression
+      TODO(mjt) when we have object access this should include the set of refinements on properties that have been
+      invalidated *)
+  type t =
+    { rfmt : Refinement.t option (** [is] expressions may refine local variables and type parameters *)
+    ; local : Local.t option (** [as] expressions redefine locals and type parameters *)
+    ; ty_param : Ty_param.t option
+    }
+  [@@deriving create, show]
+
+  let empty = { rfmt = None; local = None; ty_param = None }
+  let drop_rfmt t = { t with rfmt = None }
+
+  let extend t ~with_ ~prov =
+    let local = Option.merge ~f:(fun t with_ -> Local.extend t ~with_) t.local with_.local
+    and ty_param = Option.merge ~f:(fun t with_ -> Ty_param.extend t ~with_) t.ty_param with_.ty_param
+    and rfmt = Option.merge ~f:(Refinement.meet ~prov) t.rfmt with_.rfmt in
+    { local; ty_param; rfmt }
+  ;;
+end
+
+module Delta = struct
+  (** The incremental change in the per-continuation context after typing an expression
+      TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
+      that have been invalidated when that is implemented for expressions *)
+  type t =
+    { local : Local.t option (** We get changes in the [local] context from assignement and [as] expressions *)
+    ; ty_param : Ty_param.t option (** We get changes in the [ty_param] context from [unpack] expressions *)
+    }
+  [@@deriving create, show]
+
+  let empty = { local = None; ty_param = None }
+  let of_expr_delta Expr_delta.{ local; ty_param; _ } = { local; ty_param }
+
+  let extend t ~with_ =
+    let local = Option.merge t.local with_.local ~f:(fun t with_ -> Local.extend t ~with_)
+    and ty_param = Option.merge t.ty_param with_.ty_param ~f:(fun t with_ -> Ty_param.extend t ~with_) in
+    { local; ty_param }
+  ;;
+
+  let join t1 t2 ~prov =
+    let local = Option.merge ~f:(Local.join ~prov) t1.local t2.local
+    and ty_param = Option.merge ~f:(Ty_param.join ~prov) t1.ty_param t2.ty_param in
+    { local; ty_param }
+  ;;
+
+  let meet t1 t2 ~prov =
+    let local = Option.merge ~f:(Local.meet ~prov) t1.local t2.local
+    and ty_param = Option.merge ~f:(Ty_param.meet ~prov) t1.ty_param t2.ty_param in
+    { local; ty_param }
+  ;;
+end
+
+let invalidate_local_refinement ({ rfmts; _ } as t) tm_var =
+  let rfmts = List.map rfmts ~f:(fun rfmt -> Refinement.invalidate_local rfmt tm_var) in
+  { t with rfmts }
+;;
+
+let empty = { local = Local.empty; ty_param = Ty_param.empty; rfmts = [] }
+
+let update_expr t ~expr_delta:Expr_delta.{ rfmt; local; ty_param } =
+  let local = Option.value_map local ~default:t.local ~f:(fun with_ -> Local.extend t.local ~with_)
+  and rfmts = Option.value_map ~default:t.rfmts ~f:(fun rfmt -> rfmt :: t.rfmts) rfmt
+  and ty_param = Option.value_map ty_param ~default:t.ty_param ~f:(fun with_ -> Ty_param.extend t.ty_param ~with_) in
+  { local; rfmts; ty_param }
+;;
+
+let update t ~delta:Delta.{ local; ty_param } =
+  let local = Option.value_map local ~default:t.local ~f:(fun with_ -> Local.extend t.local ~with_)
+  and ty_param = Option.value_map ty_param ~default:t.ty_param ~f:(fun with_ -> Ty_param.extend t.ty_param ~with_) in
+  { t with local; ty_param }
+;;
+
 (* ~~ Locals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+(** Find the type of a term variable in the current continuation *)
+let find_local t tm_var =
+  Option.map ~f:(fun ty ->
+    List.fold_left t.rfmts ~init:ty ~f:(fun ty rfmt ->
+      Option.value_map ~default:ty ~f:(fun ty_rfmt -> Ty.refine ty ~rfmt:ty_rfmt) @@ Refinement.tm_var_rfmt rfmt tm_var))
+  @@ Local.find t.local tm_var
+;;
 
 (* ~~ Type parameters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
@@ -30,7 +128,7 @@ type t =
     assertion (`as`) and those coming from type tests (`is`). We can have at most one `as` refinement (subsequent
     assertions refine the existing one and never go out of scope) and possibly many `is` refinements corresponding
     to nested continuation scopes. It's possible to have `is` assignments without an `as`. *)
-let ty_param_refinement_opt { as_refinement_opt; is_refinements; _ } nm =
+let ty_param_refinement_opt { rfmts; _ } nm =
   let rec aux acc res =
     match res with
     | Ty_param.Refinement.Bounds_top :: rest -> aux acc rest
@@ -40,12 +138,8 @@ let ty_param_refinement_opt { as_refinement_opt; is_refinements; _ } nm =
       aux (Some acc) rest
     | [] -> acc
   in
-  let as_rfmt_opt, is_rmfts =
-    Refinement.(
-      ( Option.map as_refinement_opt ~f:(fun as_rfmnt -> param_rfmnt as_rfmnt nm)
-      , List.map is_refinements ~f:(fun is_rfmnt -> param_rfmnt is_rfmnt nm) ))
-  in
-  aux None @@ Option.value_map as_rfmt_opt ~default:is_rmfts ~f:(fun as_rfmt -> as_rfmt :: is_rmfts)
+  let rmfts = List.map rfmts ~f:(fun rfmnt -> Refinement.param_rfmnt rfmnt nm) in
+  aux None rmfts
 ;;
 
 (** The bounds for a type parameter including all refinements *)

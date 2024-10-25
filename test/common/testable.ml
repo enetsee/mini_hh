@@ -10,3 +10,4 @@ let ty = Alcotest.testable Ty.pp Ty.equal
 let ty_param_refine = Alcotest.testable Ctxt.Ty_param.Refinement.pp Ctxt.Ty_param.Refinement.equal
 let refinement = Alcotest.testable Ty.Refinement.pp Ty.Refinement.equal
 let subtyping_err = Alcotest.testable Subtyping.Err.pp Subtyping.Err.equal
+let prov = Alcotest.testable Reporting.Prov.pp Reporting.Prov.equal

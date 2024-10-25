@@ -23,14 +23,15 @@ end
 (* ~~ Types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 module rec Node : sig
   type t =
-    | Base of Base.t (** Base types *)
-    | Generic of Name.Ty_param.t (** Generics *)
+    | Base of Base.t
+    | Generic of Name.Ty_param.t
     | Tuple of Tuple.t
-    | Fn of Fn.t (** Functions *)
-    | Ctor of Ctor.t (** Type constructors *)
-    | Exists of Exists.t (* Existentially quantified types *)
+    | Fn of Fn.t
+    | Ctor of Ctor.t
+    | Exists of Exists.t
     | Union of Annot.t list
     | Inter of Annot.t list
+    | Nonnull
   [@@deriving compare, equal, sexp, show, variants]
 end = struct
   type t =
@@ -42,6 +43,7 @@ end = struct
     | Exists of Exists.t (* Existentially quantified types *)
     | Union of Annot.t list
     | Inter of Annot.t list
+    | Nonnull
   [@@deriving compare, equal, sexp, show, variants]
 end
 
@@ -63,8 +65,10 @@ and Annot : sig
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
+    ; on_nonnull : 'acc -> Prov.t -> 'acc
     }
 
+  val prov_of : t -> Prov.t
   val bottom_up : t -> ops:'acc Ops.t -> init:'acc -> 'acc
   val id_ops : unit -> 'acc ops
   val map_prov : t -> f:(Prov.t -> Prov.t) -> t
@@ -87,6 +91,8 @@ and Annot : sig
   val num : Prov.t -> t
   val mixed : Prov.t -> t
   val nothing : Prov.t -> t
+  val this : Prov.t -> t
+  val nonnull : Prov.t -> t
 end = struct
   type t =
     { prov : Prov.t
@@ -94,6 +100,7 @@ end = struct
     }
   [@@deriving compare, create, equal, sexp, show]
 
+  let prov_of { prov; _ } = prov
   let prj { prov; node } = prov, node
   (* ~~ Traversals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
@@ -106,6 +113,7 @@ end = struct
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
+    ; on_nonnull : 'acc -> Prov.t -> 'acc
     }
 
   let id_ops =
@@ -118,6 +126,7 @@ end = struct
       ; on_exists = (fun acc _ _ -> acc)
       ; on_union = (fun acc _ _ -> acc)
       ; on_inter = (fun acc _ _ -> acc)
+      ; on_nonnull = (fun acc _ -> acc)
       }
     in
     fun _ -> ops
@@ -146,6 +155,7 @@ end = struct
     | Inter ts ->
       let init = List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init) in
       ty_ops.on_inter init prov ts
+    | Nonnull -> ty_ops.on_nonnull init prov
   ;;
 
   (* ~~ Modify provenance ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -156,6 +166,7 @@ end = struct
   let rec apply_subst ({ prov; node } as t) ~subst ~combine_prov =
     match node with
     | Base _ -> t
+    | Nonnull -> t
     | Generic name ->
       (match Map.find subst name with
        | Some t -> map_prov t ~f:(combine_prov prov)
@@ -232,6 +243,12 @@ end = struct
   let nullable prov t = union ~prov [ t; null prov ]
   let nothing prov = union ~prov []
   let mixed prov = inter ~prov []
+  let this prov = generic prov Name.Ty_param.this
+
+  let nonnull prov =
+    let node = Node.nonnull in
+    create ~prov ~node ()
+  ;;
 end
 
 (* ~~ Functions types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -450,51 +467,6 @@ and Param : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
-
-  (* module Ctxt : sig
-     (** A type parameteter context is a map from type paramter names to
-     type parameter bounds *)
-     type t
-
-     val pp : t Fmt.t
-     val empty : t
-     val is_empty : t -> bool
-     val bind : t -> Name.Ty_param.t -> Param_bounds.t -> t
-     val merge_disjoint_exn : t -> t -> t
-     val meet : t -> t -> prov:Reporting.Prov.t -> t
-     val find : t -> Name.Ty_param.t -> Param_bounds.t option
-     val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
-     end
-
-     module Refinement : sig
-     (** Represents the refinement to the bounds of a type parameter occuring in the type parameter context
-     Any type parameter which is bound in that context but doesn't explicitly appear in the refinement context
-     has an implicit refinement of [nothing] and [mixed] i.e. [top] for type parameter bounds *)
-     type t [@@deriving compare, eq, sexp, show]
-
-     val top : t
-
-     (** Same as top *)
-     val empty : t
-
-     val bottom : t
-     val singleton : Name.Ty_param.t -> Param_bounds.t -> t
-     val bounds : (Name.Ty_param.t * Param_bounds.t) list -> t
-     val transform : t -> f:(Param_bounds.t -> Param_bounds.t) -> t
-     val meet : t -> t -> prov:Prov.t -> t
-     val meet_many : t list -> prov:Prov.t -> t
-     val join : t -> t -> prov:Prov.t -> t
-     val join_many : t list -> prov:Prov.t -> t
-     val unbind : t -> Name.Ty_param.t -> t
-     val unbind_all : t -> Name.Ty_param.t list -> t
-
-     type result =
-     | Bounds_top
-     | Bounds_bottom
-     | Bounds of Param_bounds.t
-
-     val find : t -> Name.Ty_param.t -> result
-     end *)
 end = struct
   type t =
     { name : Name.Ty_param.t Located.t
@@ -524,125 +496,6 @@ end = struct
     let param_bounds = Param_bounds.apply_subst param_bounds ~subst ~combine_prov in
     { name; param_bounds }
   ;;
-
-  (* module Ctxt = struct
-    type t = Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
-
-    let pp t = Name.Ty_param.Map.pp Param_bounds.pp t
-    let empty : t = Name.Ty_param.Map.empty
-    let is_empty t = Map.is_empty t
-
-    let bind (t : t) ty_param bounds : t =
-      (* Invariant: we should never rebind a type parameter *)
-      Map.add_exn t ~key:ty_param ~data:bounds
-    ;;
-
-    let merge_disjoint_exn (t1 : t) (t2 : t) : t = Map.merge_disjoint_exn t1 t2
-
-    let meet t1 t2 ~prov =
-      let f ~key:_ = function
-        | `Left _ | `Right _ -> None
-        | `Both (bounds_l, bounds_r) -> Some (Param_bounds.meet ~prov bounds_l bounds_r)
-      in
-      Map.merge t1 t2 ~f
-    ;;
-
-    let find (t : t) id = Map.find t id
-    let transform t ~f = Name.Ty_param.Map.map t ~f
-  end
-
-  module Refinement = struct
-    type t =
-      | Top (** The top element:
-                meet top t = meet t top = t
-                join top _ = join _ top = top *)
-      | Bounds of Ctxt.t
-      | Bottom (** The bottom element:
-                   meet bottom _ = meet _ bottom = bottom
-                   join bottom t = join t bottom = t *)
-    [@@deriving compare, eq, sexp]
-
-    let top = Top
-    let bottom = Bottom
-    let bounds elems = Bounds (Name.Ty_param.Map.of_alist_exn elems)
-    let singleton generic param_bounds = Bounds (Name.Ty_param.Map.singleton generic param_bounds)
-
-    let pp ppf = function
-      | Top -> Fmt.any "T" ppf ()
-      | Bottom -> Fmt.any "F" ppf ()
-      | Bounds b -> Name.Ty_param.Map.pp Param_bounds.pp ppf b
-    ;;
-
-    let show = Fmt.to_to_string pp
-    let empty = top
-
-    let transform t ~f =
-      match t with
-      | Top -> Top
-      | Bottom -> Bottom
-      | Bounds m -> Bounds (Name.Ty_param.Map.map m ~f)
-    ;;
-
-    (** meet / greatest lower bound / intersection *)
-    let meet t1 t2 ~prov =
-      match t1, t2 with
-      | Top, t | t, Top -> t
-      | Bottom, _ | _, Bottom -> Bottom
-      | Bounds b1, Bounds b2 ->
-        let f ~key:_ = function
-          | `Left bounds | `Right bounds ->
-            (* If the bounds are missing in the left (resp. right) refinement then they are implicitly top so
-               the meet is the bounds in the right (resp. left) refinement *)
-            Some bounds
-          | `Both (bounds_l, bounds_r) -> Some (Param_bounds.meet bounds_l bounds_r ~prov)
-        in
-        Bounds (Map.merge b1 b2 ~f)
-    ;;
-
-    let meet_many ts ~prov = List.fold_left ts ~init:top ~f:(meet ~prov)
-
-    (** join / least upper bound  / union *)
-    let join t1 t2 ~prov =
-      match t1, t2 with
-      | Top, _ | _, Top -> Top
-      | Bottom, t | t, Bottom -> t
-      | Bounds b1, Bounds b2 ->
-        let f ~key:_ = function
-          | `Left _ | `Right _ ->
-            (* If the bounds are missing in the left (resp. right) refinement they are implicitly top so the join
-               so the union is also top which is encoded as [None] *)
-            None
-          | `Both (bounds_l, bounds_r) -> Some (Param_bounds.join bounds_l bounds_r ~prov)
-        in
-        Bounds (Map.merge b1 b2 ~f)
-    ;;
-
-    let join_many ts ~prov = List.fold_left ts ~init:bottom ~f:(join ~prov)
-
-    type result =
-      | Bounds_top
-      | Bounds_bottom
-      | Bounds of Param_bounds.t
-
-    let find t name =
-      match t with
-      | Top -> Bounds_top
-      | Bottom -> Bounds_bottom
-      | Bounds m -> Option.value_map ~f:(fun b -> Bounds b) ~default:Bounds_top @@ Map.find m name
-    ;;
-
-    let unbind t generic =
-      match t with
-      | Top | Bottom -> t
-      | Bounds bounds -> Bounds (Map.remove bounds generic)
-    ;;
-
-    let unbind_all t generics =
-      match List.fold_left generics ~init:t ~f:unbind with
-      | Bounds bounds when Map.is_empty bounds -> Top
-      | t -> t
-    ;;
-  end *)
 end
 
 and Param_bounds : sig
@@ -818,19 +671,81 @@ module Refinement = struct
         type. *)
   [@@deriving compare, eq, sexp, show, variants]
 
-  let and_then ~t_fst ~t_snd =
+  let extend ~t_fst ~t_snd =
     match t_fst, t_snd with
     | _, Replace_with _ -> t_fst
     | Intersect_with (prov1, ty1), Intersect_with (prov2, ty2) ->
       Intersect_with (prov2, Annot.inter ~prov:prov1 [ ty1; ty2 ])
     | Replace_with ty1, Intersect_with (prov, ty2) -> Replace_with (Annot.inter ~prov [ ty1; ty2 ])
   ;;
+
+  (** Applying the union of two refinements is equivalent to find the union of the types after appying each refinement.
+      Given that `Replace_with ty` tells us that [ty] is a subtype of the type it is refining we can simplify as follows:
+
+      apply t (Replace_with t1 `join` Replace_with t2) ~~(meaning of join)~~>
+      (apply t (Replace_with t1)) | (apply t (Replace_with t2)) ~~(definition of apply)~~>
+      t1 | t2 ~~(definition of apply)~~>
+      apply t Replace_with (t1 | t2)
+
+      apply t (Intersect_with t1 `join` Intersect_with t2) ~~(meaning of join)~~>
+      (apply t (Intersect_with t1)) | (apply t (Intersect_with t2)) ~~(definition of apply)~~>
+      (t & t1) | (t & t2) ~~(distribute intersection over union)~~>
+      (t | t) & (t1 | t2) ~~(simplify union)~~>
+      t & (t1 | t2) ~~(definition of apply)~~>
+      apply t (Intersect_with (t1 | t2))
+
+      apply t (Replace_with t1 `join` Intersect_with t2) ~~(meaning of join)~~>
+      (apply t (Replace_with t1)) | (apply t (Intersect_with t2)) ~~(definition of apply)~~>
+      t1 | (t & t2)  ~~(distribute union over intersection)~~>
+      (t | t1) & (t1 | t2) ~~(t1 <: t)~~>
+      t & (t1 | t2) ~~(definition of apply)~~>
+      apply t (Intersect_with  (t1 | t2)) *)
+  let join t1 t2 ~prov =
+    match t1, t2 with
+    | Replace_with ty1, Replace_with ty2 -> Replace_with (Annot.union [ ty1; ty2 ] ~prov)
+    | Intersect_with (prov1, ty1), Intersect_with (_prov2, ty2) ->
+      Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov1)
+    | Replace_with ty1, Intersect_with (prov2, ty2) | Intersect_with (prov2, ty2), Replace_with ty1 ->
+      Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov2)
+  ;;
+
+  (* Union (prov, [ t1; t2 ]) *)
+
+  (** Applying the intersection of two refinements is equivalent to finding the intersection of the types
+      after applying each refinement
+
+      apply t (meet (Replace_with t1) (Replace_with t2)) ~~(meaning of meet)~~>
+      (apply t (Replace_with t1)) & (apply t (Replace_with t2)) ~~(definition of apply)~~>
+      t1 & t2 ~~(definition of apply)~~>
+      apply t (Replace_with (t1 & t2))
+
+      apply t (inter (Intersect_with t1) (Intersect_with t2)) =
+      (apply t (Intersect_with t1)) & (apply t (Intersect_with t2)) =
+      (t & t1) & (t & t2) =
+      (t & t1) & t2 =
+      apply t (Intersect_with (t1&t2))
+
+      apply t (inter (Replace_with t1) (Intersect_with t2)) =
+      (apply t (Replace_with t1)) & (apply t (Intersect_with t2)) =
+      t1 & (t & t2) =
+      t1 & t2 =
+      apply t (Replace_with (t1 & t2)) *)
+  let meet t1 t2 ~prov =
+    match t1, t2 with
+    | Replace_with ty1, Replace_with ty2 ->
+      Replace_with (Annot.inter [ ty1; ty2 ] ~prov)
+      (* TODO(mjt) We lose provenance in the other cases so maybe rexamine this in the prov language *)
+    | Intersect_with (prov1, ty1), Intersect_with (_prov2, ty2) ->
+      Intersect_with (prov, Annot.inter [ ty1; ty2 ] ~prov:prov1)
+    | Replace_with ty1, Intersect_with (_prov, ty2) | Intersect_with (_prov, ty2), Replace_with ty1 ->
+      Replace_with (Annot.inter [ ty1; ty2 ] ~prov)
+  ;;
 end
 
 include Annot
-(* module Refinement = Dnf.Make (Annot) *)
 
-(* let refine t refinement =
-  match Refinement.to_list_opt refinement with
-  | None -> nothing
-  | Some disjs -> union @@ List.map disjs ~f:(fun (poss, _negs) -> inter (t :: poss)) *)
+let refine t ~rfmt =
+  match rfmt with
+  | Refinement.Replace_with ty -> ty
+  | Refinement.Intersect_with (prov, ty) -> inter [ ty; t ] ~prov
+;;

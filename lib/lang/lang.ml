@@ -21,7 +21,7 @@ module Stmt_node = Stmt_node
 module Assign = Assign
 module If = If
 module Seq = Seq
-include Stmt
+module Unpack = Unpack
 
 (* ~~ Lvalues ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 

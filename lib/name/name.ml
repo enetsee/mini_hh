@@ -30,12 +30,16 @@ end
 
 module Ty_param = struct
   module Minimal = struct
-    type t = Ty_param of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+    type t =
+      | This
+      | Ty_param of string
+    [@@deriving compare, equal, sexp, show]
   end
 
   include Minimal
 
   let of_string nm = Ty_param nm
+  let this = This
 
   module Map = struct
     include Map.Make (Minimal)
@@ -62,6 +66,12 @@ module Tm_var = struct
   module Map = struct
     include Map.Make (Minimal)
 
-    let pp pp_a ppf t = Fmt.(vbox @@ list ~sep:cut @@ pair ~sep:(any " => ") Minimal.pp pp_a) ppf @@ Map.to_alist t
+    let pp pp_a ppf t = Fmt.(vbox @@ list ~sep:cut @@ pair ~sep:(any " => ") pp pp_a) ppf @@ Map.to_alist t
+  end
+
+  module Set = struct
+    include Set.Make (Minimal)
+
+    let pp ppf t = Fmt.(hovbox @@ braces @@ list ~sep:comma pp) ppf t
   end
 end

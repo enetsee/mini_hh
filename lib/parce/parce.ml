@@ -8,6 +8,7 @@ module Err = struct
     | Bad_parse_state of string
     | File_not_found of string
     | Parse of string option * Span.t
+  [@@deriving show]
 end
 
 let from_menhir_pos (pos : MenhirLib.IncrementalEngine.position) =
@@ -43,10 +44,12 @@ let loop lexbuf result =
   I.loop_handle (fun x -> Ok x) (fail lexbuf) supplier result
 ;;
 
-let parse_string string =
-  let lexbuf = Lexing.from_string string in
+let parse_string str =
+  let lexbuf = Lexing.from_string str in
   loop lexbuf @@ Program.Incremental.program lexbuf.lex_curr_p
 ;;
+
+let parse_string_exn str = Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_string str
 
 let parse_file path =
   try

@@ -1,20 +1,11 @@
 open Core
 open Reporting
 
-(* : sig
-   (** A type parameteter context is a map from type paramter names to
-   type parameter bounds *)
-   type t
+(* : sig (** A type parameteter context is a map from type paramter names to type parameter bounds *) type t
 
-   val pp : t Fmt.t
-   val empty : t
-   val is_empty : t -> bool
-   val bind : t -> Name.Ty_param.t -> Ty.Param_bounds.t -> t
-   val merge_disjoint_exn : t -> t -> t
-   val meet : t -> t -> prov:Reporting.Prov.t -> t
-   val find : t -> Name.Ty_param.t -> Ty.Param_bounds.t option
-   val transform : t -> f:(Ty.Param_bounds.t -> Ty.Param_bounds.t) -> t
-   end *)
+   val pp : t Fmt.t val empty : t val is_empty : t -> bool val bind : t -> Name.Ty_param.t -> Ty.Param_bounds.t -> t val
+   merge_disjoint_exn : t -> t -> t val meet : t -> t -> prov:Reporting.Prov.t -> t val find : t -> Name.Ty_param.t ->
+   Ty.Param_bounds.t option val transform : t -> f:(Ty.Param_bounds.t -> Ty.Param_bounds.t) -> t end *)
 
 module Ctxt = struct
   type t = Ty.Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
@@ -28,12 +19,30 @@ module Ctxt = struct
     Map.add_exn t ~key:ty_param ~data:bounds
   ;;
 
-  let merge_disjoint_exn (t1 : t) (t2 : t) : t = Map.merge_disjoint_exn t1 t2
+  let bind_all t ty_params =
+    List.fold_left ty_params ~init:t ~f:(fun t Ty.Param.{ name; param_bounds } ->
+      bind t (Located.elem name) param_bounds)
+  ;;
+
+  let extend t ~with_ : t =
+    let f ~key:_ = function
+      | `Left v | `Right v | `Both (_, v) -> Some v
+    in
+    Map.merge t with_ ~f
+  ;;
 
   let meet t1 t2 ~prov =
     let f ~key:_ = function
-      | `Left _ | `Right _ -> None
+      | `Left bounds | `Right bounds -> Some bounds
       | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.meet ~prov bounds_l bounds_r)
+    in
+    Map.merge t1 t2 ~f
+  ;;
+
+  let join t1 t2 ~prov =
+    let f ~key:_ = function
+      | `Left _bounds | `Right _bounds -> None
+      | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.join ~prov bounds_l bounds_r)
     in
     Map.merge t1 t2 ~f
   ;;
@@ -83,7 +92,7 @@ end = struct
 
   let top = Top
   let bottom = Bottom
-  let bounds elems = Bounds (Name.Ty_param.Map.of_alist_exn elems)
+  let bounds ty_params = Bounds (Name.Ty_param.Map.of_alist_exn ty_params)
   let singleton generic param_bounds = Bounds (Name.Ty_param.Map.singleton generic param_bounds)
 
   let pp ppf = function
@@ -110,15 +119,19 @@ end = struct
     | Bounds b1, Bounds b2 ->
       let f ~key:_ = function
         | `Left bounds | `Right bounds ->
-          (* If the bounds are missing in the left (resp. right) refinement then they are implicitly top so
-             the meet is the bounds in the right (resp. left) refinement *)
+          (* If the bounds are missing in the left (resp. right) refinement then they are implicitly top so the meet is
+             the bounds in the right (resp. left) refinement *)
           Some bounds
         | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.meet bounds_l bounds_r ~prov)
       in
       Bounds (Map.merge b1 b2 ~f)
   ;;
 
-  let meet_many ts ~prov = List.fold_left ts ~init:top ~f:(meet ~prov)
+  let meet_many ts ~prov =
+    match ts with
+    | [ t ] -> t
+    | _ -> List.fold_left ts ~init:top ~f:(meet ~prov)
+  ;;
 
   (** join / least upper bound  / union *)
   let join t1 t2 ~prov =
@@ -128,8 +141,8 @@ end = struct
     | Bounds b1, Bounds b2 ->
       let f ~key:_ = function
         | `Left _ | `Right _ ->
-          (* If the bounds are missing in the left (resp. right) refinement they are implicitly top so the join
-             so the union is also top which is encoded as [None] *)
+          (* If the bounds are missing in the left (resp. right) refinement they are implicitly top so the join so the
+             union is also top which is encoded as [None] *)
           None
         | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.join bounds_l bounds_r ~prov)
       in

@@ -63,52 +63,51 @@ let promote_generic (prov, generic) ty_params ~dir =
   | Some Ty.Param_bounds.{ lower; _ }, Down -> Ok lower
 ;;
 
-let rec promote_help ty ty_params ~dir ~oracle =
+let rec promote_help ty ty_params ~dir =
   let Ty.{ node; prov } = ty in
   match node with
-  | Ty.Node.Base _ -> Ok ty
-  | Ty.Node.Generic generic -> promote_generic (prov, generic) ty_params ~dir
+  | Ty.Node.(Base _ | Nonnull) -> Ok ty
+  | Ty.Node.Generic generic ->
+    (* TODO(mjt) is this right? *)
+    promote_generic (prov, generic) ty_params ~dir
   | Ty.Node.Fn fn ->
     Result.map ~f:(fun fn ->
       let node = Ty.Node.Fn fn in
       Ty.{ prov; node })
-    @@ promote_fn fn ty_params ~dir ~oracle
+    @@ promote_fn fn ty_params ~dir
   | Ty.Node.Tuple tuple ->
     Result.map ~f:(fun tuple ->
       let node = Ty.Node.Tuple tuple in
       Ty.{ prov; node })
-    @@ promote_tuple tuple ty_params ~dir ~oracle
-  | Ty.Node.Ctor ctor -> promote_ctor (prov, ctor) ty_params ~dir ~oracle
+    @@ promote_tuple tuple ty_params ~dir
+  | Ty.Node.Ctor ctor -> promote_ctor (prov, ctor) ty_params ~dir
   | Ty.Node.Exists exists ->
     Result.map ~f:(fun exists ->
       let node = Ty.Node.Exists exists in
       Ty.{ prov; node })
-    @@ promote_exists exists ty_params ~dir ~oracle
-  | Ty.Node.Union union -> Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promotes union ty_params ~dir ~oracle
-  | Ty.Node.Inter inter -> Result.map ~f:(fun elems -> Ty.inter ~prov elems) @@ promotes inter ty_params ~dir ~oracle
+    @@ promote_exists exists ty_params ~dir
+  | Ty.Node.Union union -> Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promotes union ty_params ~dir
+  | Ty.Node.Inter inter -> Result.map ~f:(fun elems -> Ty.inter ~prov elems) @@ promotes inter ty_params ~dir
 
-and promotes tys ty_params ~dir ~oracle =
-  collect_list @@ List.map tys ~f:(fun ty -> promote_help ty ty_params ~dir ~oracle)
+and promotes tys ty_params ~dir = collect_list @@ List.map tys ~f:(fun ty -> promote_help ty ty_params ~dir)
 
-and promote_opt ty_opt ty_params ~dir ~oracle =
+and promote_opt ty_opt ty_params ~dir =
   match ty_opt with
   | None -> Ok None
-  | Some ty -> Result.map ~f:(fun ty -> Some ty) @@ promote_help ty ty_params ~dir ~oracle
+  | Some ty -> Result.map ~f:(fun ty -> Some ty) @@ promote_help ty ty_params ~dir
 
-and promote_fn Ty.Fn.{ params; return } ty_params ~dir ~oracle =
+and promote_fn Ty.Fn.{ params; return } ty_params ~dir =
   Result.map ~f:(fun (params, return) -> Ty.Fn.{ params; return })
-  @@ collect_tuple2 (promote_tuple params ty_params ~dir:(flip dir) ~oracle, promote_help return ty_params ~dir ~oracle)
+  @@ collect_tuple2 (promote_tuple params ty_params ~dir:(flip dir), promote_help return ty_params ~dir)
 
-and promote_tuple Ty.Tuple.{ required; optional; variadic } ty_params ~dir ~oracle =
+and promote_tuple Ty.Tuple.{ required; optional; variadic } ty_params ~dir =
   Result.map ~f:(fun (required, optional, variadic) -> Ty.Tuple.{ required; optional; variadic })
   @@ collect_tuple3
-       ( promotes required ty_params ~dir ~oracle
-       , promotes optional ty_params ~dir ~oracle
-       , promote_opt variadic ty_params ~dir ~oracle )
+       (promotes required ty_params ~dir, promotes optional ty_params ~dir, promote_opt variadic ty_params ~dir)
 
-and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
+and promote_ctor (prov, ctor) ty_params ~dir =
   let Ty.Ctor.{ name; args } = ctor in
-  match Oracle.find_ctor oracle name with
+  match Eff.ask_ctor name with
   | Some (params, supers) ->
     let invariant_params =
       List.filter_map params ~f:(fun Ty_param_def.{ name; variance; _ } ->
@@ -122,8 +121,8 @@ and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
       @@ List.map2_exn args params ~f:(fun ty Ty_param_def.{ variance; _ } ->
         match variance.elem with
         | Variance.Inv -> failwith "impossible"
-        | Variance.Cov -> promote_help ty ty_params ~dir ~oracle
-        | Variance.Contrav -> promote_help ty ty_params ~dir:(flip dir) ~oracle)
+        | Variance.Cov -> promote_help ty ty_params ~dir
+        | Variance.Contrav -> promote_help ty ty_params ~dir:(flip dir))
     else if is_up dir
     then
       (* We have at least one invariant parameter so there is no least supertype at the current class. Find the current
@@ -132,9 +131,10 @@ and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
          going in *)
       Result.map ~f:(fun supers -> Ty.inter ~prov supers)
       @@ collect_list
-      @@ List.map ~f:(fun ctor -> promote_ctor (prov, ctor) ty_params ~dir ~oracle)
+      @@ List.map ~f:(fun ctor -> promote_ctor (prov, ctor) ty_params ~dir)
       @@ List.filter_map ~f:(fun at ->
-        Option.map ~f:(fun args -> Ty.Ctor.{ name = at; args }) @@ Oracle.up oracle ~of_:ctor ~at)
+        let up_args_opt = Eff.ask_up ~of_:ctor ~at in
+        Option.map up_args_opt ~f:(fun args -> Ty.Ctor.{ name = at; args }))
       @@ Map.keys supers
     else
       (* We need to find the greatest subtype of the constructor; this requires us to find all classes which
@@ -142,28 +142,36 @@ and promote_ctor (prov, ctor) ty_params ~dir ~oracle =
       Ok Ty.(nothing prov)
   | _ -> Error Err.(Set.singleton @@ unbound_ctor name prov)
 
-and promote_exists exists ty_params ~dir ~oracle =
+and promote_exists exists ty_params ~dir =
   (* We don't need to worry about the quantifiers here since we won't be promoting them in the body
      TODO(mjt) -does this make sense? *)
   let Ty.Exists.{ body; quants } = exists in
-  Result.map ~f:(fun body -> Ty.Exists.create ~quants ~body ()) @@ promote_help body ty_params ~dir ~oracle
+  Result.map ~f:(fun body -> Ty.Exists.create ~quants ~body ()) @@ promote_help body ty_params ~dir
 ;;
 
 (* ~~ API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-let promote ty ty_params ~oracle = promote_help ty ty_params ~dir:Up ~oracle
+let promote ty ty_params = Result.map_error ~f:Set.to_list @@ promote_help ty ty_params ~dir:Up
 
-let promote_exn ty ty_params ~oracle =
-  match promote ty ty_params ~oracle with
+let promote_exn ty ty_params =
+  match promote ty ty_params with
   | Ok ty -> ty
-  | Error err -> raise (Exposure (Set.to_list err))
+  | Error errs -> raise (Exposure errs)
 ;;
 
 (** Demote a type [ty] by finding its greatest subtype not containing any type parameter mentioned in [ty_params] *)
-let demote ty ty_params ~oracle = promote_help ty ty_params ~dir:Down ~oracle
+let demote ty ty_params = promote_help ty ty_params ~dir:Down
 
-let demote_exn ty ty_params ~oracle =
-  match demote ty ty_params ~oracle with
+let demote_exn ty ty_params =
+  match demote ty ty_params with
   | Ok ty -> ty
   | Error err -> raise (Exposure (Set.to_list err))
 ;;
+
+let promote_cont_delta (Ctxt.Cont.Delta.{ local; ty_param } as delta) =
+  Option.value_map ty_param ~default:delta ~f:(fun ty_param ->
+    let local = Option.map local ~f:(Ctxt.Local.transform ~f:(fun ty -> promote_exn ty ty_param)) in
+    Ctxt.Cont.Delta.create ?local ())
+;;
+
+let promote_delta delta = Ctxt.Delta.lift delta ~f:promote_cont_delta
