@@ -8,7 +8,7 @@ let ty_param_nm nm = Name.Ty_param.of_string nm
 let mk_generic nm = ty_param_nm nm
 
 let program_of_string prog_str =
-  Result.ok_or_failwith @@ Result.map_error ~f:Parce.Err.show @@ Parce.parse_string prog_str
+  Result.ok_or_failwith @@ Result.map_error ~f:Source.Parse.Err.show @@ Source.Parse.parse_string prog_str
 ;;
 
 let result =

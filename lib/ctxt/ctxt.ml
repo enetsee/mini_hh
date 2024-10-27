@@ -38,10 +38,13 @@ module Delta = struct
 end
 
 let update t ~delta =
-  let f t delta = Cont.update t ~delta in
-  let next = Option.map2 ~f t.Minimal.next delta.Delta.next
-  and exit = Option.map2 ~f t.Minimal.exit delta.Delta.exit in
-  Minimal.create ?next ?exit ()
+  match delta.Delta.exit, delta.next with
+  (* ~~ if we exited, put the next continuation into the exit continuation *)
+  | Some _, _ -> Minimal.create ?exit:t.Minimal.next ()
+  | _, Some delta ->
+    let next = Option.map t.next ~f:(fun t -> Cont.update t ~delta) in
+    Minimal.create ?next ()
+  | _ -> t
 ;;
 
 include Minimal

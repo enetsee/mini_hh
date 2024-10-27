@@ -1,5 +1,5 @@
 (library
- (name parce)
+ (name source)
  (libraries core str fmt menhirLib common reporting name ty lang)
  (inline_tests)
  (preprocess

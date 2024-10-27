@@ -3,7 +3,8 @@ type t =
   ; fns : Fn.t list
   }
 
-let enter_classish name = { classish = Some (Classish.create ~name ()); fns = [] }
+let empty = { classish = None; fns = [] }
+let enter_classish t name = { t with classish = Some (Classish.create ~name ()) }
 let enter_fn t ~name ~return = { t with fns = Fn.create ~name ~return () :: t.fns }
 
 let exit_fn t =

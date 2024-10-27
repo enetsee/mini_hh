@@ -2,7 +2,7 @@ open Core
 open Reporting
 
 let synth
-  (Lang.Fn_def.{ name; lambda = Lang.Lambda.{ lambda_sig; body }; where_constraints }, span)
+  Located.{ elem = Lang.Fn_def.{ name; lambda = Lang.Lambda.{ lambda_sig; body }; where_constraints }; span }
   ~def_ctxt
   ~cont_ctxt
   =

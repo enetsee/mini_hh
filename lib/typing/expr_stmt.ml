@@ -12,7 +12,10 @@ module rec Expr : sig
     -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
+    let def_ctxt, cont_ctxt = Eff.log_enter_expr span def_ctxt cont_ctxt in
     let open Lang.Expr_node in
+    Eff.log_exit_expr span
+    @@
     match elem with
     | Lit lit ->
       let ty = Lit.synth (lit, span) in
@@ -125,6 +128,9 @@ and Stmt : sig
   val synth : Lang.Stmt.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
 end = struct
   let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
+    let def_ctxt, cont_ctxt = Eff.log_enter_stmt span def_ctxt cont_ctxt in
+    Eff.log_exit_stmt span
+    @@
     let open Lang.Stmt_node in
     match elem with
     | Expr expr ->
@@ -324,80 +330,3 @@ end = struct
     synth_help None span stmts ~def_ctxt ~acc_ctxt ~acc_delta
   ;;
 end
-
-(* ~~ Binary expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-(* and Binary : sig
-  val synth : Lang.Binary.t -> ctxt:Ctxt.t -> Ty.t * Ctxt.t
-end = struct
-  (** Typing logical binary expression carries through the refinements from each operand *)
-  let synth_logical (binop, lhs, rhs) ~ctxt =
-    let delta_lhs, errs = Expr.check lhs ~against:(Ty.bool Prov.empty) ~ctxt in
-    (* Type the rhs operand under the refinements from the first *)
-    let delta_rhs, errs =
-      (* TODO(mtj) hide all this *)
-      let Envir.Typing.
-            { local = local_delta
-            ; ty_refine = ty_refine_delta
-            ; ty_param = ty_param_delta
-            ; ty_param_refine = ty_param_refine_delta
-            ; subtyping
-            }
-        =
-        delta_lhs
-      and Envir.Typing.{ local; ty_refine; ty_param; ty_param_refine; _ } = env in
-      (* New local bindings supercede the old *)
-      let local = Envir.Local.merge_right local local_delta
-      (* New type refinements intersect with existing refinements *)
-      and ty_refine = Envir.Ty_refine.meet ty_refine ty_refine_delta
-      (* New type parameters must be fresh with respect the existing env *)
-      and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param ty_param_delta
-      (* New type parameter refinements intersect with existing refinements *)
-      and ty_param_refine = Envir.Ty_param_refine.meet ty_param_refine ty_param_refine_delta ~prov:Prov.empty in
-      let env = Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping () in
-      Expr.check rhs ~against:(Ty.bool Prov.empty) ~ctxt ~env ~errs
-    in
-    (* Now combine the two deltas *)
-    let delta =
-      (* TODO(mtj) hide all this *)
-      let Envir.Typing.
-            { local = local_lhs
-            ; ty_refine = ty_refine_lhs
-            ; ty_param = ty_param_lhs
-            ; ty_param_refine = ty_param_refine_lhs
-            ; _
-            }
-        =
-        delta_lhs
-      and Envir.Typing.
-            { local = local_rhs
-            ; ty_refine = ty_refine_rhs
-            ; ty_param = ty_param_rhs
-            ; ty_param_refine = ty_param_refine_rhs
-            ; subtyping
-            }
-        =
-        delta_rhs
-      in
-      (* New local bindings supercede the old *)
-      let local = Envir.Local.merge_right local_lhs local_rhs
-      (* New type parameters must be fresh with respect the existing env *)
-      and ty_param = Envir.Ty_param.merge_disjoint_exn ty_param_lhs ty_param_rhs
-      and ty_refine, ty_param_refine =
-        match binop with
-        | Lang.Binop.Logical.And ->
-          ( Envir.Ty_refine.meet ty_refine_lhs ty_refine_rhs
-          , Envir.Ty_param_refine.meet ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
-        | Lang.Binop.Logical.Or ->
-          ( Envir.Ty_refine.join ty_refine_lhs ty_refine_rhs
-          , Envir.Ty_param_refine.join ty_param_refine_lhs ty_param_refine_rhs ~prov:Prov.empty )
-      in
-      Envir.Typing.create ~local ~ty_refine ~ty_param ~ty_param_refine ~subtyping ()
-    in
-    Ty.bool Prov.empty, delta, errs
-  ;;
-
-  let synth Lang.Binary.{ binop; lhs; rhs } ~ctxt =
-    match binop with
-    | Logical binop -> synth_logical (binop, lhs, rhs) ~ctxt
-  ;;
-end *)

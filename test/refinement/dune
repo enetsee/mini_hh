@@ -7,7 +7,7 @@
   alcotest
   test_common
   common
-  parce
+  source
   lang
   name
   ty
