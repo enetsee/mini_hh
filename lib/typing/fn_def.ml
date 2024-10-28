@@ -6,6 +6,7 @@ let synth
   ~def_ctxt
   ~cont_ctxt
   =
+  let def_ctxt, cont_ctxt = Eff.log_enter_fn_def span name.elem def_ctxt cont_ctxt in
   let Lang.Lambda_sig.{ ty_params; params; return } = Located.elem lambda_sig in
   (* Enter the function context so we have access to the return type when typing the body *)
   let def_ctxt = Ctxt.Def.enter_fn def_ctxt ~name ~return in

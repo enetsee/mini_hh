@@ -669,11 +669,23 @@ module Refinement = struct
     (** If we refine to a type which is a subtype of the scrutinees type it would
         be redundant to construct an intersection - we can simply use the refined
         type. *)
+    | Disjoint of Prov.t
+    (** If we refine to a type which is disjoint from the scrutiness type the
+        result is always [nothing] *)
   [@@deriving compare, eq, sexp, show, variants]
 
-  let extend ~t_fst ~t_snd =
-    match t_fst, t_snd with
-    | _, Replace_with _ -> t_fst
+  (** The same as [Ty.refine mixed t] but without provenance *)
+  let to_ty = function
+    | Intersect_with (_, ty) -> ty
+    | Replace_with ty -> ty
+    | Disjoint prov -> Annot.nothing prov
+  ;;
+
+  let extend t ~with_ =
+    match t, with_ with
+    | Disjoint _, _ -> t
+    | _, Disjoint _ -> with_
+    | _, Replace_with _ -> t
     | Intersect_with (prov1, ty1), Intersect_with (prov2, ty2) ->
       Intersect_with (prov2, Annot.inter ~prov:prov1 [ ty1; ty2 ])
     | Replace_with ty1, Intersect_with (prov, ty2) -> Replace_with (Annot.inter ~prov [ ty1; ty2 ])
@@ -702,6 +714,8 @@ module Refinement = struct
       apply t (Intersect_with  (t1 | t2)) *)
   let join t1 t2 ~prov =
     match t1, t2 with
+    | Disjoint _, _ -> t2
+    | _, Disjoint _ -> t1
     | Replace_with ty1, Replace_with ty2 -> Replace_with (Annot.union [ ty1; ty2 ] ~prov)
     | Intersect_with (prov1, ty1), Intersect_with (_prov2, ty2) ->
       Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov1)
@@ -732,6 +746,8 @@ module Refinement = struct
       apply t (Replace_with (t1 & t2)) *)
   let meet t1 t2 ~prov =
     match t1, t2 with
+    | Disjoint _, _ -> t1
+    | _, Disjoint _ -> t2
     | Replace_with ty1, Replace_with ty2 ->
       Replace_with (Annot.inter [ ty1; ty2 ] ~prov)
       (* TODO(mjt) We lose provenance in the other cases so maybe rexamine this in the prov language *)
@@ -748,4 +764,5 @@ let refine t ~rfmt =
   match rfmt with
   | Refinement.Replace_with ty -> ty
   | Refinement.Intersect_with (prov, ty) -> inter [ ty; t ] ~prov
+  | Refinement.Disjoint prov -> nothing prov
 ;;

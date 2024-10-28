@@ -12,8 +12,10 @@ let synth (lit, span) =
   | Lit.Null -> Ty.null @@ Prov.lit_null span
 ;;
 
-let check lit ~against =
+let check lit ~against ~cont_ctxt =
   (* Subsumption case - sythesize a type (`ty`) then generate the subtype constraint  `ty <: against` *)
   let ty_sub = synth lit in
-  Eff.tell_is_subtype ~ty_sub ~ty_super:against
+  let subty_err_opt = Subtyping.Tell.is_subtype ~ty_sub ~ty_super:against ~ctxt:cont_ctxt in
+  let _ : unit = Option.iter subty_err_opt ~f:(fun err -> Eff.log_error (Err.subtyping err)) in
+  ()
 ;;

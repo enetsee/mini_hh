@@ -12,9 +12,7 @@ let program_of_string prog_str =
 ;;
 
 let result =
-  Alcotest.result
-    (Alcotest.pair Testable.refinement @@ Alcotest.option @@ Alcotest.pair Testable.prov Testable.ty_param_refine)
-    Testable.subtyping_err
+  Alcotest.pair Testable.refinement @@ Alcotest.option @@ Alcotest.pair Testable.prov Testable.ty_param_refine
 ;;
 
 module Gadt_covariant = struct
@@ -33,7 +31,7 @@ class A implements I<Four> {}
     (* Set up context *)
     let ty_param = Ctxt.Ty_param.(bind empty ta @@ Ty.Param_bounds.top Prov.empty) in
     let cont_ctxt = Ctxt.Cont.{ empty with ty_param } in
-    let comp = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
+    let comp () = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
     let actual = fst @@ Refinement.Eff.run comp 0 oracle in
     (* let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in *)
     (* Expected type parameter refinement *)
@@ -42,9 +40,8 @@ class A implements I<Four> {}
       let prov_scrut = Ty.prov_of ty_scrut
       and prov_test = Ty.prov_of ty_test in
       let prov = Prov.refine ~prov_scrut ~prov_test in
-      Ok
-        ( Ty.Refinement.Replace_with ty_test
-        , Some (prov, Ctxt.Ty_param.Refinement.(singleton ta @@ Ty.Param_bounds.create ~lower:four ~upper:four ())) )
+      ( Ty.Refinement.Replace_with ty_test
+      , Some (prov, Ctxt.Ty_param.Refinement.(singleton ta @@ Ty.Param_bounds.create ~lower:four ~upper:four ())) )
     in
     let test () = Alcotest.check result prog_str actual expect in
     Alcotest.test_case "gadt refinement with agreement between bounds" `Quick test

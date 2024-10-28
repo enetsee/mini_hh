@@ -42,7 +42,8 @@ end = struct
 
   let check expr ~against ~def_ctxt ~cont_ctxt =
     let ty, refn = synth expr ~def_ctxt ~cont_ctxt in
-    let _valid_opt = Eff.tell_is_subtype ~ty_sub:ty ~ty_super:against cont_ctxt in
+    let subty_err_opt = Subtyping.Tell.is_subtype ~ty_sub:ty ~ty_super:against ~ctxt:cont_ctxt in
+    let _ : unit = Option.iter subty_err_opt ~f:(fun err -> Eff.log_error (Err.subtyping err)) in
     ty, refn
   ;;
 end
@@ -51,44 +52,26 @@ and Is : sig
   val synth : Lang.Is.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let refine_by span expr_scrut ~ty_scrut ~ty_test cont_ctxt =
-    let ty_refinement, ty_param_refinement_opt =
-      match Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt () with
-      | Error subtyping_error ->
-        (* Refinement gave us a subtyping error which means that the type of the scrutinee is provably disjoint from
-           the test type, meaning refinement is impossible. We raise a warning rather than an error here because you
-           could always take the scrutinee type up to [mixed] and it would go away. *)
-        let _ : unit =
-          let warn = Warn.impossible_refinement subtyping_error in
-          Eff.log_warning warn
-        in
-        (* Since the scrutinee type is disjoint from the test type we refine to [nothing] *)
-        let ty_nothing = Ty.nothing (Prov.witness span) in
-        Ty.Refinement.Replace_with ty_nothing, None
-      | Ok (ty_refn, ty_param_refn_opt) -> ty_refn, Option.map ~f:snd ty_param_refn_opt
-    in
+    let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
       let local = Ctxt.Local.Refinement.singleton tm_var ty_refinement
       and ty_param =
         let default = Ctxt.Ty_param.Refinement.empty in
-        Option.value ~default ty_param_refinement_opt
+        Option.value_map ~default ~f:snd ty_param_refinement_opt
       in
       Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
       let local = Ctxt.Local.Refinement.empty in
       let this =
-        let upper =
-          match ty_refinement with
-          | Ty.Refinement.Intersect_with (_, ty) -> ty
-          | Ty.Refinement.Replace_with ty -> ty
-        in
+        let upper = Ty.Refinement.to_ty ty_refinement in
         let bounds = Ty.Param_bounds.create ~lower:(Ty.nothing (Prov.witness span)) ~upper () in
         Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this bounds
       in
       let ty_param =
         match ty_param_refinement_opt with
         | None -> this
-        | Some that -> Ctxt.Ty_param.Refinement.meet this that ~prov:(Prov.witness span)
+        | Some (prov, that) -> Ctxt.Ty_param.Refinement.meet this that ~prov
       in
       Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | _ -> None
