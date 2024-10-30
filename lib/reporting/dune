@@ -1,6 +1,6 @@
 (library
  (name reporting)
- (libraries core fmt yojson ppx_deriving_yojson.runtime)
+ (libraries core fmt pretty yojson ppx_deriving_yojson.runtime)
  (inline_tests)
  (preprocess
   (pps

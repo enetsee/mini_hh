@@ -6,20 +6,20 @@
     exception UnterminatedComment 
 
     let current_loc = 
-    let prev_pos = ref Reporting.Pos.empty in 
-    fun lexbuf ->
-    let p = Lexing.lexeme_start_p lexbuf in
-    let new_pos = 
-      Reporting.Pos.(
-        { line = p.Lexing.pos_lnum
-        ; offset= p.Lexing.pos_cnum 
-        ; bol =  p.Lexing.pos_bol
-        } 
-      )
-    in 
-    let span = Reporting.Span.({ start_ = !prev_pos; end_ = new_pos}) in 
-    prev_pos := new_pos;
-    span
+      let prev_pos = ref Reporting.Pos.empty in 
+      fun lexbuf ->
+        let p = Lexing.lexeme_start_p lexbuf in
+        let new_pos = 
+        Reporting.Pos.(
+          { line = p.Lexing.pos_lnum
+          ; offset= p.Lexing.pos_cnum 
+          ; bol =  p.Lexing.pos_bol
+          } 
+        )
+        in 
+        let span = Reporting.Span.({ start_ = !prev_pos; end_ = new_pos}) in 
+        prev_pos := new_pos;
+        span
 }
 
 (* ~~ Regex aliases ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -107,6 +107,12 @@ rule token = parse
   | "optional"              { OPTIONAL (current_loc lexbuf) }
   | "some"                  { SOME (current_loc lexbuf) }
   | "let"                   { LET (current_loc lexbuf) } 
+  | "bool"                  { BOOL (current_loc lexbuf) }
+  | "int"                   { INT (current_loc lexbuf) }
+  | "float"                 { FLOAT (current_loc lexbuf) }
+  | "string"                { STRING (current_loc lexbuf) }
+  | "nonnull"               { NONNULL (current_loc lexbuf) }
+  | "this"                  { THIS (current_loc lexbuf) }
 
  (* ~~ Symbols & punctuation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | '+'                     { PLUS (current_loc lexbuf) }
@@ -175,7 +181,7 @@ rule token = parse
   
   (* ~~ Names & locals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | name                    { IDENT (Lexing.lexeme lexbuf, current_loc lexbuf) }
-  | "$this"                 { THIS (current_loc lexbuf) }
+  | "$this"                 { IDENT_THIS (current_loc lexbuf) }
   | "$" (name as nm)        { LOCAL (Lexing.lexeme lexbuf, current_loc lexbuf) }
 
   (* ~~ End states ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

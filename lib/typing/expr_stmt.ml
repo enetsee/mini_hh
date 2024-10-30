@@ -104,7 +104,56 @@ end
 and As : sig
   val synth : Lang.As.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let synth (_, _span) ~def_ctxt:_ ~cont_ctxt:_ = failwith ""
+  let refine_by span expr_scrut ~ty_scrut ~ty_assert cont_ctxt =
+    let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test:ty_assert ~ctxt:cont_ctxt in
+    let ty = Ty.refine ty_scrut ~rfmt:ty_refinement in
+    match Located.elem expr_scrut with
+    | Lang.Expr_node.Local tm_var ->
+      let refinement =
+        let local = Ctxt.Local.Refinement.empty in
+        let ty_param =
+          let default = Ctxt.Ty_param.Refinement.empty in
+          Option.value_map ~default ~f:snd ty_param_refinement_opt
+        in
+        Ctxt.Cont.Refinement.create ~ty_param ~local ()
+      in
+      let local =
+        let tm_var = Located.create ~elem:tm_var ~span:(Located.span_of expr_scrut) () in
+        Ctxt.Local.singleton tm_var ty
+      in
+      ty, Some local, Some refinement
+    | Lang.Expr_node.This ->
+      let refinement =
+        let local = Ctxt.Local.Refinement.empty in
+        let this =
+          let upper = Ty.Refinement.to_ty ty_refinement in
+          let bounds = Ty.Param_bounds.create ~lower:(Ty.nothing (Prov.witness span)) ~upper () in
+          Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this bounds
+        in
+        let ty_param =
+          match ty_param_refinement_opt with
+          | None -> this
+          | Some (prov, that) -> Ctxt.Ty_param.Refinement.meet this that ~prov
+        in
+        Ctxt.Cont.Refinement.create ~local ~ty_param ()
+      in
+      ty, None, Some refinement
+    | _ -> ty, None, None
+  ;;
+
+  let synth (Lang.As.{ scrut; ty_assert }, span) ~def_ctxt ~cont_ctxt =
+    let prov = Prov.expr_as span in
+    let ty_scrut, expr_delta_scrut = Expr.synth scrut ~def_ctxt ~cont_ctxt in
+    (* The refinements from typing from the scrutinee subexpression apply when typing the [as] expression to in the
+       expression *)
+    let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
+    let ty, expr_delta_as =
+      let ty, local, rfmt = refine_by span scrut ~ty_scrut ~ty_assert cont_ctxt in
+      ty, Ctxt.Cont.Expr_delta.create ?local ?rfmt ()
+    in
+    let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_as ~prov in
+    ty, delta
+  ;;
 end
 
 and Stmt : sig

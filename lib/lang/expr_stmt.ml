@@ -4,7 +4,7 @@ open Reporting
 (* ~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 module rec Expr_node : sig
   type t =
-    | Lit of Lit.t
+    | Lit of Common.Lit.t
     | Local of Name.Tm_var.t
     | This
     | Is of Is.t
@@ -15,7 +15,7 @@ module rec Expr_node : sig
   [@@deriving eq, compare, sexp, show]
 end = struct
   type t =
-    | Lit of Lit.t
+    | Lit of Common.Lit.t
     | Local of Name.Tm_var.t
     | This
     | Is of Is.t

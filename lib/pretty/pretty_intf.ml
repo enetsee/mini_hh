@@ -35,6 +35,7 @@ module type S = sig
   val pp : Format.formatter -> t -> unit
   val pp_prec : int -> Format.formatter -> t -> unit
   val to_string : t -> string
+  val show : t -> string
   val print : t -> unit
   val print_err : t -> unit
 end
@@ -45,6 +46,7 @@ module type S1 = sig
   val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
   val pp_prec : (int -> Format.formatter -> 'a -> unit) -> int -> Format.formatter -> 'a t -> unit
   val to_string : 'a t -> pp_a:(Format.formatter -> 'a -> unit) -> string
+  val show : (Format.formatter -> 'a -> unit) -> 'a t -> string
   val print : 'a t -> pp_a:(Format.formatter -> 'a -> unit) -> unit
   val print_err : 'a t -> pp_a:(Format.formatter -> 'a -> unit) -> unit
 end

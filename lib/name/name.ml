@@ -2,10 +2,13 @@ open Core
 
 module Ctor = struct
   module Minimal = struct
-    type t = Ctor of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+    type t = Ctor of string [@@deriving compare, equal, sexp] [@@ocaml.unboxed]
+
+    let pp ppf (Ctor name) = Fmt.string ppf name
   end
 
   include Minimal
+  include Pretty.Make (Minimal)
 
   let of_string nm = Ctor nm
 
@@ -17,7 +20,14 @@ module Ctor = struct
 end
 
 module Fn = struct
-  type t = Fn of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+  module Minimal = struct
+    type t = Fn of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+
+    let pp ppf (Fn name) = Fmt.string ppf name
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let of_string nm = Fn nm
 end
@@ -33,10 +43,17 @@ module Ty_param = struct
     type t =
       | This
       | Ty_param of string
-    [@@deriving compare, equal, sexp, show]
+    [@@deriving compare, equal, sexp]
+
+    let pp ppf t =
+      match t with
+      | Ty_param name -> Fmt.string ppf name
+      | This -> Fmt.any "this" ppf ()
+    ;;
   end
 
   include Minimal
+  include Pretty.Make (Minimal)
 
   let of_string nm = Ty_param nm
   let this = This
@@ -57,9 +74,12 @@ end
 module Tm_var = struct
   module Minimal = struct
     type t = Tm_var of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+
+    let pp ppf (Tm_var name) = Fmt.string ppf name
   end
 
   include Minimal
+  include Pretty.Make (Minimal)
 
   let of_string nm = Tm_var nm
 

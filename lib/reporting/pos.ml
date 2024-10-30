@@ -1,11 +1,18 @@
 open Core
 
-type t =
-  { line : int
-  ; bol : int
-  ; offset : int
-  }
-[@@deriving create, equal, fields, sexp, show, yojson]
+module Minimal = struct
+  type t =
+    { line : int
+    ; bol : int
+    ; offset : int
+    }
+  [@@deriving create, equal, fields, sexp, yojson]
+
+  let pp ppf { line; bol; offset } = Fmt.(vbox @@ pair ~sep:(any ":") int int) ppf (line, offset - bol)
+end
+
+include Minimal
+include Pretty.Make (Minimal)
 
 let compare { line = line1; bol = bol1; offset = offset1 } { line = line2; bol = bol2; offset = offset2 } =
   let c = Int.compare line1 line2 in

@@ -5,10 +5,13 @@ module Minimal = struct
     { start_ : Pos.t
     ; end_ : Pos.t
     }
-  [@@deriving compare, create, equal, fields, sexp, show, yojson]
+  [@@deriving compare, create, equal, fields, sexp, yojson]
+
+  let pp ppf { start_; end_ } = Fmt.(vbox @@ pair ~sep:(any "-") Pos.pp Pos.pp) ppf (start_, end_)
 end
 
 include Minimal
+include Pretty.Make (Minimal)
 
 module Set = struct
   include Set.Make (Minimal)

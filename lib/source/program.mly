@@ -120,6 +120,7 @@
   SOME 
   IS 
   LET
+  BOOL INT FLOAT STRING NONNULL THIS
 
   // WHILE DO FOR FOREACH BREAK CONTINUE SWITCH CASE DEFAULT EXIT
   // PROTECTED NEWTYPE ENUM SHAPE 
@@ -145,7 +146,7 @@
 %token <string * Reporting.Span.t> CONSTANT_ENCAPSED_STRING
 
 (* ~~ Names & Locals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-%token<Reporting.Span.t>  THIS 
+%token<Reporting.Span.t>  IDENT_THIS 
 %token<string * Reporting.Span.t>
   IDENT 
   LOCAL
@@ -531,7 +532,7 @@ open_expr(left):
   }
   // | span_start=NEW ty_ctor_name fn_args {}
 
-  | span=THIS {
+  | span=IDENT_THIS {
     Located.create ~elem:Expr_node.This ~span ()
   }
   | str_span=LOCAL {
@@ -741,6 +742,35 @@ union_ty_expr_aux:
 
 
 simple_ty_expr: (* Ty.t * Span.t *)
+
+  | span=NULL {
+     let prov = Prov.witness span in 
+     Ty.null prov , span
+  } 
+  | span=BOOL{
+     let prov = Prov.witness span in 
+     Ty.bool prov , span
+  } 
+  | span=INT{
+     let prov = Prov.witness span in 
+     Ty.int prov , span
+  } 
+  | span=FLOAT {
+     let prov = Prov.witness span in 
+     Ty.float prov , span
+  } 
+  | span=STRING {
+     let prov = Prov.witness span in 
+     Ty.string prov , span
+  } 
+  | span=NONNULL {
+     let prov = Prov.witness span in 
+     Ty.string prov , span
+  } 
+  | span=THIS{
+     let prov = Prov.witness span in 
+     Ty.this prov , span
+  } 
   | located_ctor=ty_ctor { 
     let (ctor,span) = located_ctor in 
     let node = Ty.Node.ctor ctor in

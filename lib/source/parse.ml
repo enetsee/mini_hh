@@ -59,3 +59,5 @@ let parse_file path =
   with
   | _ -> Error (Err.File_not_found path)
 ;;
+
+let parse_file_exn file = Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_file file

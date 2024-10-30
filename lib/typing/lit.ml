@@ -1,6 +1,6 @@
 open Core
 open Reporting
-open Lang
+open Common
 
 (* We can always synthesize a type for a literal *)
 let synth (lit, span) =

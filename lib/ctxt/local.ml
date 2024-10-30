@@ -1,7 +1,14 @@
 open Core
 open Reporting
 
-type t = (Ty.t * Span.Set.t) Name.Tm_var.Map.t [@@deriving compare, eq, sexp, show]
+module Minimal = struct
+  type t = (Ty.t * Span.Set.t) Name.Tm_var.Map.t [@@deriving compare, eq, sexp]
+
+  let pp ppf t = Name.Tm_var.Map.pp Fmt.(pair Ty.pp nop) ppf t
+end
+
+include Minimal
+include Pretty.Make (Minimal)
 
 let empty = Name.Tm_var.Map.empty
 let bottom = empty
@@ -60,8 +67,15 @@ let bind_all (t : t) tm_var_tys : t = List.fold_left tm_var_tys ~init:t ~f:(fun 
 let transform (t : t) ~f = Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
 
 module Refinement = struct
-  (** A local refinement is a map from term variables names to formula over types*)
-  type t = Ty.Refinement.t Name.Tm_var.Map.t [@@deriving compare, eq, sexp, show]
+  module Minimal = struct
+    (** A local refinement is a map from term variables names to formula over types*)
+    type t = Ty.Refinement.t Name.Tm_var.Map.t [@@deriving compare, eq, sexp]
+
+    let pp ppf t = Name.Tm_var.Map.pp Ty.Refinement.pp ppf t
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let find (t : t) nm = Map.find t nm
 

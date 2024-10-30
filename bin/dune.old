@@ -1,0 +1,12 @@
+(executable
+ (name hh_debug)
+ (libraries cmdliner fmt minttea spices leaves))
+
+; common
+; name
+; source
+; lang
+; ty
+; ctxt
+; typing
+; oracle))

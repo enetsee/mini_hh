@@ -3,10 +3,10 @@ let step Cstr.Is_subtype.{ ty_sub; ty_super } ~ctxt:_ =
   match Ty.(prj ty_sub, prj ty_super) with
   (* ~~ C-Top ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | _, (_, Inter []) -> Ok Prop.true_
-  | (prov_sub, Inter []), (prov_super, _) -> Error (Err.not_a_subtype ~prov_sub ~prov_super)
+  | (_prov_sub, Inter []), (_prov_super, _) -> Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Bot ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | (prov_sub, Base b1), (prov_super, Base b2) ->
-    if Ty.Base.equal b1 b2 then Ok Prop.true_ else Error (Err.not_a_subtype ~prov_sub ~prov_super)
+  | (_prov_sub, Base b1), (_prov_super, Base b2) ->
+    if Common.Base.equal b1 b2 then Ok Prop.true_ else Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | _, _ -> Ok Prop.true_
 ;;
 (* -- C-Top -------------------------------------------------------------------------------------------------------

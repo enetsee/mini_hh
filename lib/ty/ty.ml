@@ -1,29 +1,10 @@
 open Core
 open Reporting
 
-(* ~~ Base types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-module Base : sig
-  type t =
-    | Bool
-    | Int
-    | Float
-    | String
-    | Null
-  [@@deriving compare, eq, sexp, show, variants]
-end = struct
-  type t =
-    | Bool
-    | Int
-    | Float
-    | String
-    | Null
-  [@@deriving compare, eq, sexp, show, variants]
-end
-
 (* ~~ Types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 module rec Node : sig
   type t =
-    | Base of Base.t
+    | Base of Common.Base.t
     | Generic of Name.Ty_param.t
     | Tuple of Tuple.t
     | Fn of Fn.t
@@ -34,17 +15,37 @@ module rec Node : sig
     | Nonnull
   [@@deriving compare, equal, sexp, show, variants]
 end = struct
-  type t =
-    | Base of Base.t (** Base types *)
-    | Generic of Name.Ty_param.t (** Generics *)
-    | Tuple of Tuple.t (** Tuples *)
-    | Fn of Fn.t (** Functions *)
-    | Ctor of Ctor.t (** Type constructors *)
-    | Exists of Exists.t (* Existentially quantified types *)
-    | Union of Annot.t list
-    | Inter of Annot.t list
-    | Nonnull
-  [@@deriving compare, equal, sexp, show, variants]
+  module Minimal = struct
+    type t =
+      | Base of Common.Base.t
+      | Generic of Name.Ty_param.t
+      | Tuple of Tuple.t
+      | Fn of Fn.t
+      | Ctor of Ctor.t
+      | Exists of Exists.t
+      | Union of Annot.t list
+      | Inter of Annot.t list
+      | Nonnull
+    [@@deriving compare, equal, sexp, variants]
+
+    let pp ppf t =
+      match t with
+      | Base base -> Common.Base.pp ppf base
+      | Nonnull -> Fmt.(any "nonnull") ppf ()
+      | Generic name -> Name.Ty_param.pp ppf name
+      | Tuple tuple -> Tuple.pp ppf tuple
+      | Fn fn -> Fn.pp ppf fn
+      | Ctor ctor -> Ctor.pp ppf ctor
+      | Exists exists -> Exists.pp ppf exists
+      | Union [] -> Fmt.any "nothing" ppf ()
+      | Union tys -> Fmt.(hovbox @@ parens @@ list ~sep:(any " | ") Annot.pp) ppf tys
+      | Inter [] -> Fmt.any "mixed" ppf ()
+      | Inter tys -> Fmt.(hovbox @@ parens @@ list ~sep:(any " & ") Annot.pp) ppf tys
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 end
 
 and Annot : sig
@@ -57,7 +58,7 @@ and Annot : sig
   val prj : t -> Prov.t * Node.t
 
   type 'acc ops =
-    { on_base : 'acc -> Prov.t -> Base.t -> 'acc
+    { on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
@@ -98,14 +99,23 @@ end = struct
     { prov : Prov.t
     ; node : Node.t
     }
-  [@@deriving compare, create, equal, sexp, show]
+  [@@deriving compare, create, equal, sexp]
+
+  module Minimal = struct
+    type nonrec t = t
+
+    let pp ppf { node; _ } = Node.pp ppf node
+  end
+
+  include Pretty.Make (Minimal)
 
   let prov_of { prov; _ } = prov
   let prj { prov; node } = prov, node
+
   (* ~~ Traversals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
   type 'acc ops =
-    { on_base : 'acc -> Prov.t -> Base.t -> 'acc
+    { on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
@@ -194,11 +204,11 @@ end = struct
   (* ~~ Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
   let base prov base = create ~prov ~node:base ()
-  let bool prov = base prov @@ Node.base Base.bool
-  let null prov = base prov @@ Node.base Base.null
-  let int prov = base prov @@ Node.base Base.int
-  let float prov = base prov @@ Node.base Base.float
-  let string prov = base prov @@ Node.base Base.string
+  let bool prov = base prov @@ Node.base Common.Base.bool
+  let null prov = base prov @@ Node.base Common.Base.null
+  let int prov = base prov @@ Node.base Common.Base.int
+  let float prov = base prov @@ Node.base Common.Base.float
+  let string prov = base prov @@ Node.base Common.Base.string
   let generic prov name = create ~prov ~node:(Node.generic name) ()
 
   let tuple prov ~required ~optional ~variadic =
@@ -268,11 +278,18 @@ and Fn : sig
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
-  type t =
-    { params : Tuple.t
-    ; return : Annot.t
-    }
-  [@@deriving compare, create, equal, create, sexp, show]
+  module Minimal = struct
+    type t =
+      { params : Tuple.t
+      ; return : Annot.t
+      }
+    [@@deriving compare, create, equal, create, sexp]
+
+    let pp ppf { params; return } = Fmt.(hovbox @@ pair ~sep:(any ": ") Tuple.pp Annot.pp) ppf (params, return)
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let apply_subst { params; return } ~subst ~combine_prov =
     let params = Tuple.apply_subst params ~subst ~combine_prov
@@ -317,12 +334,31 @@ and Tuple : sig
   val bottom_up : t -> ops:'acc Ops.t -> init:'acc -> 'acc
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
-  type t =
-    { required : Annot.t list
-    ; optional : Annot.t list
-    ; variadic : Annot.t option
-    }
-  [@@deriving compare, create, equal, create, map, sexp, show]
+  module Minimal = struct
+    type t =
+      { required : Annot.t list
+      ; optional : Annot.t list
+      ; variadic : Annot.t option
+      }
+    [@@deriving compare, create, equal, create, map, sexp]
+
+    let pp_optional ppf annot = Fmt.(hbox @@ (any "optional " ++ Annot.pp)) ppf annot
+    let pp_variadic ppf annot = Fmt.(hbox @@ (any ", ..." ++ Annot.pp)) ppf annot
+
+    let pp ppf { required; optional; variadic } =
+      Fmt.(
+        hovbox
+        @@ parens
+        @@ pair ~sep:comma (list ~sep:comma Annot.pp)
+        @@ pair (list ~sep:comma pp_optional)
+        @@ option pp_variadic)
+        ppf
+        (required, (optional, variadic))
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   type 'acc ops =
     { on_required : 'acc -> Annot.t list -> 'acc
@@ -373,11 +409,31 @@ and Ctor : sig
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
-  type t =
-    { name : Name.Ctor.t
-    ; args : Annot.t list
-    }
-  [@@deriving compare, create, equal, sexp, show]
+  module Minimal = struct
+    type t =
+      { name : Name.Ctor.t
+      ; args : Annot.t list
+      }
+    [@@deriving compare, create, equal, sexp]
+
+    let surround s1 s2 pp_v ppf v =
+      Format.(
+        pp_print_string ppf s1;
+        pp_v ppf v;
+        pp_print_string ppf s2)
+    ;;
+
+    let angles pp_v = Fmt.(hovbox ~indent:1 (surround "<" ">" pp_v))
+
+    let pp ppf { name; args } =
+      if List.is_empty args
+      then Name.Ctor.pp ppf name
+      else Fmt.(hovbox @@ pair ~sep:nop Name.Ctor.pp @@ angles @@ list ~sep:comma Annot.pp) ppf (name, args)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   type 'a ops =
     { on_name : 'a -> Name.Ctor.t -> 'a
@@ -420,11 +476,22 @@ and Exists : sig
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
-  type t =
-    { quants : Param.t list
-    ; body : Annot.t
-    }
-  [@@deriving eq, compare, create, sexp, show]
+  module Minimal = struct
+    type t =
+      { quants : Param.t list
+      ; body : Annot.t
+      }
+    [@@deriving eq, compare, create, sexp, show]
+
+    let pp ppf { quants; body } =
+      if List.is_empty quants
+      then Annot.pp ppf body
+      else Fmt.(hovbox @@ pair ~sep:(any ". ") (any "∃ " ++ list ~sep:sp Param.pp) Annot.pp) ppf (quants, body)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   type 'a ops =
     { on_quants : 'a -> Param.t list -> 'a
@@ -468,11 +535,20 @@ and Param : sig
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
 end = struct
-  type t =
-    { name : Name.Ty_param.t Located.t
-    ; param_bounds : Param_bounds.t
-    }
-  [@@deriving eq, compare, create, sexp, show]
+  module Minimal = struct
+    type t =
+      { name : Name.Ty_param.t Located.t
+      ; param_bounds : Param_bounds.t
+      }
+    [@@deriving eq, compare, create, sexp]
+
+    let pp ppf { name; param_bounds } =
+      Fmt.(hovbox @@ pair ~sep:sp (Located.pp Name.Ty_param.pp) Param_bounds.pp) ppf (name, param_bounds)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   type 'a ops =
     { on_name : 'a -> Name.Ty_param.t Located.t -> 'a
@@ -525,11 +601,20 @@ and Param_bounds : sig
   val join_many : t list -> prov:Prov.t -> t
   (* val top : t *)
 end = struct
-  type t =
-    { lower : Annot.t
-    ; upper : Annot.t
-    }
-  [@@deriving eq, compare, create, sexp, show]
+  module Minimal = struct
+    type t =
+      { lower : Annot.t
+      ; upper : Annot.t
+      }
+    [@@deriving eq, compare, create, sexp]
+
+    let pp ppf { lower; upper } =
+      Fmt.(hbox @@ pair ~sep:sp (any "as " ++ Annot.pp) (any "super " ++ Annot.pp)) ppf (upper, lower)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let create_equal ty = { lower = ty; upper = ty }
 
@@ -661,18 +746,30 @@ end = struct
 end
 
 module Refinement = struct
-  type t =
-    | Intersect_with of Prov.t * Annot.t
-    (** If we refine to a type which is not a subtype of the scrutinees type
-        we end up with an intersection *)
-    | Replace_with of Annot.t
-    (** If we refine to a type which is a subtype of the scrutinees type it would
-        be redundant to construct an intersection - we can simply use the refined
-        type. *)
-    | Disjoint of Prov.t
-    (** If we refine to a type which is disjoint from the scrutiness type the
-        result is always [nothing] *)
-  [@@deriving compare, eq, sexp, show, variants]
+  module Minimal = struct
+    type t =
+      | Intersect_with of Prov.t * Annot.t
+      (** If we refine to a type which is not a subtype of the scrutinees type
+          we end up with an intersection *)
+      | Replace_with of Annot.t
+      (** If we refine to a type which is a subtype of the scrutinees type it would
+          be redundant to construct an intersection - we can simply use the refined
+          type. *)
+      | Disjoint of Prov.t
+      (** If we refine to a type which is disjoint from the scrutiness type the
+          result is always [nothing] *)
+    [@@deriving compare, eq, sexp, show, variants]
+
+    let pp ppf t =
+      match t with
+      | Intersect_with (_, ty) -> Fmt.(any "_ & " ++ Annot.pp) ppf ty
+      | Replace_with ty -> Fmt.(any "_ ← " ++ Annot.pp) ppf ty
+      | Disjoint _ -> Fmt.(any "_ ← ⊥") ppf ()
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   (** The same as [Ty.refine mixed t] but without provenance *)
   let to_ty = function

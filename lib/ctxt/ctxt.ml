@@ -6,23 +6,57 @@ module Def = Def
 module Cont = Cont
 module Ty_param = Ty_param
 
-module Minimal = struct
-  (** The context across all continuations *)
-  type t =
-    { next : Cont.t option
-    ; exit : Cont.t option (** retained for try.. finally *)
-    }
-  [@@deriving create, fields, show]
+module Ctxt = struct
+  module Minimal = struct
+    (** The context across all continuations *)
+    type t =
+      { next : Cont.t option
+      ; exit : Cont.t option (** retained for try.. finally *)
+      }
+    [@@deriving create, fields]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "next" (fun { next; _ } -> next) @@ option ~none:(any "(none)") Cont.pp
+             ; field "exit" (fun { exit; _ } -> exit) @@ option ~none:(any "(none)") Cont.pp
+             ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let empty = { next = None; exit = None }
 end
 
 module Delta = struct
-  type t =
-    { next : Cont.Delta.t option
-    ; exit : Cont.Delta.t option
-    }
-  [@@deriving create, show]
+  module Minimal = struct
+    type t =
+      { next : Cont.Delta.t option
+      ; exit : Cont.Delta.t option
+      }
+    [@@deriving create, show]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "Δ next" (fun { next; _ } -> next) @@ option ~none:(any "(none)") Cont.Delta.pp
+             ; field "Δ exit" (fun { exit; _ } -> exit) @@ option ~none:(any "(none)") Cont.Delta.pp
+             ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let empty = { next = None; exit = None }
   let lift { next; exit } ~f = { next = Option.map ~f next; exit = Option.map ~f exit }
@@ -40,11 +74,11 @@ end
 let update t ~delta =
   match delta.Delta.exit, delta.next with
   (* ~~ if we exited, put the next continuation into the exit continuation *)
-  | Some _, _ -> Minimal.create ?exit:t.Minimal.next ()
+  | Some _, _ -> Ctxt.create ?exit:t.Ctxt.next ()
   | _, Some delta ->
     let next = Option.map t.next ~f:(fun t -> Cont.update t ~delta) in
-    Minimal.create ?next ()
+    Ctxt.create ?next ()
   | _ -> t
 ;;
 
-include Minimal
+include Ctxt

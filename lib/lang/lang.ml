@@ -2,7 +2,6 @@ open Expr_stmt
 
 (* ~~ Expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-module Lit = Lit
 module Expr = Expr
 module Expr_node = Expr_node
 module Lambda = Lambda

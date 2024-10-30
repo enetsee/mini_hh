@@ -73,236 +73,410 @@ let run comp oracle =
 
 (* ~~ Debugging handler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-type status =
-  | Entered_expr of
-      { span : Span.t
-      ; ctxt_def : Ctxt.Def.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ctxt.Def.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_expr of
-      { span : Span.t
-      ; ty : Ty.t
-      ; expr_delta : Ctxt.Cont.Expr_delta.t
-      ; k : (Ty.t * Ctxt.Cont.Expr_delta.t, status) Effect.Deep.continuation
-      }
-  | Entered_stmt of
-      { span : Span.t
-      ; ctxt_def : Ctxt.Def.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ctxt.Def.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_stmt of
-      { span : Span.t
-      ; delta : Ctxt.Delta.t
-      ; k : (Ctxt.Delta.t, status) Effect.Deep.continuation
-      }
-  | Entered_classish_def of
-      { span : Span.t
-      ; name : Name.Ctor.t
-      ; ctxt_def : Ctxt.Def.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ctxt.Def.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_classish_def of
-      { span : Span.t
-      ; k : (unit, status) Effect.Deep.continuation
-      }
-  | Entered_fn_def of
-      { span : Span.t
-      ; name : Name.Fn.t
-      ; ctxt_def : Ctxt.Def.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ctxt.Def.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_fn_def of
-      { span : Span.t
-      ; k : (unit, status) Effect.Deep.continuation
-      }
-  | Raised_error of
-      { err : Err.t
-      ; k : (unit, status) Effect.Deep.continuation
-      }
-  | Raised_warning of
-      { warn : Warn.t
-      ; k : (unit, status) Effect.Deep.continuation
-      }
-  (* ~~ Refinement ~~ *)
-  | Entered_refinement of
-      { ty_test : Ty.t
-      ; ty_scrut : Ty.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ty.t * Ty.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_refinement of
-      { ty_rfmt : Ty.Refinement.t
-      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
-      ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, status) Effect.Deep.continuation
-      }
-  | Entered_refine_ty of
-      { ty_test : Ty.t
-      ; ty_scrut : Ty.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ty.t * Ty.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_refine_ty of
-      { ty_rfmt : Ty.Refinement.t
-      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
-      ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, status) Effect.Deep.continuation
-      }
-  | Entered_refine_existential_scrut of
-      { prov_scrut : Prov.t
-      ; ty_exists : Ty.Exists.t
-      ; ty_test : Ty.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Prov.t * Ty.Exists.t * Ty.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_refine_existential_scrut of
-      { ty_rfmt : Ty.Refinement.t
-      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
-      ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, status) Effect.Deep.continuation
-      }
-  | Entered_refine_existential_test of
-      { ty_scrut : Ty.t
-      ; prov_test : Prov.t
-      ; ty_exists : Ty.Exists.t
-      ; ctxt_cont : Ctxt.Cont.t
-      ; k : (Ty.t * Prov.t * Ty.Exists.t * Ctxt.Cont.t, status) Effect.Deep.continuation
-      }
-  | Exited_refine_existential_test of
-      { ty_rfmt : Ty.Refinement.t
-      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
-      ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, status) Effect.Deep.continuation
-      }
-  | Asked_up of
-      { of_ : Ty.Ctor.t
-      ; at : Name.Ctor.t
-      ; k : (Ty.t list option, status) Effect.Deep.continuation
-      }
-  | Asked_ty_param_variances of
-      { ctor : Name.Ctor.t
-      ; k : (Variance.t Located.t list option, status) Effect.Deep.continuation
-      }
-  | Requested_fresh_ty_params of
-      { n : int
-      ; k : (Name.Ty_param.t list, status) Effect.Deep.continuation
-      }
-  | Complete
-  | Failed of Exn.t
+module Debug = struct
+  module State = struct
+    module Minimal = struct
+      type t =
+        { tys : (Span.t * Ty.t) list
+        ; errs : Err.t list
+        ; warns : Warn.t list
+        ; ty_param_name_source : int
+        }
+      [@@deriving create]
 
-type state =
-  { tys : (Span.t * Ty.t) list
-  ; errs : Err.t list
-  ; warns : Warn.t list
-  ; ty_param_name_source : int
-  }
+      let empty = { tys = []; errs = []; warns = []; ty_param_name_source = 0 }
 
-let next status ~oracle ~state =
-  match status with
-  | Asked_up { of_; at; k } ->
-    let ty_args_opt = Oracle.up oracle ~of_ ~at in
-    Effect.Deep.continue k ty_args_opt, state
-  | Asked_ty_param_variances { ctor; k } ->
-    let ty_param_vars_opt = Oracle.param_variances_opt oracle ~ctor in
-    Effect.Deep.continue k ty_param_vars_opt, state
-  | Requested_fresh_ty_params { n; k } ->
-    let { ty_param_name_source; _ } = state in
-    let offset = ty_param_name_source in
-    let ty_param_name_source = offset + n in
-    let names = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset)) in
-    let state = { state with ty_param_name_source } in
-    Effect.Deep.continue k names, state
-  | Complete -> Complete, state
-  | Failed exn -> Failed exn, state
-  | Raised_error { k; err } -> Effect.Deep.continue k (), { state with errs = err :: state.errs }
-  | Raised_warning { k; warn } -> Effect.Deep.continue k (), { state with warns = warn :: state.warns }
-  (* ~~ Logging effects for typing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | Entered_expr { ctxt_def; ctxt_cont; k; _ } -> Effect.Deep.continue k (ctxt_def, ctxt_cont), state
-  | Exited_expr { ty; expr_delta; k; _ } -> Effect.Deep.continue k (ty, expr_delta), state
-  | Entered_stmt { ctxt_def; ctxt_cont; k; _ } -> Effect.Deep.continue k (ctxt_def, ctxt_cont), state
-  | Exited_stmt { delta; k; _ } -> Effect.Deep.continue k delta, state
-  | Entered_classish_def { ctxt_def; ctxt_cont; k; _ } -> Effect.Deep.continue k (ctxt_def, ctxt_cont), state
-  | Exited_classish_def { k; _ } -> Effect.Deep.continue k (), state
-  | Entered_fn_def { ctxt_def; ctxt_cont; k; _ } -> Effect.Deep.continue k (ctxt_def, ctxt_cont), state
-  | Exited_fn_def { k; _ } -> Effect.Deep.continue k (), state
-  | Entered_refinement { ty_test; ty_scrut; ctxt_cont; k } ->
-    Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont), state
-  (* ~~ Logging effects for refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | Exited_refinement { ty_rfmt; ty_param_rfmt_opt; k } -> Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt), state
-  | Entered_refine_ty { ty_test; ty_scrut; ctxt_cont; k } ->
-    Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont), state
-  | Exited_refine_ty { ty_rfmt; ty_param_rfmt_opt; k } -> Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt), state
-  | Entered_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont; k } ->
-    Effect.Deep.continue k (prov_scrut, ty_exists, ty_test, ctxt_cont), state
-  | Exited_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt; k } ->
-    Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt), state
-  | Entered_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont; k } ->
-    Effect.Deep.continue k (ty_scrut, prov_test, ty_exists, ctxt_cont), state
-  | Exited_refine_existential_test { ty_rfmt; ty_param_rfmt_opt; k } ->
-    Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt), state
-;;
+      let pp ppf t =
+        Fmt.(
+          vbox
+          @@ record
+               ~sep:cut
+               [ field "types" (fun { tys; _ } -> tys) @@ vbox @@ list ~sep:cut @@ pair ~sep:sp Span.pp Ty.pp
+               ; field "errors" (fun { errs; _ } -> errs) @@ vbox @@ list ~sep:cut Err.pp
+               ; field "warnings " (fun { warns; _ } -> warns) @@ vbox @@ list ~sep:cut Warn.pp
+               ; field "type parameter name source" (fun { ty_param_name_source; _ } -> ty_param_name_source) int
+               ])
+          ppf
+          t
+      ;;
+    end
 
-let step_typing comp =
-  Effect.Deep.match_with
-    comp
-    ()
-    { effc =
-        (fun (type a) (eff : a Effect.t) ->
-          match eff with
-          | Log_error err -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Raised_error { err; k })
-          | Log_warning warn -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Raised_warning { warn; k })
-          | Log_enter_expr (span, ctxt_def, ctxt_cont) ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Entered_expr { span; ctxt_def; ctxt_cont; k })
-          | Log_enter_stmt (span, ctxt_def, ctxt_cont) ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Entered_stmt { span; ctxt_def; ctxt_cont; k })
-          | Log_enter_classish_def (span, name, ctxt_def, ctxt_cont) ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) -> Entered_classish_def { span; name; ctxt_def; ctxt_cont; k })
-          | Log_enter_fn_def (span, name, ctxt_def, ctxt_cont) ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Entered_fn_def { span; name; ctxt_def; ctxt_cont; k })
-          | Log_exit_expr (span, ty, expr_delta) ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_expr { span; ty; expr_delta; k })
-          | Log_exit_stmt (span, delta) ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_stmt { span; delta; k })
-          | Log_exit_classish_def span ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_classish_def { span; k })
-          | Log_exit_fn_def span -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_classish_def { span; k })
-          (* ~~ Refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-          | Refinement.Eff.Log_enter_refinement { ty_test; ty_scrut; ctxt_cont } ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Entered_refinement { ty_test; ty_scrut; ctxt_cont; k })
-          | Refinement.Eff.Log_exit_refinement { ty_rfmt; ty_param_rfmt_opt } ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_refinement { ty_rfmt; ty_param_rfmt_opt; k })
-          | Refinement.Eff.Log_enter_refine_ty { ty_test; ty_scrut; ctxt_cont } ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Entered_refine_ty { ty_test; ty_scrut; ctxt_cont; k })
-          | Refinement.Eff.Log_exit_refine_ty { ty_rfmt; ty_param_rfmt_opt } ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Exited_refine_ty { ty_rfmt; ty_param_rfmt_opt; k })
-          | Refinement.Eff.Log_enter_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont } ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) ->
-                Entered_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont; k })
-          | Refinement.Eff.Log_exit_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt } ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) ->
-                Exited_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt; k })
-          | Refinement.Eff.Log_enter_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont } ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) ->
-                Entered_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont; k })
-          | Refinement.Eff.Log_exit_refine_existential_test { ty_rfmt; ty_param_rfmt_opt } ->
-            Some
-              (fun (k : (a, _) Effect.Deep.continuation) ->
-                Exited_refine_existential_test { ty_rfmt; ty_param_rfmt_opt; k })
-          (* ~~ Refinement other ~~ *)
-          | Refinement.Eff.Gen_fresh_ty_params n ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Requested_fresh_ty_params { n; k })
-          | Refinement.Eff.Ask_up { of_; at } ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Asked_up { of_; at; k })
-          | Refinement.Eff.Ask_ty_param_variances ctor ->
-            Some (fun (k : (a, _) Effect.Deep.continuation) -> Asked_ty_param_variances { ctor; k })
-          | _ -> None)
-    ; retc = (fun _res -> Complete)
-    ; exnc = (fun exn -> Failed exn)
-    }
-;;
+    include Minimal
+    include Pretty.Make (Minimal)
+  end
 
-let debug comp = step_typing comp
+  module Status = struct
+    module Minimal = struct
+      type t =
+        | Entered_expr of
+            { span : Span.t
+            ; ctxt_def : Ctxt.Def.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ctxt.Def.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_expr of
+            { span : Span.t
+            ; ty : Ty.t
+            ; expr_delta : Ctxt.Cont.Expr_delta.t
+            ; k : (Ty.t * Ctxt.Cont.Expr_delta.t, t) Effect.Deep.continuation
+            }
+        | Entered_stmt of
+            { span : Span.t
+            ; ctxt_def : Ctxt.Def.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ctxt.Def.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_stmt of
+            { span : Span.t
+            ; delta : Ctxt.Delta.t
+            ; k : (Ctxt.Delta.t, t) Effect.Deep.continuation
+            }
+        | Entered_classish_def of
+            { span : Span.t
+            ; name : Name.Ctor.t
+            ; ctxt_def : Ctxt.Def.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ctxt.Def.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_classish_def of
+            { span : Span.t
+            ; k : (unit, t) Effect.Deep.continuation
+            }
+        | Entered_fn_def of
+            { span : Span.t
+            ; name : Name.Fn.t
+            ; ctxt_def : Ctxt.Def.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ctxt.Def.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_fn_def of
+            { span : Span.t
+            ; k : (unit, t) Effect.Deep.continuation
+            }
+        | Raised_error of
+            { err : Err.t
+            ; k : (unit, t) Effect.Deep.continuation
+            }
+        | Raised_warning of
+            { warn : Warn.t
+            ; k : (unit, t) Effect.Deep.continuation
+            }
+        (* ~~ Refinement ~~ *)
+        | Entered_refinement of
+            { ty_test : Ty.t
+            ; ty_scrut : Ty.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ty.t * Ty.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_refinement of
+            { ty_rfmt : Ty.Refinement.t
+            ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+            ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, t) Effect.Deep.continuation
+            }
+        | Entered_refine_ty of
+            { ty_test : Ty.t
+            ; ty_scrut : Ty.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ty.t * Ty.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_refine_ty of
+            { ty_rfmt : Ty.Refinement.t
+            ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+            ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, t) Effect.Deep.continuation
+            }
+        | Entered_refine_existential_scrut of
+            { prov_scrut : Prov.t
+            ; ty_exists : Ty.Exists.t
+            ; ty_test : Ty.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Prov.t * Ty.Exists.t * Ty.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_refine_existential_scrut of
+            { ty_rfmt : Ty.Refinement.t
+            ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+            ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, t) Effect.Deep.continuation
+            }
+        | Entered_refine_existential_test of
+            { ty_scrut : Ty.t
+            ; prov_test : Prov.t
+            ; ty_exists : Ty.Exists.t
+            ; ctxt_cont : Ctxt.Cont.t
+            ; k : (Ty.t * Prov.t * Ty.Exists.t * Ctxt.Cont.t, t) Effect.Deep.continuation
+            }
+        | Exited_refine_existential_test of
+            { ty_rfmt : Ty.Refinement.t
+            ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+            ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, t) Effect.Deep.continuation
+            }
+        | Asked_up of
+            { of_ : Ty.Ctor.t
+            ; at : Name.Ctor.t
+            ; k : (Ty.t list option, t) Effect.Deep.continuation
+            }
+        | Asked_ty_param_variances of
+            { ctor : Name.Ctor.t
+            ; k : (Variance.t Located.t list option, t) Effect.Deep.continuation
+            }
+        | Requested_fresh_ty_params of
+            { n : int
+            ; k : (Name.Ty_param.t list, t) Effect.Deep.continuation
+            }
+        | Complete
+        | Failed of Exn.t
+      [@@deriving variants]
+
+      let pp ppf t =
+        match t with
+        | Complete -> Fmt.any "complete" ppf ()
+        | Failed exn -> Fmt.(any "failed " ++ exn) ppf exn
+        | Entered_expr { span : Span.t; ctxt_def : Ctxt.Def.t; ctxt_cont : Ctxt.Cont.t; _ } ->
+          Fmt.(
+            vbox ~indent:2
+            @@ pair ~sep:cut (any "entered expression " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+            ppf
+            (span, (ctxt_cont, ctxt_def))
+        | Exited_expr { span; ty; expr_delta; _ } ->
+          Fmt.(
+            vbox ~indent:2
+            @@ pair ~sep:cut (any "exited expression " ++ Span.pp) (pair ~sep:cut Ty.pp Ctxt.Cont.Expr_delta.pp))
+            ppf
+            (span, (ty, expr_delta))
+        | Entered_stmt { span; ctxt_def; ctxt_cont; _ } ->
+          Fmt.(
+            vbox ~indent:2
+            @@ pair ~sep:cut (any "entered statement " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+            ppf
+            (span, (ctxt_cont, ctxt_def))
+        | Exited_stmt { span : Span.t; delta : Ctxt.Delta.t; _ } ->
+          Fmt.(vbox ~indent:2 @@ pair ~sep:cut (any "exited statement " ++ Span.pp) Ctxt.Delta.pp) ppf (span, delta)
+        | Entered_classish_def { span; ctxt_def; ctxt_cont; _ } ->
+          Fmt.(
+            vbox ~indent:2
+            @@ pair ~sep:cut (any "entered classish definition " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+            ppf
+            (span, (ctxt_cont, ctxt_def))
+        | Exited_classish_def { span; _ } -> Fmt.(any "exited classish definition " ++ Span.pp) ppf span
+        | Entered_fn_def { span; ctxt_def; ctxt_cont; _ } ->
+          Fmt.(
+            vbox ~indent:2
+            @@ pair ~sep:cut (any "entered function definition " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+            ppf
+            (span, (ctxt_cont, ctxt_def))
+        | Exited_fn_def { span; _ } -> Fmt.(any "exited function definition " ++ Span.pp) ppf span
+        | Raised_error { err; _ } -> Fmt.(any "raised error " ++ Err.pp) ppf err
+        | Raised_warning { warn; _ } -> Fmt.(any "raised warning " ++ Warn.pp) ppf warn
+        (* ~~ Refinement ~~ *)
+        | Entered_refinement { ty_test; ty_scrut; ctxt_cont; _ } ->
+          Fmt.(
+            any "entered refinement " ++ vbox (pair ~sep:cut (hbox @@ pair ~sep:(any "<~~") Ty.pp Ty.pp) Ctxt.Cont.pp))
+            ppf
+            ((ty_scrut, ty_test), ctxt_cont)
+        | Exited_refinement { ty_rfmt; ty_param_rfmt_opt; _ } ->
+          Fmt.(
+            any "exited refinement "
+            ++ cut
+            ++ (vbox ~indent:2
+                @@ pair ~sep:cut Ty.Refinement.pp
+                @@ option ~none:(any "No type parameter refinement")
+                @@ pair nop Ctxt.Ty_param.Refinement.pp))
+            ppf
+            (ty_rfmt, ty_param_rfmt_opt)
+        | Entered_refine_ty { ty_test; ty_scrut; ctxt_cont; _ } ->
+          Fmt.(
+            any "entered refine type " ++ vbox (pair ~sep:cut (hbox @@ pair ~sep:(any "<~~") Ty.pp Ty.pp) Ctxt.Cont.pp))
+            ppf
+            ((ty_scrut, ty_test), ctxt_cont)
+        | Exited_refine_ty { ty_rfmt; ty_param_rfmt_opt; _ } ->
+          Fmt.(
+            any "exited refine type "
+            ++ cut
+            ++ (vbox ~indent:2
+                @@ pair ~sep:cut Ty.Refinement.pp
+                @@ option ~none:(any "No type parameter refinement")
+                @@ pair nop Ctxt.Ty_param.Refinement.pp))
+            ppf
+            (ty_rfmt, ty_param_rfmt_opt)
+        | Entered_refine_existential_scrut { ty_exists; ty_test; ctxt_cont; _ } ->
+          Fmt.(
+            any "entered refine existential scrutinee "
+            ++ vbox (pair ~sep:cut (hbox @@ pair ~sep:(any "<~~") Ty.Exists.pp Ty.pp) Ctxt.Cont.pp))
+            ppf
+            ((ty_exists, ty_test), ctxt_cont)
+        | Exited_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt; _ } ->
+          Fmt.(
+            any "exited refine existential scrutinee "
+            ++ cut
+            ++ (vbox ~indent:2
+                @@ pair ~sep:cut Ty.Refinement.pp
+                @@ option ~none:(any "No type parameter refinement")
+                @@ pair nop Ctxt.Ty_param.Refinement.pp))
+            ppf
+            (ty_rfmt, ty_param_rfmt_opt)
+        | Entered_refine_existential_test { ty_exists; ty_scrut; ctxt_cont; _ } ->
+          Fmt.(
+            any "entered refine existential test "
+            ++ vbox (pair ~sep:cut (hbox @@ pair ~sep:(any "<~~") Ty.pp Ty.Exists.pp) Ctxt.Cont.pp))
+            ppf
+            ((ty_scrut, ty_exists), ctxt_cont)
+        | Exited_refine_existential_test { ty_rfmt; ty_param_rfmt_opt; _ } ->
+          Fmt.(
+            any "exited refine existential test "
+            ++ cut
+            ++ (vbox ~indent:2
+                @@ pair ~sep:cut Ty.Refinement.pp
+                @@ option ~none:(any "No type parameter refinement")
+                @@ pair nop Ctxt.Ty_param.Refinement.pp))
+            ppf
+            (ty_rfmt, ty_param_rfmt_opt)
+        | Asked_up { of_; at; _ } ->
+          Fmt.(any "asked up " ++ cut ++ (vbox ~indent:2 @@ pair ~sep:cut Ty.Ctor.pp Name.Ctor.pp)) ppf (of_, at)
+        | Asked_ty_param_variances { ctor; _ } -> Fmt.(any "asked type parameter variances " ++ Name.Ctor.pp) ppf ctor
+        | Requested_fresh_ty_params { n; _ } -> Fmt.(any "requested fresh type parameter names " ++ int) ppf n
+      ;;
+    end
+
+    include Minimal
+    include Pretty.Make (Minimal)
+  end
+
+  module Step = struct
+    module Minimal = struct
+      type t = Step of Status.t * State.t [@@deriving variants]
+
+      let pp ppf (Step (status, state)) = Fmt.(vbox @@ pair ~sep:cut Status.pp State.pp) ppf (status, state)
+    end
+
+    include Minimal
+    include Pretty.Make (Minimal)
+
+    let next (Step (status, state)) ~oracle =
+      match status with
+      | Status.Asked_up { of_; at; k } ->
+        let ty_args_opt = Oracle.up oracle ~of_ ~at in
+        step (Effect.Deep.continue k ty_args_opt) state
+      | Asked_ty_param_variances { ctor; k } ->
+        let ty_param_vars_opt = Oracle.param_variances_opt oracle ~ctor in
+        step (Effect.Deep.continue k ty_param_vars_opt) state
+      | Requested_fresh_ty_params { n; k } ->
+        let State.{ ty_param_name_source; _ } = state in
+        let offset = ty_param_name_source in
+        let ty_param_name_source = offset + n in
+        let names = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset)) in
+        let state = { state with ty_param_name_source } in
+        step (Effect.Deep.continue k names) state
+      | Complete -> step Complete state
+      | Failed exn -> step (Failed exn) state
+      | Raised_error { k; err } -> step (Effect.Deep.continue k ()) { state with errs = err :: state.errs }
+      | Raised_warning { k; warn } -> step (Effect.Deep.continue k ()) { state with warns = warn :: state.warns }
+      (* ~~ Logging effects for typing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+      | Entered_expr { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Exited_expr { ty; expr_delta; k; _ } -> step (Effect.Deep.continue k (ty, expr_delta)) state
+      | Entered_stmt { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Exited_stmt { delta; k; _ } -> step (Effect.Deep.continue k delta) state
+      | Entered_classish_def { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Exited_classish_def { k; _ } -> step (Effect.Deep.continue k ()) state
+      | Entered_fn_def { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Exited_fn_def { k; _ } -> step (Effect.Deep.continue k ()) state
+      | Entered_refinement { ty_test; ty_scrut; ctxt_cont; k } ->
+        step (Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont)) state
+      (* ~~ Logging effects for refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+      | Exited_refinement { ty_rfmt; ty_param_rfmt_opt; k } ->
+        step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
+      | Entered_refine_ty { ty_test; ty_scrut; ctxt_cont; k } ->
+        step (Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont)) state
+      | Exited_refine_ty { ty_rfmt; ty_param_rfmt_opt; k } ->
+        step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
+      | Entered_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont; k } ->
+        step (Effect.Deep.continue k (prov_scrut, ty_exists, ty_test, ctxt_cont)) state
+      | Exited_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt; k } ->
+        step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
+      | Entered_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont; k } ->
+        step (Effect.Deep.continue k (ty_scrut, prov_test, ty_exists, ctxt_cont)) state
+      | Exited_refine_existential_test { ty_rfmt; ty_param_rfmt_opt; k } ->
+        step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
+    ;;
+
+    let next' step ~oracle =
+      let step = next step ~oracle in
+      print step;
+      step
+    ;;
+  end
+
+  let go comp =
+    Step.Step
+      ( Effect.Deep.match_with
+          comp
+          ()
+          { effc =
+              (fun (type a) (eff : a Effect.t) ->
+                match eff with
+                | Log_error err -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_error ~err ~k)
+                | Log_warning warn -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_warning ~warn ~k)
+                | Log_enter_expr (span, ctxt_def, ctxt_cont) ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_expr ~span ~ctxt_def ~ctxt_cont ~k)
+                | Log_enter_stmt (span, ctxt_def, ctxt_cont) ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_stmt ~span ~ctxt_def ~ctxt_cont ~k)
+                | Log_enter_classish_def (span, name, ctxt_def, ctxt_cont) ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_classish_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
+                | Log_enter_fn_def (span, name, ctxt_def, ctxt_cont) ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_fn_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
+                | Log_exit_expr (span, ty, expr_delta) ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_expr ~span ~ty ~expr_delta ~k)
+                | Log_exit_stmt (span, delta) ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_stmt ~span ~delta ~k)
+                | Log_exit_classish_def span ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
+                | Log_exit_fn_def span ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
+                (* ~~ Refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+                | Refinement.Eff.Log_enter_refinement { ty_test; ty_scrut; ctxt_cont } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_refinement ~ty_test ~ty_scrut ~ctxt_cont ~k)
+                | Refinement.Eff.Log_exit_refinement { ty_rfmt; ty_param_rfmt_opt } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.exited_refinement ~ty_rfmt ~ty_param_rfmt_opt ~k)
+                | Refinement.Eff.Log_enter_refine_ty { ty_test; ty_scrut; ctxt_cont } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_refine_ty ~ty_test ~ty_scrut ~ctxt_cont ~k)
+                | Refinement.Eff.Log_exit_refine_ty { ty_rfmt; ty_param_rfmt_opt } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.exited_refine_ty ~ty_rfmt ~ty_param_rfmt_opt ~k)
+                | Refinement.Eff.Log_enter_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_refine_existential_scrut ~prov_scrut ~ty_exists ~ty_test ~ctxt_cont ~k)
+                | Refinement.Eff.Log_exit_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.exited_refine_existential_scrut ~ty_rfmt ~ty_param_rfmt_opt ~k)
+                | Refinement.Eff.Log_enter_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.entered_refine_existential_test ~ty_scrut ~prov_test ~ty_exists ~ctxt_cont ~k)
+                | Refinement.Eff.Log_exit_refine_existential_test { ty_rfmt; ty_param_rfmt_opt } ->
+                  Some
+                    (fun (k : (a, _) Effect.Deep.continuation) ->
+                      Status.exited_refine_existential_test ~ty_rfmt ~ty_param_rfmt_opt ~k)
+                (* ~~ Refinement other ~~ *)
+                | Refinement.Eff.Gen_fresh_ty_params n ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.requested_fresh_ty_params ~n ~k)
+                | Refinement.Eff.Ask_up { of_; at } ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
+                | Refinement.Eff.Ask_ty_param_variances ctor ->
+                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ty_param_variances ~ctor ~k)
+                | _ -> None)
+          ; retc = (fun _res -> Status.complete)
+          ; exnc = (fun exn -> Status.failed exn)
+          }
+      , State.empty )
+  ;;
+end

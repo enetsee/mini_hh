@@ -1,6 +1,6 @@
 (library
  (name common)
- (libraries core fmt)
+ (libraries core fmt pretty)
  (inline_tests)
  (preprocess
   (pps

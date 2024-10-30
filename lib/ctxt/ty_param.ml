@@ -8,7 +8,14 @@ open Reporting
    Ty.Param_bounds.t option val transform : t -> f:(Ty.Param_bounds.t -> Ty.Param_bounds.t) -> t end *)
 
 module Ctxt = struct
-  type t = Ty.Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
+  module Minimal = struct
+    type t = Ty.Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
+
+    let pp ppf t = Name.Ty_param.Map.pp Ty.Param_bounds.pp ppf t
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let pp t = Name.Ty_param.Map.pp Ty.Param_bounds.pp t
   let empty : t = Name.Ty_param.Map.empty
@@ -80,15 +87,27 @@ module Refinement : sig
 
   val find : t -> Name.Ty_param.t -> result
 end = struct
-  type t =
-    | Top (** The top element:
-              meet top t = meet t top = t
-              join top _ = join _ top = top *)
-    | Bounds of Ty.Param_bounds.t Name.Ty_param.Map.t
-    | Bottom (** The bottom element:
-                 meet bottom _ = meet _ bottom = bottom
-                 join bottom t = join t bottom = t *)
-  [@@deriving compare, eq, sexp]
+  module Minimal = struct
+    type t =
+      | Top (** The top element:
+                meet top t = meet t top = t
+                join top _ = join _ top = top *)
+      | Bounds of Ty.Param_bounds.t Name.Ty_param.Map.t
+      | Bottom (** The bottom element:
+                   meet bottom _ = meet _ bottom = bottom
+                   join bottom t = join t bottom = t *)
+    [@@deriving compare, eq, sexp]
+
+    let pp ppf t =
+      match t with
+      | Top -> Fmt.(any "⊤") ppf ()
+      | Bottom -> Fmt.(any "⊥") ppf ()
+      | Bounds b -> Name.Ty_param.Map.pp Ty.Param_bounds.pp ppf b
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let top = Top
   let bottom = Bottom

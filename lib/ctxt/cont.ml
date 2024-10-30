@@ -2,11 +2,28 @@ open Core
 open Reporting
 
 module Refinement = struct
-  type t =
-    { local : Local.Refinement.t
-    ; ty_param : Ty_param.Refinement.t
-    }
-  [@@deriving create, show]
+  module Minimal = struct
+    type t =
+      { local : Local.Refinement.t
+      ; ty_param : Ty_param.Refinement.t
+      }
+    [@@deriving create]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "locals" (fun { local; _ } -> local) Local.Refinement.pp
+             ; field "type parameters" (fun { ty_param; _ } -> ty_param) Ty_param.Refinement.pp
+             ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let empty = { local = Local.Refinement.empty; ty_param = Ty_param.Refinement.empty }
   let param_rfmnt { ty_param; _ } nm = Ty_param.Refinement.find ty_param nm
@@ -30,24 +47,60 @@ module Refinement = struct
   ;;
 end
 
-(** The per-continuation context *)
-type t =
-  { local : Local.t (** Local variables bound in this continuation *)
-  ; ty_param : Ty_param.t (** Type parameters bound in this continuation via unpacked existentials *)
-  ; rfmts : Refinement.t list (** The stack of refinements corresponding to successive type tests, if any *)
-  }
-[@@deriving create, show]
-
-module Expr_delta = struct
-  (** The incremental change in the per-continuation context after typing an expression
-      TODO(mjt) when we have object access this should include the set of refinements on properties that have been
-      invalidated *)
+module Minimal = struct
+  (** The per-continuation context *)
   type t =
-    { rfmt : Refinement.t option (** [is] expressions may refine local variables and type parameters *)
-    ; local : Local.t option (** [as] expressions redefine locals and type parameters *)
-    ; ty_param : Ty_param.t option
+    { local : Local.t (** Local variables bound in this continuation *)
+    ; ty_param : Ty_param.t (** Type parameters bound in this continuation via unpacked existentials *)
+    ; rfmts : Refinement.t list (** The stack of refinements corresponding to successive type tests, if any *)
     }
   [@@deriving create, show]
+
+  let pp ppf t =
+    Fmt.(
+      vbox
+      @@ record
+           ~sep:cut
+           [ field "locals" (fun { local; _ } -> local) Local.pp
+           ; field "type parameters" (fun { ty_param; _ } -> ty_param) Ty_param.pp
+           ; field "refinements" (fun { rfmts; _ } -> rfmts) @@ list ~sep:cut Refinement.pp
+           ])
+      ppf
+      t
+  ;;
+end
+
+include Minimal
+include Pretty.Make (Minimal)
+
+module Expr_delta = struct
+  module Minimal = struct
+    (** The incremental change in the per-continuation context after typing an expression
+        TODO(mjt) when we have object access this should include the set of refinements on properties that have been
+        invalidated *)
+    type t =
+      { rfmt : Refinement.t option (** [is] expressions may refine local variables and type parameters *)
+      ; local : Local.t option (** [as] expressions redefine locals and type parameters *)
+      ; ty_param : Ty_param.t option
+      }
+    [@@deriving create]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "Δ refinement" (fun { rfmt; _ } -> rfmt) @@ option ~none:(any "(none)") Refinement.pp
+             ; field "Δ locals" (fun { local; _ } -> local) @@ option ~none:(any "(none)") Local.pp
+             ; field "Δ type parameters" (fun { ty_param; _ } -> ty_param) @@ option ~none:(any "(none)") Ty_param.pp
+             ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let empty = { rfmt = None; local = None; ty_param = None }
   let drop_rfmt t = { t with rfmt = None }
@@ -61,14 +114,31 @@ module Expr_delta = struct
 end
 
 module Delta = struct
-  (** The incremental change in the per-continuation context after typing an expression
-      TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
-      that have been invalidated when that is implemented for expressions *)
-  type t =
-    { local : Local.t option (** We get changes in the [local] context from assignement and [as] expressions *)
-    ; ty_param : Ty_param.t option (** We get changes in the [ty_param] context from [unpack] expressions *)
-    }
-  [@@deriving create, show]
+  module Minimal = struct
+    (** The incremental change in the per-continuation context after typing an expression
+        TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
+        that have been invalidated when that is implemented for expressions *)
+    type t =
+      { local : Local.t option (** We get changes in the [local] context from assignement and [as] expressions *)
+      ; ty_param : Ty_param.t option (** We get changes in the [ty_param] context from [unpack] expressions *)
+      }
+    [@@deriving create]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "Δ locals" (fun { local; _ } -> local) @@ option ~none:(any "(none)") Local.pp
+             ; field "Δ type parameters" (fun { ty_param; _ } -> ty_param) @@ option ~none:(any "(none)") Ty_param.pp
+             ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
 
   let empty = { local = None; ty_param = None }
   let of_expr_delta Expr_delta.{ local; ty_param; _ } = { local; ty_param }
