@@ -114,6 +114,8 @@ rule token = parse
   | "int"                   { INT (current_loc lexbuf) }
   | "float"                 { FLOAT (current_loc lexbuf) }
   | "string"                { STRING (current_loc lexbuf) }
+  | "arraykey"              { ARRAYKEY (current_loc lexbuf) }
+  | "num"                   { NUM (current_loc lexbuf) }
   | "nonnull"               { NONNULL (current_loc lexbuf) }
   | "this"                  { THIS (current_loc lexbuf) }
 

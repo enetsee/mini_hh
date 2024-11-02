@@ -251,7 +251,7 @@ and refine_union_scrut prov ~ty_scruts ~ty_test ~ctxt =
   match res with
   | Ok refns ->
     let tys, refns = combine ty_scruts refns in
-    Replace_with (Ty.union tys ~prov), Some (prov, Ctxt.Ty_param.Refinement.meet_many refns ~prov)
+    Replace_with (Ty.union tys ~prov), Some (prov, Ctxt.Ty_param.Refinement.join_many refns ~prov)
   | Error _provs -> Ty.Refinement.Disjoint prov, None
 
 (* ~~ Refine union types in test position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
