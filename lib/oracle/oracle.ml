@@ -21,8 +21,8 @@ let add_def_res t def =
   | Lang.Def.Fn _ -> Ok (t, [])
 ;;
 
-let of_program t defs =
-  List.fold_left defs ~init:(t, []) ~f:(fun (t, errs) def ->
+let of_program Lang.Prog.{ defs } =
+  List.fold_left defs ~init:(empty, []) ~f:(fun (t, errs) def ->
     match add_def_res t def with
     | Ok (t, errs') -> t, errs' @ errs
     | Error (err, errs') -> t, (err :: errs') @ errs)

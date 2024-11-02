@@ -3,6 +3,7 @@ module Ctxt = Ctxt
 module Cstr = Cstr
 module Err = Err
 module Prop = Prop
+module Answer = Answer
 
 module Eager_leftmost_dfs = struct
   let rec tell_prop prop ~ctxt =
@@ -45,4 +46,13 @@ module Tell = struct
   let any props ~ctxt = Eager_leftmost_dfs.tell_any props ~errs:[] ~ctxt
   let one cstr ~ctxt = Eager_leftmost_dfs.tell_cstr cstr ~ctxt
   let is_subtype ~ty_sub ~ty_super ~ctxt = one (Cstr.is_subtype ~ty_sub ~ty_super) ~ctxt
+end
+
+module Ask = struct
+  let is_subtype ~ty_sub ~ty_super ~ctxt =
+    (* We don't have tyvars yet so this is the same... *)
+    match Tell.is_subtype ~ty_sub ~ty_super ~ctxt with
+    | Some err -> Answer.No err
+    | _ -> Answer.Yes
+  ;;
 end

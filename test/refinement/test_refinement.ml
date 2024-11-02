@@ -22,7 +22,7 @@ interface I<+T> {}
 class A implements I<Four> {}
 |} in
     let prog = program_of_string prog_str in
-    let oracle, errs = Oracle.of_program Oracle.empty prog in
+    let oracle, errs = Oracle.of_program prog in
     assert (List.is_empty errs);
     (* Scrutinee and test type *)
     let ta = ty_param_nm "Ta" in

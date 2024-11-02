@@ -71,10 +71,11 @@ module Delta = struct
   let extend t ~with_ = lift2 t with_ ~f:(fun t with_ -> Cont.Delta.extend t ~with_)
 end
 
+(**  TODO(mjt) this is rather unsatisfying - there must be a nicer way to describe this? *)
 let update t ~delta =
   match delta.Delta.exit, delta.next with
   (* ~~ if we exited, put the next continuation into the exit continuation *)
-  | Some _, _ -> Ctxt.create ?exit:t.Ctxt.next ()
+  | Some _, None -> Ctxt.create ?exit:t.Ctxt.next ()
   | _, Some delta ->
     let next = Option.map t.next ~f:(fun t -> Cont.update t ~delta) in
     Ctxt.create ?next ()

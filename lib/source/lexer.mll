@@ -5,10 +5,12 @@
     exception UnexpectedChar of string
     exception UnterminatedComment 
 
+
     let current_loc = 
-      let prev_pos = ref Reporting.Pos.empty in 
+      let prev_pos = ref Reporting.Pos.beg_of_file in 
       fun lexbuf ->
-        let p = Lexing.lexeme_start_p lexbuf in
+        let p =  lexeme_end_p lexbuf in
+        (* Lexing.lexeme_start_p lexbuf in *)
         let new_pos = 
         Reporting.Pos.(
           { line = p.Lexing.pos_lnum
@@ -24,7 +26,7 @@
 
 (* ~~ Regex aliases ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-let whitespace = [' ' '\t'  '\011' '\012' '\n' '\r']
+let whitespace = [' ' '\t'  '\011' '\012']
 let newline = ("\r"|"\n"|"\r\n")
 let any_char = (_ | ['\n'] )
 
@@ -67,6 +69,7 @@ rule token = parse
                             }
 
   (* ~~ Keywords ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | "<?hh"                 { SCRIPT_MARKER (current_loc lexbuf)}
   (* | "while"                 { WHILE (current_loc lexbuf) } *)
   (* | "do"                    { DO (current_loc lexbuf) } *)
   (* | "for"                   { FOR (current_loc lexbuf) } *)

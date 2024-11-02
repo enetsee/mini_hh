@@ -1,0 +1,26 @@
+(executable
+ (name hh_debug)
+ (libraries
+  core
+  core_unix
+  core_unix.sys_unix
+  core_unix.filename_unix
+  cmdliner
+  fmt
+  nottui
+  reporting
+  source
+  oracle
+  lang
+  ty
+  common
+  typing))
+
+; common
+; name
+; source
+; lang
+; ty
+; ctxt
+; typing
+; oracle))

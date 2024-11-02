@@ -20,6 +20,7 @@ module Ctxt = struct
   let pp t = Name.Ty_param.Map.pp Ty.Param_bounds.pp t
   let empty : t = Name.Ty_param.Map.empty
   let is_empty t = Map.is_empty t
+  let bindings t = Map.to_alist t
 
   let bind (t : t) ty_param bounds : t =
     (* Invariant: we should never rebind a type parameter *)
@@ -79,6 +80,7 @@ module Refinement : sig
   val join_many : t list -> prov:Prov.t -> t
   val unbind : t -> Name.Ty_param.t -> t
   val unbind_all : t -> Name.Ty_param.t list -> t
+  val bindings : t -> [> `Bottom | `Bounds of (Name.Ty_param.t * Ty.Param_bounds.t) list | `Top ]
 
   type result =
     | Bounds_top
@@ -118,6 +120,13 @@ end = struct
     | Top -> Fmt.any "T" ppf ()
     | Bottom -> Fmt.any "F" ppf ()
     | Bounds b -> Name.Ty_param.Map.pp Ty.Param_bounds.pp ppf b
+  ;;
+
+  let bindings t =
+    match t with
+    | Top -> `Top
+    | Bottom -> `Bottom
+    | Bounds b -> `Bounds (Map.to_alist b)
   ;;
 
   let show = Fmt.to_to_string pp

@@ -28,6 +28,7 @@ module Lvalue = Lvalue
 
 (* ~~ Definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
+module Prog = Prog
 module Def = Def
 module Static_or_instance = Static_or_instance
 module Ty_param_def = Ty_param_def

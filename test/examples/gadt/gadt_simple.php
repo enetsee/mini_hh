@@ -1,3 +1,5 @@
+<?hh
+
 interface IExpr<T> {}
 
 class IntExpr implements IExpr<int> {}

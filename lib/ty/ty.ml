@@ -30,9 +30,9 @@ end = struct
 
     let pp ppf t =
       match t with
-      | Base base -> Common.Base.pp ppf base
-      | Nonnull -> Fmt.(any "nonnull") ppf ()
-      | Generic name -> Name.Ty_param.pp ppf name
+      | Base base -> Fmt.(styled `Magenta Common.Base.pp) ppf base
+      | Nonnull -> Fmt.(styled `Magenta @@ any "nonnull") ppf ()
+      | Generic name -> Fmt.(styled `Green Name.Ty_param.pp) ppf name
       | Tuple tuple -> Tuple.pp ppf tuple
       | Fn fn -> Fn.pp ppf fn
       | Ctor ctor -> Ctor.pp ppf ctor
@@ -75,6 +75,7 @@ and Annot : sig
   val map_prov : t -> f:(Prov.t -> Prov.t) -> t
   val with_prov : t -> Prov.t -> t
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
   val bool : Prov.t -> t
   val null : Prov.t -> t
   val int : Prov.t -> t
@@ -96,7 +97,7 @@ and Annot : sig
   val nonnull : Prov.t -> t
 end = struct
   type t =
-    { prov : Prov.t
+    { prov : Prov.t [@equal.opaque] [@compare.opaque] [@equal.ignore] [@compare.ignore]
     ; node : Node.t
     }
   [@@deriving compare, create, equal, sexp]
@@ -201,6 +202,38 @@ end = struct
       { prov; node }
   ;;
 
+  (** Quick hack to turn type which have been parsed as constructors into generics
+      TODO(mjt) Ideally we will do this when we elaborate from CST to AST *)
+  let rec elab_to_generic ({ prov; node } as t) ~bound_ty_params =
+    match node with
+    | Base _ | Nonnull | Generic _ -> t
+    | Fn fn ->
+      let node = Node.fn (Fn.elab_to_generic fn ~bound_ty_params) in
+      { prov; node }
+    | Tuple tuple ->
+      let node = Node.tuple (Tuple.elab_to_generic tuple ~bound_ty_params) in
+      { prov; node }
+    | Ctor Ctor.{ name; args = [] } ->
+      let ty_param_name = Name.Ty_param.from_ctor_name name in
+      if Set.mem bound_ty_params ty_param_name
+      then (
+        let node = Node.generic ty_param_name in
+        { prov; node })
+      else t
+    | Ctor ctor ->
+      let node = Node.ctor (Ctor.elab_to_generic ctor ~bound_ty_params) in
+      { prov; node }
+    | Exists exists ->
+      let node = Node.exists (Exists.elab_to_generic exists ~bound_ty_params) in
+      { prov; node }
+    | Union union ->
+      let node = Node.union (List.map ~f:(elab_to_generic ~bound_ty_params) union) in
+      { prov; node }
+    | Inter inter ->
+      let node = Node.inter (List.map ~f:(elab_to_generic ~bound_ty_params) inter) in
+      { prov; node }
+  ;;
+
   (* ~~ Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
   let base prov base = create ~prov ~node:base ()
@@ -232,18 +265,36 @@ end = struct
     create ~prov ~node ()
   ;;
 
+  let is_nothing t =
+    match t.node with
+    | Node.Union [] -> true
+    | _ -> false
+  ;;
+
+  let is_mixed t =
+    match t.node with
+    | Node.Inter [] -> true
+    | _ -> false
+  ;;
+
+  (** This is an expensive and impractical smart constructor but fine for demo purposes *)
   let union elems ~prov =
-    match elems with
+    match List.dedup_and_sort ~compare @@ List.filter elems ~f:(fun t -> not @@ is_nothing t) with
     | [ ty ] -> ty
-    | _ ->
-      let node = Node.union elems in
+    | elems when List.exists ~f:is_mixed elems ->
+      let node = Node.inter [] in
+      create ~prov ~node ()
+    | elems ->
+      let node = Node.union @@ elems in
       create ~prov ~node ()
   ;;
 
+  (** This is an expensive and impractical smart constructor but fine for demo purposes *)
   let inter elems ~prov =
-    match elems with
+    match List.dedup_and_sort ~compare @@ List.filter elems ~f:(fun t -> not @@ is_mixed t) with
     | [ ty ] -> ty
-    | _ ->
+    | elems when List.exists ~f:is_nothing elems -> union [] ~prov
+    | elems ->
       let node = Node.inter elems in
       create ~prov ~node ()
   ;;
@@ -277,6 +328,7 @@ and Fn : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
     type t =
@@ -294,6 +346,12 @@ end = struct
   let apply_subst { params; return } ~subst ~combine_prov =
     let params = Tuple.apply_subst params ~subst ~combine_prov
     and return = Annot.apply_subst return ~subst ~combine_prov in
+    { params; return }
+  ;;
+
+  let elab_to_generic { params; return } ~bound_ty_params =
+    let params = Tuple.elab_to_generic params ~bound_ty_params
+    and return = Annot.elab_to_generic return ~bound_ty_params in
     { params; return }
   ;;
 
@@ -333,6 +391,7 @@ and Tuple : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'acc Ops.t -> init:'acc -> 'acc
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
     type t =
@@ -390,6 +449,13 @@ end = struct
     let variadic = Option.map variadic ~f:(Annot.apply_subst ~subst ~combine_prov) in
     { required; optional; variadic }
   ;;
+
+  let elab_to_generic { required; optional; variadic } ~bound_ty_params =
+    let required = List.map required ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    let optional = List.map optional ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    let variadic = Option.map variadic ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    { required; optional; variadic }
+  ;;
 end
 
 (* ~~ Type constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -408,6 +474,7 @@ and Ctor : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
     type t =
@@ -428,7 +495,8 @@ end = struct
     let pp ppf { name; args } =
       if List.is_empty args
       then Name.Ctor.pp ppf name
-      else Fmt.(hovbox @@ pair ~sep:nop Name.Ctor.pp @@ angles @@ list ~sep:comma Annot.pp) ppf (name, args)
+      else
+        Fmt.(hovbox @@ pair ~sep:nop (styled `Cyan Name.Ctor.pp) @@ angles @@ list ~sep:comma Annot.pp) ppf (name, args)
     ;;
   end
 
@@ -457,6 +525,11 @@ end = struct
     let args = List.map args ~f:(Annot.apply_subst ~subst ~combine_prov) in
     { name; args }
   ;;
+
+  let elab_to_generic { name; args } ~bound_ty_params =
+    let args = List.map args ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    { name; args }
+  ;;
 end
 
 (* ~~ Existentially quantified types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -475,6 +548,7 @@ and Exists : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
     type t =
@@ -517,6 +591,12 @@ end = struct
     and quants = List.map quants ~f:(Param.apply_subst ~subst ~combine_prov) in
     { body; quants }
   ;;
+
+  let elab_to_generic { quants; body } ~bound_ty_params =
+    let body = Annot.elab_to_generic body ~bound_ty_params
+    and quants = List.map quants ~f:(Param.elab_to_generic ~bound_ty_params) in
+    { body; quants }
+  ;;
 end
 
 and Param : sig
@@ -534,6 +614,7 @@ and Param : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
     type t =
@@ -572,6 +653,11 @@ end = struct
     let param_bounds = Param_bounds.apply_subst param_bounds ~subst ~combine_prov in
     { name; param_bounds }
   ;;
+
+  let elab_to_generic { name; param_bounds } ~bound_ty_params =
+    let param_bounds = Param_bounds.elab_to_generic param_bounds ~bound_ty_params in
+    { name; param_bounds }
+  ;;
 end
 
 and Param_bounds : sig
@@ -591,6 +677,7 @@ and Param_bounds : sig
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
   val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 
   (* TODO(mjt) add order sigs *)
   val top : Prov.t -> t
@@ -640,6 +727,12 @@ end = struct
   let apply_subst { lower; upper } ~subst ~combine_prov =
     let lower = Annot.apply_subst lower ~subst ~combine_prov
     and upper = Annot.apply_subst upper ~subst ~combine_prov in
+    { lower; upper }
+  ;;
+
+  let elab_to_generic { lower; upper } ~bound_ty_params =
+    let lower = Annot.elab_to_generic lower ~bound_ty_params
+    and upper = Annot.elab_to_generic upper ~bound_ty_params in
     { lower; upper }
   ;;
 
@@ -860,6 +953,6 @@ include Annot
 let refine t ~rfmt =
   match rfmt with
   | Refinement.Replace_with ty -> ty
-  | Refinement.Intersect_with (prov, ty) -> inter [ ty; t ] ~prov
+  | Refinement.Intersect_with (prov, ty) -> inter [ t; ty ] ~prov
   | Refinement.Disjoint prov -> nothing prov
 ;;

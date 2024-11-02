@@ -4,13 +4,14 @@ module Ctor = struct
   module Minimal = struct
     type t = Ctor of string [@@deriving compare, equal, sexp] [@@ocaml.unboxed]
 
-    let pp ppf (Ctor name) = Fmt.string ppf name
+    let pp ppf (Ctor name) = Fmt.(string) ppf name
   end
 
   include Minimal
   include Pretty.Make (Minimal)
 
   let of_string nm = Ctor nm
+  let to_string (Ctor nm) = nm
 
   module Map = struct
     include Map.Make (Minimal)
@@ -45,9 +46,14 @@ module Ty_param = struct
       | Ty_param of string
     [@@deriving compare, equal, sexp]
 
+    let from_ctor_name ctor_name =
+      let nm = Ctor.to_string ctor_name in
+      if String.equal nm "this" then This else Ty_param nm
+    ;;
+
     let pp ppf t =
       match t with
-      | Ty_param name -> Fmt.string ppf name
+      | Ty_param name -> Fmt.(string) ppf name
       | This -> Fmt.any "this" ppf ()
     ;;
   end

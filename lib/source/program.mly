@@ -111,6 +111,7 @@
 (* ~~ Keywords ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 %token<Reporting.Span.t> 
+  SCRIPT_MARKER
   NEW CLASS INTERFACE TRAIT REQUIRE EXTENDS IMPLEMENTS USE ABSTRACT FINAL
   AS SUPER
   STATIC PUBLIC PRIVATE
@@ -181,14 +182,14 @@
 // %left pre_ELSE
 // %left ELSE
 
-%start<Lang.Def.t list> program
+%start<Lang.Prog.t> program
 %%
 
 (* ~~ Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 (* ~~ Programs are lists of top-level definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-program: defs=list(toplevel_def) EOF { defs };
+program: SCRIPT_MARKER? defs=list(toplevel_def) EOF { Prog.{defs} };
 
 
 toplevel_def:
@@ -499,6 +500,14 @@ statement_if:
     Located.create ~elem ~span ()
    }
   | prefix=if_without_else ELSE else_=seq { 
+    let (cond,then_,span_start) = prefix in
+    let span_end = Located.span_of else_ in
+    let span = Span.join span_start span_end in
+    let node = If.create ~cond ~then_ ~else_ () in
+    let elem = Stmt_node.If node in
+    Located.create ~elem ~span ()
+   }
+   | prefix=if_without_else ELSE else_=statement_if { 
     let (cond,then_,span_start) = prefix in
     let span_end = Located.span_of else_ in
     let span = Span.join span_start span_end in

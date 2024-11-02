@@ -31,6 +31,10 @@ setup.log
 node_modules/
 node_modules/.lsp
 
+# vendored libs
+riot/
+riot
+
 
 .DS_Store
 .vscode/

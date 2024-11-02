@@ -35,6 +35,10 @@ end = struct
           Ty.nothing (Prov.lvalue_tm_var span)
       in
       ty, Ctxt.Cont.Expr_delta.empty
+    | This ->
+      (* TODO(mjt) add this literal witness *)
+      let ty = Ty.this @@ Prov.witness span in
+      ty, Ctxt.Cont.Expr_delta.empty
     | Is is_expr -> Is.synth (is_expr, span) ~def_ctxt ~cont_ctxt
     | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~cont_ctxt
     | _ -> failwith "TODO"
@@ -51,7 +55,7 @@ end
 and Is : sig
   val synth : Lang.Is.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let refine_by span expr_scrut ~ty_scrut ~ty_test cont_ctxt =
+  let refine_by expr_scrut ~ty_scrut ~ty_test cont_ctxt =
     let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
@@ -63,15 +67,9 @@ end = struct
       Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
       let local = Ctxt.Local.Refinement.empty in
-      let this =
-        let upper = Ty.Refinement.to_ty ty_refinement in
-        let bounds = Ty.Param_bounds.create ~lower:(Ty.nothing (Prov.witness span)) ~upper () in
-        Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this bounds
-      in
       let ty_param =
-        match ty_param_refinement_opt with
-        | None -> this
-        | Some (prov, that) -> Ctxt.Ty_param.Refinement.meet this that ~prov
+        let default = Ctxt.Ty_param.Refinement.empty in
+        Option.value_map ~default ~f:snd ty_param_refinement_opt
       in
       Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
     | _ -> None
@@ -91,7 +89,7 @@ end = struct
     let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
     (* Build the result is refinement and put it into a delta *)
     let expr_delta_is =
-      let rfmt = refine_by span scrut ~ty_scrut ~ty_test cont_ctxt in
+      let rfmt = refine_by scrut ~ty_scrut ~ty_test cont_ctxt in
       Ctxt.Cont.Expr_delta.create ?rfmt ()
     in
     let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_is ~prov in
@@ -104,7 +102,7 @@ end
 and As : sig
   val synth : Lang.As.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let refine_by span expr_scrut ~ty_scrut ~ty_assert cont_ctxt =
+  let refine_by expr_scrut ~ty_scrut ~ty_assert cont_ctxt =
     let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test:ty_assert ~ctxt:cont_ctxt in
     let ty = Ty.refine ty_scrut ~rfmt:ty_refinement in
     match Located.elem expr_scrut with
@@ -125,15 +123,9 @@ end = struct
     | Lang.Expr_node.This ->
       let refinement =
         let local = Ctxt.Local.Refinement.empty in
-        let this =
-          let upper = Ty.Refinement.to_ty ty_refinement in
-          let bounds = Ty.Param_bounds.create ~lower:(Ty.nothing (Prov.witness span)) ~upper () in
-          Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this bounds
-        in
         let ty_param =
-          match ty_param_refinement_opt with
-          | None -> this
-          | Some (prov, that) -> Ctxt.Ty_param.Refinement.meet this that ~prov
+          let default = Ctxt.Ty_param.Refinement.empty in
+          Option.value_map ~default ~f:snd ty_param_refinement_opt
         in
         Ctxt.Cont.Refinement.create ~local ~ty_param ()
       in
@@ -148,7 +140,7 @@ end = struct
        expression *)
     let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
     let ty, expr_delta_as =
-      let ty, local, rfmt = refine_by span scrut ~ty_scrut ~ty_assert cont_ctxt in
+      let ty, local, rfmt = refine_by scrut ~ty_scrut ~ty_assert cont_ctxt in
       ty, Ctxt.Cont.Expr_delta.create ?local ?rfmt ()
     in
     let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_as ~prov in
@@ -357,8 +349,13 @@ end = struct
   ;;
 
   let synth (Lang.Seq.Seq stmts, span) ~def_ctxt ~cont_ctxt =
-    let acc_ctxt = Ctxt.create ~next:cont_ctxt ()
-    and acc_delta = Ctxt.Delta.empty in
-    synth_help None span stmts ~def_ctxt ~acc_ctxt ~acc_delta
+    match stmts with
+    (* Using [Seq] to encode both non-empty sequences and no-ops so we have to
+       handle the no-op case specially *)
+    | [] -> Ctxt.Delta.create ~next:Ctxt.Cont.Delta.empty ()
+    | _ ->
+      let acc_ctxt = Ctxt.create ~next:cont_ctxt ()
+      and acc_delta = Ctxt.Delta.empty in
+      synth_help None span stmts ~def_ctxt ~acc_ctxt ~acc_delta
   ;;
 end

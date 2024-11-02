@@ -28,3 +28,38 @@ let ty_of { name; ty_params; _ } =
   let name = Located.elem name in
   Ty.ctor prov ~name ~args
 ;;
+
+let elab_to_generic t ~bound_ty_params =
+  (* Bind class level generics *)
+  let bound_ty_params =
+    let declared_ty_params =
+      Name.Ty_param.Set.of_list @@ List.map ~f:(fun Ty_param_def.{ name; _ } -> Located.elem name) t.ty_params
+    in
+    Set.union bound_ty_params declared_ty_params
+  in
+  let f = Located.map (Ty.Ctor.elab_to_generic ~bound_ty_params) in
+  (* We need to elaborate the type parameters since the declared type parameters may appear in other type paramerter
+     bounds *)
+  let ty_params = List.map ~f:(Ty_param_def.elab_to_generic ~bound_ty_params) t.ty_params
+  and extends = Option.map ~f t.extends
+  and implements = List.map ~f t.implements
+  and require_class = List.map ~f t.require_class
+  and require_extends = List.map ~f t.require_extends
+  and require_implements = List.map ~f t.require_implements
+  and uses = List.map ~f t.uses
+  and ty_consts = List.map ~f:(Located.map (Ty_const_def.elab_to_generic ~bound_ty_params)) t.ty_consts
+  and properties = List.map ~f:(Located.map (Property_def.elab_to_generic ~bound_ty_params)) t.properties
+  and methods = List.map ~f:(Located.map (Method_def.elab_to_generic ~bound_ty_params)) t.methods in
+  { t with
+    ty_params
+  ; extends
+  ; implements
+  ; require_class
+  ; require_extends
+  ; require_implements
+  ; uses
+  ; ty_consts
+  ; properties
+  ; methods
+  }
+;;

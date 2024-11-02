@@ -115,7 +115,7 @@ end
 
 module Delta = struct
   module Minimal = struct
-    (** The incremental change in the per-continuation context after typing an expression
+    (** The incremental change in the per-continuation context after typing a statement
         TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
         that have been invalidated when that is implemented for expressions *)
     type t =

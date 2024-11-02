@@ -77,14 +77,15 @@ module Debug = struct
   module State = struct
     module Minimal = struct
       type t =
-        { tys : (Span.t * Ty.t) list
+        { current_span : Span.t
+        ; tys : (Span.t * Ty.t) list
         ; errs : Err.t list
         ; warns : Warn.t list
         ; ty_param_name_source : int
         }
       [@@deriving create]
 
-      let empty = { tys = []; errs = []; warns = []; ty_param_name_source = 0 }
+      let init span = { current_span = span; tys = []; errs = []; warns = []; ty_param_name_source = 0 }
 
       let pp ppf t =
         Fmt.(
@@ -103,6 +104,20 @@ module Debug = struct
 
     include Minimal
     include Pretty.Make (Minimal)
+
+    let add_error t err = { t with errs = err :: t.errs }
+    let add_warning t warn = { t with warns = warn :: t.warns }
+    let add_ty_span t ty span = { t with tys = (span, ty) :: t.tys }
+
+    let fresh_ty_params t n =
+      let { ty_param_name_source; _ } = t in
+      let offset = ty_param_name_source in
+      let ty_param_name_source = offset + n in
+      let names = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset)) in
+      { t with ty_param_name_source }, names
+    ;;
+
+    let update_span t ~span = { t with current_span = span }
   end
 
   module Status = struct
@@ -231,20 +246,20 @@ module Debug = struct
         | Failed exn -> Fmt.(any "failed " ++ exn) ppf exn
         | Entered_expr { span : Span.t; ctxt_def : Ctxt.Def.t; ctxt_cont : Ctxt.Cont.t; _ } ->
           Fmt.(
-            vbox ~indent:2
-            @@ pair ~sep:cut (any "entered expression " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+            vbox
+            @@ pair
+                 ~sep:cut
+                 (styled `Underline @@ (any "entered expression" ++ Span.pp))
+                 (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
             ppf
             (span, (ctxt_cont, ctxt_def))
         | Exited_expr { span; ty; expr_delta; _ } ->
           Fmt.(
-            vbox ~indent:2
-            @@ pair ~sep:cut (any "exited expression " ++ Span.pp) (pair ~sep:cut Ty.pp Ctxt.Cont.Expr_delta.pp))
+            vbox @@ pair ~sep:cut (any "exited expression " ++ Span.pp) (pair ~sep:cut Ty.pp Ctxt.Cont.Expr_delta.pp))
             ppf
             (span, (ty, expr_delta))
         | Entered_stmt { span; ctxt_def; ctxt_cont; _ } ->
-          Fmt.(
-            vbox ~indent:2
-            @@ pair ~sep:cut (any "entered statement " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
+          Fmt.(vbox @@ pair ~sep:cut (any "entered statement " ++ Span.pp) (pair ~sep:cut Ctxt.Cont.pp Ctxt.Def.pp))
             ppf
             (span, (ctxt_cont, ctxt_def))
         | Exited_stmt { span : Span.t; delta : Ctxt.Delta.t; _ } ->
@@ -347,6 +362,13 @@ module Debug = struct
     end
 
     include Minimal
+
+    let current_span (Step (_, state)) = state.State.current_span
+    let errors (Step (_, state)) = state.State.errs
+    let warnings (Step (_, state)) = state.State.warns
+    let status (Step (status, _)) = status
+    let state (Step (_, state)) = state
+
     include Pretty.Make (Minimal)
 
     let next (Step (status, state)) ~oracle =
@@ -355,35 +377,45 @@ module Debug = struct
         let ty_args_opt = Oracle.up oracle ~of_ ~at in
         step (Effect.Deep.continue k ty_args_opt) state
       | Asked_ty_param_variances { ctor; k } ->
-        let ty_param_vars_opt = Oracle.param_variances_opt oracle ~ctor in
-        step (Effect.Deep.continue k ty_param_vars_opt) state
+        let variances_opt = Oracle.param_variances_opt oracle ~ctor in
+        step (Effect.Deep.continue k variances_opt) state
       | Requested_fresh_ty_params { n; k } ->
-        let State.{ ty_param_name_source; _ } = state in
-        let offset = ty_param_name_source in
-        let ty_param_name_source = offset + n in
-        let names = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset)) in
-        let state = { state with ty_param_name_source } in
+        let state, names = State.fresh_ty_params state n in
         step (Effect.Deep.continue k names) state
       | Complete -> step Complete state
       | Failed exn -> step (Failed exn) state
-      | Raised_error { k; err } -> step (Effect.Deep.continue k ()) { state with errs = err :: state.errs }
-      | Raised_warning { k; warn } -> step (Effect.Deep.continue k ()) { state with warns = warn :: state.warns }
+      | Raised_error { k; err } ->
+        let state = State.add_error state err in
+        step (Effect.Deep.continue k ()) state
+      | Raised_warning { k; warn } ->
+        let state = State.add_warning state warn in
+        step (Effect.Deep.continue k ()) state
       (* ~~ Logging effects for typing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-      | Entered_expr { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
-      | Exited_expr { ty; expr_delta; k; _ } -> step (Effect.Deep.continue k (ty, expr_delta)) state
-      | Entered_stmt { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Entered_expr { ctxt_def; ctxt_cont; k; span } ->
+        let state = State.update_span state ~span in
+        step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Exited_expr { ty; expr_delta; k; span } ->
+        let state = State.(update_span ~span @@ add_ty_span state ty span) in
+        step (Effect.Deep.continue k (ty, expr_delta)) state
+      | Entered_stmt { ctxt_def; ctxt_cont; k; span } ->
+        let state = State.update_span ~span state in
+        step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
       | Exited_stmt { delta; k; _ } -> step (Effect.Deep.continue k delta) state
-      | Entered_classish_def { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Entered_classish_def { ctxt_def; ctxt_cont; k; span; _ } ->
+        let state = State.update_span ~span state in
+        step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
       | Exited_classish_def { k; _ } -> step (Effect.Deep.continue k ()) state
-      | Entered_fn_def { ctxt_def; ctxt_cont; k; _ } -> step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
+      | Entered_fn_def { ctxt_def; ctxt_cont; k; span; _ } ->
+        let state = State.update_span ~span state in
+        step (Effect.Deep.continue k (ctxt_def, ctxt_cont)) state
       | Exited_fn_def { k; _ } -> step (Effect.Deep.continue k ()) state
-      | Entered_refinement { ty_test; ty_scrut; ctxt_cont; k } ->
-        step (Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont)) state
       (* ~~ Logging effects for refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+      | Entered_refinement { ty_test; ty_scrut; ctxt_cont; k } ->
+        step (Effect.Deep.continue k (ty_scrut, ty_test, ctxt_cont)) state
       | Exited_refinement { ty_rfmt; ty_param_rfmt_opt; k } ->
         step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
       | Entered_refine_ty { ty_test; ty_scrut; ctxt_cont; k } ->
-        step (Effect.Deep.continue k (ty_test, ty_scrut, ctxt_cont)) state
+        step (Effect.Deep.continue k (ty_scrut, ty_test, ctxt_cont)) state
       | Exited_refine_ty { ty_rfmt; ty_param_rfmt_opt; k } ->
         step (Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt)) state
       | Entered_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont; k } ->
@@ -404,79 +436,84 @@ module Debug = struct
   end
 
   let go comp =
-    Step.Step
-      ( Effect.Deep.match_with
-          comp
-          ()
-          { effc =
-              (fun (type a) (eff : a Effect.t) ->
-                match eff with
-                | Log_error err -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_error ~err ~k)
-                | Log_warning warn -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_warning ~warn ~k)
-                | Log_enter_expr (span, ctxt_def, ctxt_cont) ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_expr ~span ~ctxt_def ~ctxt_cont ~k)
-                | Log_enter_stmt (span, ctxt_def, ctxt_cont) ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_stmt ~span ~ctxt_def ~ctxt_cont ~k)
-                | Log_enter_classish_def (span, name, ctxt_def, ctxt_cont) ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_classish_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
-                | Log_enter_fn_def (span, name, ctxt_def, ctxt_cont) ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_fn_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
-                | Log_exit_expr (span, ty, expr_delta) ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_expr ~span ~ty ~expr_delta ~k)
-                | Log_exit_stmt (span, delta) ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_stmt ~span ~delta ~k)
-                | Log_exit_classish_def span ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
-                | Log_exit_fn_def span ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
-                (* ~~ Refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-                | Refinement.Eff.Log_enter_refinement { ty_test; ty_scrut; ctxt_cont } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_refinement ~ty_test ~ty_scrut ~ctxt_cont ~k)
-                | Refinement.Eff.Log_exit_refinement { ty_rfmt; ty_param_rfmt_opt } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.exited_refinement ~ty_rfmt ~ty_param_rfmt_opt ~k)
-                | Refinement.Eff.Log_enter_refine_ty { ty_test; ty_scrut; ctxt_cont } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_refine_ty ~ty_test ~ty_scrut ~ctxt_cont ~k)
-                | Refinement.Eff.Log_exit_refine_ty { ty_rfmt; ty_param_rfmt_opt } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.exited_refine_ty ~ty_rfmt ~ty_param_rfmt_opt ~k)
-                | Refinement.Eff.Log_enter_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_refine_existential_scrut ~prov_scrut ~ty_exists ~ty_test ~ctxt_cont ~k)
-                | Refinement.Eff.Log_exit_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.exited_refine_existential_scrut ~ty_rfmt ~ty_param_rfmt_opt ~k)
-                | Refinement.Eff.Log_enter_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.entered_refine_existential_test ~ty_scrut ~prov_test ~ty_exists ~ctxt_cont ~k)
-                | Refinement.Eff.Log_exit_refine_existential_test { ty_rfmt; ty_param_rfmt_opt } ->
-                  Some
-                    (fun (k : (a, _) Effect.Deep.continuation) ->
-                      Status.exited_refine_existential_test ~ty_rfmt ~ty_param_rfmt_opt ~k)
-                (* ~~ Refinement other ~~ *)
-                | Refinement.Eff.Gen_fresh_ty_params n ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.requested_fresh_ty_params ~n ~k)
-                | Refinement.Eff.Ask_up { of_; at } ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
-                | Refinement.Eff.Ask_ty_param_variances ctor ->
-                  Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ty_param_variances ~ctor ~k)
-                | _ -> None)
-          ; retc = (fun _res -> Status.complete)
-          ; exnc = (fun exn -> Status.failed exn)
-          }
-      , State.empty )
+    let status =
+      Effect.Deep.match_with
+        comp
+        ()
+        { effc =
+            (fun (type a) (eff : a Effect.t) ->
+              match eff with
+              | Log_error err -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_error ~err ~k)
+              | Log_warning warn -> Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.raised_warning ~warn ~k)
+              | Log_enter_expr (span, ctxt_def, ctxt_cont) ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_expr ~span ~ctxt_def ~ctxt_cont ~k)
+              | Log_enter_stmt (span, ctxt_def, ctxt_cont) ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.entered_stmt ~span ~ctxt_def ~ctxt_cont ~k)
+              | Log_enter_classish_def (span, name, ctxt_def, ctxt_cont) ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_classish_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
+              | Log_enter_fn_def (span, name, ctxt_def, ctxt_cont) ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_fn_def ~span ~name ~ctxt_def ~ctxt_cont ~k)
+              | Log_exit_expr (span, ty, expr_delta) ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_expr ~span ~ty ~expr_delta ~k)
+              | Log_exit_stmt (span, delta) ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_stmt ~span ~delta ~k)
+              | Log_exit_classish_def span ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
+              | Log_exit_fn_def span ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_classish_def ~span ~k)
+              (* ~~ Refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+              | Refinement.Eff.Log_enter_refinement { ty_test; ty_scrut; ctxt_cont } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_refinement ~ty_test ~ty_scrut ~ctxt_cont ~k)
+              | Refinement.Eff.Log_exit_refinement { ty_rfmt; ty_param_rfmt_opt } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_refinement ~ty_rfmt ~ty_param_rfmt_opt ~k)
+              | Refinement.Eff.Log_enter_refine_ty { ty_test; ty_scrut; ctxt_cont } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_refine_ty ~ty_test ~ty_scrut ~ctxt_cont ~k)
+              | Refinement.Eff.Log_exit_refine_ty { ty_rfmt; ty_param_rfmt_opt } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) -> Status.exited_refine_ty ~ty_rfmt ~ty_param_rfmt_opt ~k)
+              | Refinement.Eff.Log_enter_refine_existential_scrut { prov_scrut; ty_exists; ty_test; ctxt_cont } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_refine_existential_scrut ~prov_scrut ~ty_exists ~ty_test ~ctxt_cont ~k)
+              | Refinement.Eff.Log_exit_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.exited_refine_existential_scrut ~ty_rfmt ~ty_param_rfmt_opt ~k)
+              | Refinement.Eff.Log_enter_refine_existential_test { ty_scrut; prov_test; ty_exists; ctxt_cont } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.entered_refine_existential_test ~ty_scrut ~prov_test ~ty_exists ~ctxt_cont ~k)
+              | Refinement.Eff.Log_exit_refine_existential_test { ty_rfmt; ty_param_rfmt_opt } ->
+                Some
+                  (fun (k : (a, _) Effect.Deep.continuation) ->
+                    Status.exited_refine_existential_test ~ty_rfmt ~ty_param_rfmt_opt ~k)
+              (* ~~ Refinement other ~~ *)
+              | Refinement.Eff.Gen_fresh_ty_params n ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.requested_fresh_ty_params ~n ~k)
+              | Refinement.Eff.Ask_up { of_; at } ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
+              | Refinement.Eff.Ask_ty_param_variances ctor ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ty_param_variances ~ctor ~k)
+              | _ -> None)
+        ; retc = (fun _res -> Status.complete)
+        ; exnc = (fun exn -> Status.failed exn)
+        }
+    in
+    let span =
+      match status with
+      | Status.Entered_classish_def { span; _ } -> span
+      | Status.Entered_fn_def { span; _ } -> span
+      | _ -> failwith "Did not enter a class or function def"
+    in
+    Step.Step (status, State.init span)
   ;;
 end

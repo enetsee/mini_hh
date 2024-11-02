@@ -10,6 +10,7 @@ end
 include Minimal
 include Pretty.Make (Minimal)
 
+let bindings t = List.map ~f:(fun (nm, (ty, spans)) -> nm, ty, Set.to_list spans) @@ Map.to_alist t
 let empty = Name.Tm_var.Map.empty
 let bottom = empty
 let find (t : t) local = Option.map ~f:fst @@ Map.find t local
@@ -77,6 +78,7 @@ module Refinement = struct
   include Minimal
   include Pretty.Make (Minimal)
 
+  let bindings t = Map.to_alist t
   let find (t : t) nm = Map.find t nm
 
   let join t1 t2 ~prov =

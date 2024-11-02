@@ -56,37 +56,77 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   Eff.log_exit_refine_ty
   @@
   match Ty.prj ty_scrut, Ty.prj ty_test with
-  (* -- Top-level generics & this --
-     TODO(mjt) I'm not sure about these case, especially for [this] *)
-  | (prov_scrut, _), (prov_test, Ty.Node.Generic _) ->
-    let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-    Ty.Refinement.intersect_with prov ty_test, None
-  | (prov_scrut, Ty.Node.Generic Name.Ty_param.This), (prov_test, _) ->
-    let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-    let ty_scrut = Ty.this prov in
-    ( Ty.Refinement.replace_with ty_scrut
-    , Some (prov, Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this @@ Ty.Param_bounds.create_equal ty_test) )
-  | (prov_scrut, Ty.Node.Generic _), (prov_test, _) ->
-    let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-    Ty.Refinement.replace_with ty_test, Some (prov, Ctxt.Ty_param.Refinement.empty)
-  (* -- Existentials -- *)
+  (* ~~ Top-level generics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (prov_scrut, Ty.Node.Generic name_scrut), _ -> refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt
+  | _, (prov_test, Ty.Node.Generic name_test) ->
+    refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt
+    (* ~~ Existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Exists exists_scrut), _ -> refine_existential_scrut prov_scrut exists_scrut ty_test ~ctxt
   | _, (prov_test, Ty.Node.Exists exists_test) -> refine_existential_test ty_scrut prov_test exists_test ~ctxt
-  (* -- Unions & intersections *)
+  (* ~~ Unions & intersections ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | _, (prov_test, Ty.Node.Union ty_tests) -> refine_union_test prov_test ~ty_tests ~ty_scrut ~ctxt
   | _, (prov_test, Ty.Node.Inter ty_tests) -> refine_inter_test prov_test ~ty_tests ~ty_scrut ~ctxt
   | (prov_scrut, Ty.Node.Union ty_scruts), _ -> refine_union_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
   | (prov_scrut, Ty.Node.Inter ty_scruts), _ -> refine_inter_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
-  (* -- Constructors -- *)
+  (* ~~ Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Ctor ctor_scrut), (prov_test, Ty.Node.Ctor ctor_test) ->
     refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt
-  (* -- Everything else -- *)
+  (* ~~ Everything else ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
   | (prov_scrut, _), (prov_test, _) ->
-    (* let subty_res = Subtyping.Ask.is_subtype ~ty_sub:ty_test  ~ty_super:ty_scrut *)
-    let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-    (* TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
+    (match Subtyping.Ask.is_subtype ~ty_sub:ty_scrut ~ty_super:ty_test ~ctxt with
+     | Subtyping.Answer.No _err ->
+       let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
+       Ty.Refinement.disjoint prov, None
+     | _ ->
+       (* let subty_res = Subtyping.Ask.is_subtype ~ty_sub:ty_test  ~ty_super:ty_scrut *)
+       let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
+       (* TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
+       Ty.Refinement.intersect_with prov ty_test, None)
+
+(* ~~ Refine top-level generics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt =
+  (* If we have a generic in test position we need the scrutinee to be a subtype
+     of its upperbound and a supertype of its lowerbound, otherwise it is disjoint *)
+  let prov = Reporting.Prov.refine ~prov_scrut:(Ty.prov_of ty_scrut) ~prov_test in
+  let Ty.Param_bounds.{ lower; upper } = Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt name_test in
+  match
+    Subtyping.Ask.(is_subtype ~ty_sub:lower ~ty_super:ty_scrut ~ctxt, is_subtype ~ty_sub:ty_scrut ~ty_super:upper ~ctxt)
+  with
+  | Subtyping.Answer.No _, _ | _, Subtyping.Answer.No _ -> Ty.Refinement.disjoint prov, None
+  | _ ->
+    let ty_test = Ty.generic prov_test name_test in
     Ty.Refinement.intersect_with prov ty_test, None
 
+and refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt =
+  let prov = Reporting.Prov.refine ~prov_scrut ~prov_test:(Ty.prov_of ty_test) in
+  match name_scrut with
+  (* ~~ this in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* If the scrutinee has type [this] then we generate a refinement because
+     there is only one thing with type [this] *)
+  | Name.Ty_param.This ->
+    let ty_scrut = Ty.this prov in
+    ( Ty.Refinement.replace_with ty_scrut
+    , Some
+        ( prov
+        , Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this
+          @@ Ty.Param_bounds.create ~upper:ty_test ~lower:(Ty.nothing prov) () ) )
+  (* ~~ generic in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* If we have a non-this generic in scrutinee position then we can't refine
+       the generic but we can refine the type. Consider this case: 
+       
+       function foo<T as arraykey>(vec<T> $xs) : void {
+         $x = $xs[0] // $x: T
+         if($x is int) {
+          // we learned that one element of the vec is an int but this tells us 
+          // nothing about the other elements
+         }
+       }
+  *)
+  | _ ->
+    let Ty.Param_bounds.{ upper; _ } = Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt name_scrut in
+    let ty_rfmt, _ = refine_ty ~ty_scrut:upper ~ty_test ~ctxt in
+    ty_rfmt, Some (prov, Ctxt.Ty_param.Refinement.empty)
 (* ~~ Refine existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
