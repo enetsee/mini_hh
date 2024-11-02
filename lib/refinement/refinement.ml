@@ -74,15 +74,11 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   (* ~~ Everything else ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
   | (prov_scrut, _), (prov_test, _) ->
+    let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
     (match Subtyping.Ask.is_subtype ~ty_sub:ty_scrut ~ty_super:ty_test ~ctxt with
-     | Subtyping.Answer.No _err ->
-       let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-       Ty.Refinement.disjoint prov, None
-     | _ ->
-       (* let subty_res = Subtyping.Ask.is_subtype ~ty_sub:ty_test  ~ty_super:ty_scrut *)
-       let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
-       (* TODO(mjt) integrate with subtyping so we can eliminate impossible refinements *)
-       Ty.Refinement.intersect_with prov ty_test, None)
+     | Subtyping.Answer.No _err -> Ty.Refinement.disjoint prov, None
+     | Subtyping.Answer.Yes -> Ty.Refinement.replace_with ty_test, None
+     | _ -> Ty.Refinement.intersect_with prov ty_test, None)
 
 (* ~~ Refine top-level generics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt =
@@ -247,12 +243,18 @@ and refine_existential_test ty_scrut prov_test Ty.Exists.{ quants; body } ~ctxt 
     from the 'good' elements, we find the meet to find what requirements
     are common to all *)
 and refine_union_scrut prov ~ty_scruts ~ty_test ~ctxt =
-  let res = sequence_any @@ List.map ty_scruts ~f:(fun ty_scrut -> refine_ty ~ty_scrut ~ty_test ~ctxt) in
-  match res with
-  | Ok refns ->
-    let tys, refns = combine ty_scruts refns in
-    Replace_with (Ty.union tys ~prov), Some (prov, Ctxt.Ty_param.Refinement.join_many refns ~prov)
-  | Error _provs -> Ty.Refinement.Disjoint prov, None
+  let refns = List.map ty_scruts ~f:(fun ty_scrut -> refine_ty ~ty_scrut ~ty_test ~ctxt) in
+  let tys, refns =
+    List.fold2_exn ty_scruts refns ~init:([], []) ~f:(fun (tys, refns) ty_scrut (rfmt, param_rfmt_opt) ->
+      match rfmt with
+      | Ty.Refinement.Disjoint _ -> tys, refns
+      | _ ->
+        ( Ty.refine ty_scrut ~rfmt :: tys
+        , Option.value_map param_rfmt_opt ~default:refns ~f:(fun (_prov, refn) -> refn :: refns) ))
+  in
+  match tys with
+  | [] -> Ty.Refinement.disjoint prov, None
+  | _ -> Replace_with (Ty.union tys ~prov), Some (prov, Ctxt.Ty_param.Refinement.join_many refns ~prov)
 
 (* ~~ Refine union types in test position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
