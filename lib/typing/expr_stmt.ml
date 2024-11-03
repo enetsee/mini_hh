@@ -65,14 +65,14 @@ end = struct
         let default = Ctxt.Ty_param.Refinement.empty in
         Option.value_map ~default ~f:snd ty_param_refinement_opt
       in
-      Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
+      Some (Ctxt.Cont.Refinements.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
       let local = Ctxt.Local.Refinement.empty in
       let ty_param =
         let default = Ctxt.Ty_param.Refinement.empty in
         Option.value_map ~default ~f:snd ty_param_refinement_opt
       in
-      Some (Ctxt.Cont.Refinement.create ~local ~ty_param ())
+      Some (Ctxt.Cont.Refinements.create ~local ~ty_param ())
     | _ -> None
   ;;
 
@@ -90,8 +90,8 @@ end = struct
     let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
     (* Build the result is refinement and put it into a delta *)
     let expr_delta_is =
-      let rfmt = refine_by scrut ~ty_scrut ~ty_test cont_ctxt in
-      Ctxt.Cont.Expr_delta.create ?rfmt ()
+      let rfmts = refine_by scrut ~ty_scrut ~ty_test cont_ctxt in
+      Ctxt.Cont.Expr_delta.create ?rfmts ()
     in
     (* We need to combine the expression delta from the scrutinee with the delta resulting from the containing [is]
        expression. When doing this we need:
@@ -102,11 +102,17 @@ end = struct
        - local and type parameter _refinements_ resulting from the scrutinee expression should be combined with the
          [is] refinement for the outer expression such that:
          -- if only one of the delta has a refinement we keep it
-         -- if both the inner and outer expression have refinements we take the meet
+         -- if both the inner and outer expression have refinements we take the [meet]
     *)
-    let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_is ~prov in
-    (* Any [as] refinement coming from the typing of the scrutinee subexpression also applies to the whole [is]
-       expression *)
+    let delta =
+      let bindings =
+        Option.merge
+          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
+          expr_delta_scrut.bindings
+          expr_delta_is.bindings
+      and rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_scrut.rfmts expr_delta_is.rfmts in
+      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
+    in
     ty, delta
   ;;
 end
@@ -114,35 +120,45 @@ end
 and As : sig
   val synth : Lang.As.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let refine_by expr_scrut ~ty_scrut ~ty_assert cont_ctxt =
+  let refine_by expr_scrut prov ~ty_scrut ~ty_assert cont_ctxt =
     let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test:ty_assert ~ctxt:cont_ctxt in
     let ty = Ty.refine ty_scrut ~rfmt:ty_refinement in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
-      let refinement =
-        let local = Ctxt.Local.Refinement.empty in
-        let ty_param =
-          let default = Ctxt.Ty_param.Refinement.empty in
-          Option.value_map ~default ~f:snd ty_param_refinement_opt
-        in
-        Ctxt.Cont.Refinement.create ~ty_param ~local ()
-      in
       let local =
         let tm_var = Located.create ~elem:tm_var ~span:(Located.span_of expr_scrut) () in
         Ctxt.Local.singleton tm_var ty
+      and ty_param =
+        Option.value_map ty_param_refinement_opt ~default:Ctxt.Ty_param.empty ~f:(fun (_, ty_param_rfmt) ->
+          match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
+          | `Bounds bounds ->
+            let ty_params =
+              List.map bounds ~f:(fun (name, delta) ->
+                let bounds = Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name in
+                name, Ty.Param_bounds.meet bounds delta ~prov)
+            in
+            Ctxt.Ty_param.of_alist ty_params
+          | `Top -> Ctxt.Ty_param.empty
+          | `Bottom -> failwith "[Typing.As] Encoutered bottom in type parameter refinement")
       in
-      ty, Some local, Some refinement
+      ty, Some (Ctxt.Cont.Bindings.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
-      let refinement =
-        let local = Ctxt.Local.Refinement.empty in
-        let ty_param =
-          let default = Ctxt.Ty_param.Refinement.empty in
-          Option.value_map ~default ~f:snd ty_param_refinement_opt
-        in
-        Ctxt.Cont.Refinement.create ~local ~ty_param ()
+      let local = Ctxt.Local.empty
+      and ty_param =
+        Option.value_map ty_param_refinement_opt ~default:Ctxt.Ty_param.empty ~f:(fun (_, ty_param_rfmt) ->
+          match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
+          | `Bounds bounds ->
+            let ty_params =
+              List.map bounds ~f:(fun (name, delta) ->
+                let bounds = Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name in
+                name, Ty.Param_bounds.meet bounds delta ~prov)
+            in
+            Ctxt.Ty_param.of_alist ty_params
+          | `Top -> Ctxt.Ty_param.empty
+          | `Bottom -> failwith "[Typing.As] Encoutered bottom in type parameter refinement")
       in
-      ty, None, Some refinement
-    | _ -> ty, None, None
+      ty, Some (Ctxt.Cont.Bindings.create ~local ~ty_param ())
+    | _ -> ty, None
   ;;
 
   let synth (Lang.As.{ scrut; ty_assert }, span) ~def_ctxt ~cont_ctxt =
@@ -152,21 +168,29 @@ end = struct
        expression *)
     let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
     let ty, expr_delta_as =
-      let ty, local, rfmt = refine_by scrut ~ty_scrut ~ty_assert cont_ctxt in
-      ty, Ctxt.Cont.Expr_delta.create ?local ?rfmt ()
+      let ty, bindings = refine_by scrut prov ~ty_scrut ~ty_assert cont_ctxt in
+      ty, Ctxt.Cont.Expr_delta.create ?bindings ()
     in
     (* We need to combine the expression delta from the scrutinee with the delta resulting from the containing [as]
        expression. When doing this we need:
        - local and type parameter bindings resulting from any [as] sub-expressions in the scrutinee should be combined
          so that those from the second delta are chosen.
        - local and type parameter _refinements_ resulting from the scrutinee expression should be combined with the
-         [is] refinement for the outer expression such that:
+         [as] refinement for the outer expression such that:
          -- if only one of the delta has a refinement we keep it
          -- if both the inner and outer expression have refinements we take the meet
          (note: similar to the [is] case, we know the outer expression doesn't give us any refinements but we want to
          use the same operation)
     *)
-    let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_as ~prov in
+    let delta =
+      let bindings =
+        Option.merge
+          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
+          expr_delta_scrut.bindings
+          expr_delta_as.bindings
+      and rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_scrut.rfmts expr_delta_as.rfmts in
+      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
+    in
     ty, delta
   ;;
 end
@@ -178,19 +202,27 @@ end = struct
     (* TODO(mjt): logical op witness *)
     let prov = Prov.witness span in
     let ty_bool = Ty.bool prov in
-    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt
-    and _, expr_delta_rhs = Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
+    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
+    let _, expr_delta_rhs =
+      (* Refinements and bindings from the lhs should be applied in the rhs *)
+      let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_lhs in
+      Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt
+    in
     let expr_delta =
-      match op with
-      | Lang.Binop.Logical.And ->
-        (* We combining the deltas *)
-        Ctxt.Cont.Expr_delta.meet expr_delta_lhs expr_delta_rhs ~prov
-      | Lang.Binop.Logical.Or ->
-        (* When combining the deltas through an [Or] operation we want:
-           - local and type parameter bindings from each operand to be combined so that those from the second operand
-             are retained
-           - only refinements occuring in both operands are retained *)
-        Ctxt.Cont.Expr_delta.join expr_delta_lhs expr_delta_rhs ~prov
+      let bindings =
+        Option.merge
+          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
+          expr_delta_lhs.bindings
+          expr_delta_rhs.bindings
+      in
+      let rfmts =
+        match op with
+        | Lang.Binop.Logical.And ->
+          Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts
+        | Lang.Binop.Logical.Or ->
+          Option.merge ~f:(Ctxt.Cont.Refinements.join ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts
+      in
+      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
     in
     ty_bool, expr_delta
   ;;
@@ -233,16 +265,18 @@ end = struct
     let ty_rhs, expr_delta = Expr.synth rhs ~def_ctxt ~cont_ctxt in
     (* Now bind the new new local and any [as] refinement resulting from typing the rhs expression
        in the [next] continuation *)
-    let next =
+    let assign_delta =
       let local =
         let prov_lvalue = Prov.lvalue_tm_var @@ Located.span_of tm_var in
         let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) ty_rhs in
-        Some (Ctxt.Local.singleton tm_var ty)
+        Ctxt.Local.singleton tm_var ty
       in
-      let delta = Ctxt.Cont.Delta.of_expr_delta expr_delta in
-      { delta with local }
+      let ty_param = Ctxt.Ty_param.empty in
+      let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
+      Ctxt.Cont.Delta.create ~bindings ()
     in
-    Ctxt.Delta.create ~next ()
+    let delta = Ctxt.Cont.Delta.extend (Ctxt.Cont.Delta.of_expr_delta expr_delta) ~with_:assign_delta in
+    Ctxt.Delta.create ~next:delta ()
   ;;
 
   let synth (Lang.Assign.{ lvalue; rhs }, _span) ~def_ctxt ~cont_ctxt =
@@ -323,8 +357,7 @@ end = struct
             Ty.Param.create ~name ~param_bounds ())
         , ty_rhs )
     in
-    (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression *)
-    let next =
+    let unpack_delta =
       let ty_param = Ctxt.Ty_param.(bind_all empty ty_params) in
       (* TODO(mjt) should we be storing term var locations in [local] too? *)
       let local =
@@ -333,16 +366,12 @@ end = struct
         let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) body_ty in
         Ctxt.Local.singleton tm_var ty
       in
-      let with_ = Ctxt.Cont.Delta.create ~local ~ty_param () in
-      let init = Ctxt.Cont.Delta.of_expr_delta expr_delta in
-      (* The [unpack] statement binds a term variable and a number of type parameters; the rhs expression can
-         also bind term variables and type parameters (resulting from [as] expresions) and term variable and
-         type parameter refinements (resulting from [is] expressions). We want to drop the refinements from the rhs
-         (since they only apply to the current continuation) then extend the bindings with those from the lhs so
-         that and bindings in the rhs are shadowed *)
-      Ctxt.Cont.Delta.extend init ~with_
+      let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
+      Ctxt.Cont.Delta.create ~bindings ()
     in
-    Ctxt.Delta.create ~next ()
+    (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression *)
+    let delta = Ctxt.Cont.Delta.extend (Ctxt.Cont.Delta.of_expr_delta expr_delta) ~with_:unpack_delta in
+    Ctxt.Delta.create ~next:delta ()
   ;;
 end
 
@@ -355,8 +384,8 @@ end = struct
       let against = Ty.bool (Prov.expr_if_cond span) in
       Expr.check cond ~against ~def_ctxt ~cont_ctxt
     in
+    (* In the [then_] branch both the [is] and [as] refinements resulting from typing the condition expression apply *)
     let delta_then_ =
-      (* In the [then_] branch both the [is] and [as] refinements resulting from typing the condition expression apply *)
       let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta in
       let delta = Stmt.synth then_ ~def_ctxt ~cont_ctxt in
       (* Any type parameters in the delta came about because we unpacked an existential. To prevent these escaping the
@@ -364,17 +393,20 @@ end = struct
          to the upper or lower bound of the type parametes or, if any type parameter occurs invariantly, promote / demote
          the constructor to the first sub- or supertype which doesn't mention the type parameter *)
       Exposure.promote_delta delta
+    (* In the [else_] branch on the [as] refinement resulting from typing the condition expression applies; in hh
+       we also have negated types for classes and some primitives but this adds a lot of complexity so we just drop
+       the refinements for now *)
     and delta_else_ =
-      (* In the [else_] branch on the [as] refinement resulting from typing the condition expression applies; in hh
-         we also have negated types for classes and some primitives but this adds a lot of complexity so we just drop
-         the refinements for now *)
-      let expr_delta = Ctxt.Cont.Expr_delta.drop_rfmt expr_delta in
+      let expr_delta = Ctxt.Cont.Expr_delta.drop_rfmts expr_delta in
       let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta in
-      Stmt.synth else_ ~def_ctxt ~cont_ctxt
+      let delta = Stmt.synth else_ ~def_ctxt ~cont_ctxt in
+      Exposure.promote_delta delta
     in
-    (* Before [join]ing the deltas we need to find that any local bound in only one of the brances was already
+    (* Before [join]ing the deltas we need to ensure that any local bound in only one of the branches was already
        bound in the initial context *)
     let prov = Prov.stmt_if_join span in
+    (* Now we are guaranteed the deltas haven't introduced new type parameters and that any locals were either already
+       bound or were introduced in both branches *)
     Ctxt.Delta.join delta_then_ delta_else_ ~prov
   ;;
 end

@@ -30,7 +30,9 @@ class A implements I<Four> {}
     and ty_test = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
     (* Set up context *)
     let ty_param = Ctxt.Ty_param.(bind empty ta @@ Ty.Param_bounds.top Prov.empty) in
-    let cont_ctxt = Ctxt.Cont.{ empty with ty_param } in
+    let local = Ctxt.Local.empty in
+    let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
+    let cont_ctxt = Ctxt.Cont.{ empty with bindings } in
     let comp () = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
     let actual = fst @@ Refinement.Eff.run comp 0 oracle in
     (* let ctxt = Refinement.Ctxt.create ~ty_param ~ty_param_refine ~oracle () in *)

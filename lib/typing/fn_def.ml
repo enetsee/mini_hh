@@ -30,7 +30,8 @@ let synth
       let prov = Prov.def_where_clause span in
       Ctxt.Ty_param.meet declared ty_param_where ~prov
     in
-    Ctxt.Cont.Delta.create ~ty_param ~local ()
+    let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
+    Ctxt.Cont.Delta.create ~bindings ()
   in
   let cont_ctxt = Ctxt.Cont.update cont_ctxt ~delta in
   (* Type the body *)

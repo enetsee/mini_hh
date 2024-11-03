@@ -34,10 +34,11 @@ let diff (t : t) (tl : t) (tr : t) =
         | `Unequal _ -> failwith "impossible"))
 ;;
 
-(** [join] of two local contexts; if the binding is present in only one of the contexts we use that binding and if its
-    present in both we use the union of the type and associated spans
+(** [join] of two local contexts
 
-    TODO(mjt) this _works_ for joining deltas at join points but is wrong *)
+    Because typing operates on the change of local contexts, we permit the
+    presence of a binding in only one of the context under the assumption
+    that any such term variable must be bound in the outer continuation *)
 let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left (ty, spans) | `Right (ty, spans) -> Some (ty, spans)
@@ -46,15 +47,16 @@ let join t1 t2 ~prov =
   Map.merge t1 t2 ~f
 ;;
 
-(** [meet] of two local contexts; if the binding is present in only one of the contexts we drop the binding and if it's
-    present in both we use the intersection of the type and associated spans *)
-let meet (t1 : t) (t2 : t) ~prov =
-  let f ~key:_ = function
-    | `Left _ | `Right _ -> None
-    | `Both ((ty1, spans1), (ty2, spans2)) -> Some (Ty.inter ~prov [ ty1; ty2 ], Set.inter spans1 spans2)
-  in
-  Map.merge t1 t2 ~f
-;;
+(*
+   (** [meet] of two local contexts; if the binding is present in only one of the contexts we drop the binding and if it's
+   present in both we use the intersection of the type and associated spans *)
+   let meet (t1 : t) (t2 : t) ~prov =
+   let f ~key:_ = function
+   | `Left _ | `Right _ -> None
+   | `Both ((ty1, spans1), (ty2, spans2)) -> Some (Ty.inter ~prov [ ty1; ty2 ], Set.inter spans1 spans2)
+   in
+   Map.merge t1 t2 ~f
+   ;; *)
 
 (** [extend]ing a local context means that we have all the bindings from both contexts but if a binding is present
     in both, we take the binding from the second one. *)

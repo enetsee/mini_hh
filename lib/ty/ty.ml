@@ -277,9 +277,20 @@ end = struct
     | _ -> false
   ;;
 
-  (** This is an expensive and impractical smart constructor but fine for demo purposes *)
+  let expand_union t =
+    match t.node with
+    | Node.Union ts -> ts
+    | _ -> [ t ]
+  ;;
+
+  (** This is an expensive and impractical smart constructor without fast equality
+      but fine for demo purposes *)
   let union elems ~prov =
-    match List.dedup_and_sort ~compare @@ List.filter elems ~f:(fun t -> not @@ is_nothing t) with
+    match
+      List.dedup_and_sort ~compare
+      @@ List.filter ~f:(fun t -> not @@ is_nothing t)
+      @@ List.concat_map ~f:expand_union elems
+    with
     | [ ty ] -> ty
     | elems when List.exists ~f:is_mixed elems ->
       let node = Node.inter [] in
@@ -289,9 +300,20 @@ end = struct
       create ~prov ~node ()
   ;;
 
-  (** This is an expensive and impractical smart constructor but fine for demo purposes *)
+  let expand_inter t =
+    match t.node with
+    | Node.Inter ts -> ts
+    | _ -> [ t ]
+  ;;
+
+  (** This is an expensive and impractical smart constructor without fast equality
+      but fine for demo purposes *)
   let inter elems ~prov =
-    match List.dedup_and_sort ~compare @@ List.filter elems ~f:(fun t -> not @@ is_mixed t) with
+    match
+      List.dedup_and_sort ~compare
+      @@ List.filter ~f:(fun t -> not @@ is_mixed t)
+      @@ List.concat_map ~f:expand_inter elems
+    with
     | [ ty ] -> ty
     | elems when List.exists ~f:is_nothing elems -> union [] ~prov
     | elems ->

@@ -96,17 +96,25 @@ and refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt =
 
 and refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt =
   let prov = Reporting.Prov.refine ~prov_scrut ~prov_test:(Ty.prov_of ty_test) in
+  let Ty.Param_bounds.{ upper; _ } = Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt name_scrut in
+  let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut:upper ~ty_test ~ctxt in
   match name_scrut with
   (* ~~ this in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* If the scrutinee has type [this] then we generate a refinement because
-     there is only one thing with type [this] *)
+     there is only one thing with type [this]. As well as the refinements
+     resulting from refining the upper bound, we need to add the test type
+     as an upper bound *)
   | Name.Ty_param.This ->
     let ty_scrut = Ty.this prov in
-    ( Ty.Refinement.replace_with ty_scrut
-    , Some
-        ( prov
-        , Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this
-          @@ Ty.Param_bounds.create ~upper:ty_test ~lower:(Ty.nothing prov) () ) )
+    let this_rfmt =
+      Ctxt.Ty_param.Refinement.singleton Name.Ty_param.this
+      @@ Ty.Param_bounds.create ~upper:ty_test ~lower:(Ty.nothing prov) ()
+    in
+    let rfmt =
+      Option.value_map ty_param_rfmt_opt ~default:this_rfmt ~f:(fun (prov, other_rfmts) ->
+        Ctxt.Ty_param.Refinement.meet this_rfmt other_rfmts ~prov)
+    in
+    Ty.Refinement.replace_with ty_scrut, Some (prov, rfmt)
   (* ~~ generic in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* If we have a non-this generic in scrutinee position then we can't refine
        the generic but we can refine the type. Consider this case: 
@@ -119,10 +127,7 @@ and refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt =
          }
        }
   *)
-  | _ ->
-    let Ty.Param_bounds.{ upper; _ } = Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt name_scrut in
-    let ty_rfmt, _ = refine_ty ~ty_scrut:upper ~ty_test ~ctxt in
-    ty_rfmt, Some (prov, Ctxt.Ty_param.Refinement.empty)
+  | _ -> ty_rfmt, None
 (* ~~ Refine existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =

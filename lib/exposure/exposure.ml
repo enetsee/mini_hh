@@ -168,10 +168,17 @@ let demote_exn ty ty_params =
   | Error err -> raise (Exposure (Set.to_list err))
 ;;
 
-let promote_cont_delta (Ctxt.Cont.Delta.{ local; ty_param } as delta) =
-  Option.value_map ty_param ~default:delta ~f:(fun ty_param ->
-    let local = Option.map local ~f:(Ctxt.Local.transform ~f:(fun ty -> promote_exn ty ty_param)) in
-    Ctxt.Cont.Delta.create ?local ())
+let promote_cont_delta Ctxt.Cont.Delta.({ bindings; _ } as delta) =
+  let local, ty_param =
+    match bindings with
+    | Some Ctxt.Cont.Bindings.{ local; ty_param } -> Some local, Some ty_param
+    | _ -> None, None
+  in
+  Option.value ~default:delta
+  @@ Option.map2 local ty_param ~f:(fun local ty_param ->
+    let local = Ctxt.Local.transform local ~f:(fun ty -> promote_exn ty ty_param) in
+    let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param:Ctxt.Ty_param.empty () in
+    Ctxt.Cont.Delta.create ~bindings ())
 ;;
 
 let promote_delta delta = Ctxt.Delta.lift delta ~f:promote_cont_delta

@@ -32,6 +32,8 @@ module Ctxt = struct
       bind t (Located.elem name) param_bounds)
   ;;
 
+  let of_alist nm_bounds : t = Name.Ty_param.Map.of_alist_exn nm_bounds
+
   let extend t ~with_ : t =
     let f ~key:_ = function
       | `Left v | `Right v | `Both (_, v) -> Some v

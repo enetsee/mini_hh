@@ -80,7 +80,8 @@ let synth Located.{ elem = classish_def; span } ~def_ctxt ~cont_ctxt =
       let ty_params = List.map ty_params ~f:Lang.Ty_param_def.to_ty_param in
       Ctxt.Ty_param.(bind_all empty @@ (this_ty_param :: ty_params))
     in
-    let delta = Ctxt.Cont.Delta.create ~ty_param () in
+    let bindings = Ctxt.Cont.Bindings.create ~ty_param ~local:Ctxt.Local.empty () in
+    let delta = Ctxt.Cont.Delta.create ~bindings () in
     Ctxt.Cont.update cont_ctxt ~delta
   in
   let _ : unit =

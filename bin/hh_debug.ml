@@ -646,12 +646,14 @@ let render_continuation_context ctxt_cont_opt =
     Tabs.view
       [ ( "local context"
         , fun _ ->
-            render_local_ctxt ctxt_cont.Ctxt.Cont.local
-            @@ List.map ctxt_cont.Ctxt.Cont.rfmts ~f:(fun rfmt -> rfmt.Ctxt.Cont.Refinement.local) )
+            render_local_ctxt ctxt_cont.Ctxt.Cont.bindings.local
+            @@ List.filter_map ctxt_cont.Ctxt.Cont.rfmtss ~f:(fun rfmt_opt ->
+              Option.map rfmt_opt ~f:(fun rfmt -> rfmt.Ctxt.Cont.Refinements.local)) )
       ; ( "type parameter context"
         , fun _ ->
-            render_ty_param_ctxt ctxt_cont.Ctxt.Cont.ty_param
-            @@ List.map ctxt_cont.Ctxt.Cont.rfmts ~f:(fun rfmt -> rfmt.Ctxt.Cont.Refinement.ty_param) )
+            render_ty_param_ctxt ctxt_cont.Ctxt.Cont.bindings.ty_param
+            @@ List.filter_map ctxt_cont.Ctxt.Cont.rfmtss ~f:(fun rfmt_opt ->
+              Option.map rfmt_opt ~f:(fun rfmt -> rfmt.Ctxt.Cont.Refinements.ty_param)) )
       ]
   | _ -> W.empty_lwd
 ;;
@@ -719,24 +721,24 @@ let render_expr_delta expr_delta =
   Tabs.view
     [ ( "local delta"
       , fun _ ->
-          match expr_delta.Ctxt.Cont.Expr_delta.local with
+          match expr_delta.Ctxt.Cont.Expr_delta.bindings with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some local_delta -> render_local_delta local_delta )
+          | Some Ctxt.Cont.Bindings.{ local; _ } -> render_local_delta local )
     ; ( "local refinement delta"
       , fun _ ->
-          match expr_delta.Ctxt.Cont.Expr_delta.rfmt with
+          match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some rfmt_delta -> render_local_refinement_delta rfmt_delta.Ctxt.Cont.Refinement.local )
+          | Some rfmt_delta -> render_local_refinement_delta rfmt_delta.Ctxt.Cont.Refinements.local )
     ; ( "type parameter delta"
       , fun _ ->
-          match expr_delta.Ctxt.Cont.Expr_delta.ty_param with
+          match expr_delta.Ctxt.Cont.Expr_delta.bindings with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some ty_param_delta -> render_ty_param_delta ty_param_delta )
+          | Some { ty_param; _ } -> render_ty_param_delta ty_param )
     ; ( "type parameter refinement delta"
       , fun _ ->
-          match expr_delta.Ctxt.Cont.Expr_delta.rfmt with
+          match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some rfmt_delta -> render_ty_param_refinement_delta rfmt_delta.Ctxt.Cont.Refinement.ty_param )
+          | Some rfmt_delta -> render_ty_param_refinement_delta rfmt_delta.Ctxt.Cont.Refinements.ty_param )
     ]
 ;;
 
@@ -746,14 +748,14 @@ let render_cont_delta cont_delta =
   Tabs.view
     [ ( "local delta"
       , fun _ ->
-          match cont_delta.Ctxt.Cont.Delta.local with
+          match cont_delta.Ctxt.Cont.Delta.bindings with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some rfmt -> render_local_delta rfmt )
+          | Some { local; _ } -> render_local_delta local )
     ; ( "type parameter delta"
       , fun _ ->
-          match cont_delta.Ctxt.Cont.Delta.ty_param with
+          match cont_delta.Ctxt.Cont.Delta.bindings with
           | None -> Lwd.pure @@ W.string "(no change)"
-          | Some rfmt -> render_ty_param_delta rfmt )
+          | Some { ty_param; _ } -> render_ty_param_delta ty_param )
     ]
 ;;
 
