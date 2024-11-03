@@ -35,7 +35,9 @@ let diff (t : t) (tl : t) (tr : t) =
 ;;
 
 (** [join] of two local contexts; if the binding is present in only one of the contexts we use that binding and if its
-    present in both we use the union of the type and associated spans *)
+    present in both we use the union of the type and associated spans
+
+    TODO(mjt) this _works_ for joining deltas at join points but is wrong *)
 let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left (ty, spans) | `Right (ty, spans) -> Some (ty, spans)

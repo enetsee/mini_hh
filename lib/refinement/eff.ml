@@ -60,6 +60,30 @@ type _ Effect.t +=
       ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
       }
       -> (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option) Effect.t
+  | Log_enter_refine_union_scrut :
+      { prov_scrut : Prov.t
+      ; tys_scrut : Ty.t list
+      ; ty_test : Ty.t
+      ; ctxt_cont : Ctxt.Cont.t
+      }
+      -> (Prov.t * Ty.t list * Ty.t * Ctxt.Cont.t) Effect.t
+  | Log_exit_refine_union_scrut :
+      { ty_rfmt : Ty.Refinement.t
+      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+      }
+      -> (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option) Effect.t
+  | Log_enter_refine_union_test :
+      { ty_scrut : Ty.t
+      ; prov_test : Prov.t
+      ; tys_test : Ty.t list
+      ; ctxt_cont : Ctxt.Cont.t
+      }
+      -> (Ty.t * Prov.t * Ty.t list * Ctxt.Cont.t) Effect.t
+  | Log_exit_refine_union_test :
+      { ty_rfmt : Ty.Refinement.t
+      ; ty_param_rfmt_opt : (Prov.t * Ctxt.Ty_param.Refinement.t) option
+      }
+      -> (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option) Effect.t
 
 let gen_fresh_ty_params n = Effect.perform (Gen_fresh_ty_params n)
 let ask_up ~of_ ~at = Effect.perform (Ask_up { of_; at })
@@ -128,7 +152,19 @@ let run comp src oracle =
           | Log_exit_refine_existential_test { ty_rfmt; ty_param_rfmt_opt } ->
             Some (fun (k : (a, _) Effect.Deep.continuation) -> Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt))
           (* ~~ Enter / exit union scrut ~~ *)
+          | Log_enter_refine_union_scrut { prov_scrut; tys_scrut; ty_test; ctxt_cont } ->
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k (prov_scrut, tys_scrut, ty_test, ctxt_cont))
+          | Log_exit_refine_union_scrut { ty_rfmt; ty_param_rfmt_opt } ->
+            Some (fun (k : (a, _) Effect.Deep.continuation) -> Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt))
           (* ~~ Enter / exit union test ~~ *)
+          | Log_enter_refine_union_test { ty_scrut; prov_test; tys_test; ctxt_cont } ->
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k (ty_scrut, prov_test, tys_test, ctxt_cont))
+          | Log_exit_refine_union_test { ty_rfmt; ty_param_rfmt_opt } ->
+            Some (fun (k : (a, _) Effect.Deep.continuation) -> Effect.Deep.continue k (ty_rfmt, ty_param_rfmt_opt))
           (* ~~ Enter / exit intersection scrut ~~ *)
           (* ~~ Enter / exit intersection test ~~ *)
           (* ~~ Enter / exit constructor ~~ *)

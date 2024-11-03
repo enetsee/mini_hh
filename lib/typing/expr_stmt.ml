@@ -41,6 +41,7 @@ end = struct
       ty, Ctxt.Cont.Expr_delta.empty
     | Is is_expr -> Is.synth (is_expr, span) ~def_ctxt ~cont_ctxt
     | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~cont_ctxt
+    | Binary binary -> Binary.synth (binary, span) ~def_ctxt ~cont_ctxt
     | _ -> failwith "TODO"
   ;;
 
@@ -92,6 +93,17 @@ end = struct
       let rfmt = refine_by scrut ~ty_scrut ~ty_test cont_ctxt in
       Ctxt.Cont.Expr_delta.create ?rfmt ()
     in
+    (* We need to combine the expression delta from the scrutinee with the delta resulting from the containing [is]
+       expression. When doing this we need:
+       - local and type parameter bindings resulting from any [as] sub-expressions in the scrutinee should be combined
+         so that those from the second delta are chosen (note: clearly the outer [is] expression has no [as]
+         subexpressions so we could actually just chose the [local] and [ty_param] fields here but we want to use the
+         same operation for the [as] case)
+       - local and type parameter _refinements_ resulting from the scrutinee expression should be combined with the
+         [is] refinement for the outer expression such that:
+         -- if only one of the delta has a refinement we keep it
+         -- if both the inner and outer expression have refinements we take the meet
+    *)
     let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_is ~prov in
     (* Any [as] refinement coming from the typing of the scrutinee subexpression also applies to the whole [is]
        expression *)
@@ -143,11 +155,53 @@ end = struct
       let ty, local, rfmt = refine_by scrut ~ty_scrut ~ty_assert cont_ctxt in
       ty, Ctxt.Cont.Expr_delta.create ?local ?rfmt ()
     in
+    (* We need to combine the expression delta from the scrutinee with the delta resulting from the containing [as]
+       expression. When doing this we need:
+       - local and type parameter bindings resulting from any [as] sub-expressions in the scrutinee should be combined
+         so that those from the second delta are chosen.
+       - local and type parameter _refinements_ resulting from the scrutinee expression should be combined with the
+         [is] refinement for the outer expression such that:
+         -- if only one of the delta has a refinement we keep it
+         -- if both the inner and outer expression have refinements we take the meet
+         (note: similar to the [is] case, we know the outer expression doesn't give us any refinements but we want to
+         use the same operation)
+    *)
     let delta = Ctxt.Cont.Expr_delta.extend expr_delta_scrut ~with_:expr_delta_as ~prov in
     ty, delta
   ;;
 end
 
+and Binary : sig
+  val synth : Lang.Binary.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+end = struct
+  let synth_logical (lhs, rhs, op, span) ~def_ctxt ~cont_ctxt =
+    (* TODO(mjt): logical op witness *)
+    let prov = Prov.witness span in
+    let ty_bool = Ty.bool prov in
+    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt
+    and _, expr_delta_rhs = Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
+    let expr_delta =
+      match op with
+      | Lang.Binop.Logical.And ->
+        (* We combining the deltas *)
+        Ctxt.Cont.Expr_delta.meet expr_delta_lhs expr_delta_rhs ~prov
+      | Lang.Binop.Logical.Or ->
+        (* When combining the deltas through an [Or] operation we want:
+           - local and type parameter bindings from each operand to be combined so that those from the second operand
+             are retained
+           - only refinements occuring in both operands are retained *)
+        Ctxt.Cont.Expr_delta.join expr_delta_lhs expr_delta_rhs ~prov
+    in
+    ty_bool, expr_delta
+  ;;
+
+  let synth (Lang.Binary.{ lhs; rhs; binop }, span) ~def_ctxt ~cont_ctxt =
+    match binop with
+    | Lang.Binop.Logical op -> synth_logical (lhs, rhs, op, span) ~def_ctxt ~cont_ctxt
+  ;;
+end
+
+(* ~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Stmt : sig
   val synth : Lang.Stmt.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
 end = struct
@@ -281,6 +335,11 @@ end = struct
       in
       let with_ = Ctxt.Cont.Delta.create ~local ~ty_param () in
       let init = Ctxt.Cont.Delta.of_expr_delta expr_delta in
+      (* The [unpack] statement binds a term variable and a number of type parameters; the rhs expression can
+         also bind term variables and type parameters (resulting from [as] expresions) and term variable and
+         type parameter refinements (resulting from [is] expressions). We want to drop the refinements from the rhs
+         (since they only apply to the current continuation) then extend the bindings with those from the lhs so
+         that and bindings in the rhs are shadowed *)
       Ctxt.Cont.Delta.extend init ~with_
     in
     Ctxt.Delta.create ~next ()

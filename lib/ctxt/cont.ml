@@ -47,6 +47,14 @@ module Refinement = struct
   ;;
 end
 
+module Binding = struct
+  type t =
+    { local : Local.t option (** We get changes in the [local] context from assignement and [as] expressions *)
+    ; ty_param : Ty_param.t option (** We get changes in the [ty_param] context from [unpack] expressions *)
+    }
+  [@@deriving create]
+end
+
 module Minimal = struct
   (** The per-continuation context *)
   type t =
@@ -109,6 +117,15 @@ module Expr_delta = struct
     let local = Option.merge ~f:(fun t with_ -> Local.extend t ~with_) t.local with_.local
     and ty_param = Option.merge ~f:(fun t with_ -> Ty_param.extend t ~with_) t.ty_param with_.ty_param
     and rfmt = Option.merge ~f:(Refinement.meet ~prov) t.rfmt with_.rfmt in
+    { local; ty_param; rfmt }
+  ;;
+
+  let meet t1 t2 ~prov = extend t1 ~with_:t2 ~prov
+
+  let join t1 t2 ~prov =
+    let local = Option.merge ~f:(Local.join ~prov) t1.local t2.local
+    and ty_param = Option.merge ~f:(Ty_param.join ~prov) t1.ty_param t2.ty_param
+    and rfmt = Option.map2 ~f:(Refinement.join ~prov) t1.rfmt t2.rfmt in
     { local; ty_param; rfmt }
   ;;
 end

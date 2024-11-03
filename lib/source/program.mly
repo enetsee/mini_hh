@@ -167,10 +167,10 @@
 // %left EQUAL 
 // %nonassoc ARROW QUESTION_ARROW LBRACKET
 // %nonassoc LPAREN LBRACE
-%left IS AS 
 // %left AS
 %left LOGICAL_OR
 %left LOGICAL_AND
+%left IS AS 
 // %nonassoc IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL
 // %right IS_NOT_IDENTICAL
 // %right LANGLE

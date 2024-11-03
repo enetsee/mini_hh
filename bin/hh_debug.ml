@@ -182,6 +182,14 @@ type rfmt_request =
       { ty_exists : Ty.Exists.t
       ; ty_scrut : Ty.t
       }
+  | Refine_union_scrut of
+      { tys_scrut : Ty.t list
+      ; ty_test : Ty.t
+      }
+  | Refine_union_test of
+      { tys_test : Ty.t list
+      ; ty_scrut : Ty.t
+      }
 
 type status_payload =
   | Expr_delta of Span.t * Ty.t * Ctxt.Cont.Expr_delta.t
@@ -261,6 +269,16 @@ let update_step step =
     and _ : unit = Lwd.set st_status_name @@ Some "entered refine existential test"
     and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt_request (Refine_existential_test { ty_exists; ty_scrut })) in
     ()
+  | Entered_refine_union_scrut { tys_scrut; ty_test; ctxt_cont; _ } ->
+    let _ : unit = Lwd.set st_ctxt_cont @@ Some ctxt_cont
+    and _ : unit = Lwd.set st_status_name @@ Some "entered refine union scrutinee"
+    and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt_request (Refine_union_scrut { tys_scrut; ty_test })) in
+    ()
+  | Entered_refine_union_test { tys_test; ty_scrut; ctxt_cont; _ } ->
+    let _ : unit = Lwd.set st_ctxt_cont @@ Some ctxt_cont
+    and _ : unit = Lwd.set st_status_name @@ Some "entered refine union test"
+    and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt_request (Refine_union_test { tys_test; ty_scrut })) in
+    ()
   | Asked_up { of_; at; _ } ->
     let _ : unit = Lwd.set st_status_name @@ Some "asked for constructor type instantiation at superclass"
     and _ : unit = Lwd.set st_status_payload @@ Some (Asked_up { of_; at }) in
@@ -316,6 +334,14 @@ let update_step step =
     let _ : unit = Lwd.set st_status_name @@ Some "exited refine existential test"
     and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt (ty_rfmt, ty_param_rfmt_opt)) in
     ()
+  | Exited_refine_union_scrut { ty_rfmt; ty_param_rfmt_opt; _ } ->
+    let _ : unit = Lwd.set st_status_name @@ Some "exited refine union scrutinee"
+    and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt (ty_rfmt, ty_param_rfmt_opt)) in
+    ()
+  | Exited_refine_union_test { ty_rfmt; ty_param_rfmt_opt; _ } ->
+    let _ : unit = Lwd.set st_status_name @@ Some "exited refine union test"
+    and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt (ty_rfmt, ty_param_rfmt_opt)) in
+    ()
   | Complete ->
     let _ : unit = Lwd.set st_status_name @@ Some "exited typing"
     and _ : unit = Lwd.set st_status_payload @@ Some Complete in
@@ -353,19 +379,23 @@ let rec render_ty t =
   | Ctor ctor -> render_ctor ctor
   | Exists exists -> render_exists exists
   | Union [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "nothing"
-  | Union tys ->
-    W.hbox
-      [ pad ~right:1 @@ Lwd.pure @@ W.string "("
-      ; W.hbox @@ List.intersperse ~sep:(pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "|") @@ List.map tys ~f:render_ty
-      ; pad ~left:1 @@ Lwd.pure @@ W.string ")"
-      ]
+  | Union tys -> render_union tys
   | Inter [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "mixed"
-  | Inter tys ->
-    W.hbox
-      [ pad ~right:1 @@ Lwd.pure @@ W.string "("
-      ; W.hbox @@ List.intersperse ~sep:(pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "&") @@ List.map tys ~f:render_ty
-      ; pad ~left:1 @@ Lwd.pure @@ W.string ")"
-      ]
+  | Inter tys -> render_intersection tys
+
+and render_union tys =
+  W.hbox
+    [ Lwd.pure @@ W.string "("
+    ; W.hbox @@ List.intersperse ~sep:(pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "|") @@ List.map tys ~f:render_ty
+    ; Lwd.pure @@ W.string ")"
+    ]
+
+and render_intersection tys =
+  W.hbox
+    [ Lwd.pure @@ W.string "("
+    ; W.hbox @@ List.intersperse ~sep:(pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "&") @@ List.map tys ~f:render_ty
+    ; Lwd.pure @@ W.string ")"
+    ]
 
 and render_tuple Ty.Tuple.{ required; optional; variadic } =
   let sep = pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "," in
@@ -388,11 +418,11 @@ and render_tuple Ty.Tuple.{ required; optional; variadic } =
 
 and render_fn Ty.Fn.{ params; return } =
   W.hbox
-    [ pad ~right:1 @@ Lwd.pure @@ W.string "("
+    [ Lwd.pure @@ W.string "("
     ; render_tuple params
     ; pad ~right:1 @@ Lwd.pure @@ W.string ":"
     ; render_ty return
-    ; pad ~left:1 @@ Lwd.pure @@ W.string ")"
+    ; Lwd.pure @@ W.string ")"
     ]
 
 and render_ctor Ty.Ctor.{ name; args } =
@@ -409,11 +439,13 @@ and render_ctor Ty.Ctor.{ name; args } =
 and render_exists Ty.Exists.{ quants; body } =
   W.hbox
     [ pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "∃"
-    ; W.hbox @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",") @@ List.map quants ~f:render_ty_param
+    ; W.hbox @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",") @@ List.map quants ~f:render_quant
     ; pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "."
     ; render_ty body
     ; pad ~left:1 @@ Lwd.pure @@ W.string ">"
     ]
+
+and render_quant quant = W.hbox [ Lwd.pure @@ W.string "("; render_ty_param quant; Lwd.pure @@ W.string ")" ]
 
 and render_ty_param Ty.Param.{ name; param_bounds } =
   W.hbox
@@ -760,6 +792,18 @@ let render_refinement_request = function
       [ pad ~right:2 @@ render_ty ty_scrut
       ; pad ~right:2 @@ Lwd.pure @@ W.string ~attr:Attr.(fg white) "<~~"
       ; render_exists ty_exists
+      ]
+  | Refine_union_scrut { tys_scrut; ty_test } ->
+    W.hbox
+      [ pad ~right:2 @@ render_union tys_scrut
+      ; pad ~right:2 @@ Lwd.pure @@ W.string ~attr:Attr.(fg white) "<~~"
+      ; render_ty ty_test
+      ]
+  | Refine_union_test { ty_scrut; tys_test } ->
+    W.hbox
+      [ pad ~right:2 @@ render_ty ty_scrut
+      ; pad ~right:2 @@ Lwd.pure @@ W.string ~attr:Attr.(fg white) "<~~"
+      ; render_union tys_test
       ]
 ;;
 
