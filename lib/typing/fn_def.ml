@@ -25,7 +25,9 @@ let synth
     (* Bind function-level type parameters *)
     let ty_param =
       let declared = Ctxt.Ty_param.(bind_all empty @@ List.map ~f:Lang.Ty_param_def.to_ty_param ty_params) in
-      (* Treat all method level refinements as unconditional in the body *)
+      (* Treat all method level refinements as unconditional in the body
+         TODO(mjt) refining this can give GADT refinements so should be handled separately
+      *)
       let ty_param_where = Ctxt.Ty_param.(bind_all empty where_constraints) in
       let prov = Prov.def_where_clause span in
       Ctxt.Ty_param.meet declared ty_param_where ~prov

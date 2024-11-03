@@ -81,6 +81,11 @@ module Bindings = struct
     { local; ty_param }
   ;;
 
+  let unbind_local ({ local; _ } as t) tm_var =
+    let local = Local.unbind local tm_var in
+    { t with local }
+  ;;
+
   let bind_local ({ local; _ } as t) tm_var ty =
     let local = Local.bind local tm_var ty in
     { t with local }
@@ -179,6 +184,11 @@ module Delta = struct
 
   let extend t ~with_ =
     let bindings = Option.merge t.bindings with_.bindings ~f:(fun t with_ -> Bindings.extend t ~with_) in
+    { bindings }
+  ;;
+
+  let unbind_local { bindings } tm_var =
+    let bindings = Option.map bindings ~f:(fun bindings -> Bindings.unbind_local bindings tm_var) in
     { bindings }
   ;;
 

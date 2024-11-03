@@ -69,6 +69,11 @@ module Delta = struct
 
   let join t1 t2 ~prov = lift2 t1 t2 ~f:Cont.Delta.(join ~prov)
   let extend t ~with_ = lift2 t with_ ~f:(fun t with_ -> Cont.Delta.extend t ~with_)
+
+  let unbind_local ({ next; _ } as t) tm_var =
+    let next = Option.map next ~f:(fun next -> Cont.Delta.unbind_local next tm_var) in
+    { t with next }
+  ;;
 end
 
 (**  TODO(mjt) this is rather unsatisfying - there must be a nicer way to describe this? *)

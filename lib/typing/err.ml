@@ -7,8 +7,9 @@ module Minimal = struct
     | Alread_bound of Name.Tm_var.t
     | Unbound_local of Name.Tm_var.t Located.t
     | Unbound_at_join of
-        { bound : Name.Tm_var.t Located.t
-        ; unbound : Span.t
+        { name : Name.Tm_var.t
+        ; span_bound : Span.t
+        ; span_unbound : Span.t
         }
     | Unpack_arity of
         { span : Span.t
@@ -22,7 +23,13 @@ module Minimal = struct
     | Subtyping err -> Fmt.(hovbox @@ (any "subtyping: " ++ Subtyping.Err.pp)) ppf err
     | Alread_bound nm -> Fmt.(hovbox @@ (any "already bound: " ++ Name.Tm_var.pp)) ppf nm
     | Unbound_local nm -> Fmt.(hovbox @@ (any "unbound local: " ++ Located.pp Name.Tm_var.pp)) ppf nm
-    | Unbound_at_join { bound; _ } -> Fmt.(hovbox @@ (any "unbound at join: " ++ Located.pp Name.Tm_var.pp)) ppf bound
+    | Unbound_at_join { name; span_bound; span_unbound } ->
+      Fmt.(
+        hovbox
+        @@ pair ~sep:sp (any "unbound at join: " ++ Name.Tm_var.pp)
+        @@ pair ~sep:sp (any " was bound here " ++ Span.pp) (any " but wasn't bound in this continuation " ++ Span.pp))
+        ppf
+        (name, (span_bound, span_unbound))
     | Unpack_arity { n_quants; n_names; _ } ->
       Fmt.(
         hovbox

@@ -17,7 +17,7 @@ let find (t : t) local = Option.map ~f:fst @@ Map.find t local
 let is_bound (t : t) local = Map.mem t local
 let singleton Located.{ span; elem } ty : t = Name.Tm_var.Map.singleton elem (ty, Span.Set.singleton span)
 
-let diff (t : t) (tl : t) (tr : t) =
+let diff (t : t) ~(tl : t) ~(tr : t) =
   let outer = Map.key_set t in
   Map.fold_symmetric_diff
     tl
@@ -29,8 +29,8 @@ let diff (t : t) (tl : t) (tr : t) =
       then acc
       else (
         match diff with
-        | `Left (span, _) -> Either.First (k, span) :: acc
-        | `Right (span, _) -> Either.Second (k, span) :: acc
+        | `Left (_, spans) -> Either.First (k, Set.choose_exn spans) :: acc
+        | `Right (_, spans) -> Either.Second (k, Set.choose_exn spans) :: acc
         | `Unequal _ -> failwith "impossible"))
 ;;
 
@@ -69,6 +69,7 @@ let extend t ~with_ : t =
 
 let bind (t : t) Located.{ elem; span } ty : t = Map.update t elem ~f:(fun _ -> ty, Span.Set.singleton span)
 let bind_all (t : t) tm_var_tys : t = List.fold_left tm_var_tys ~init:t ~f:(fun t (tm_var, ty) -> bind t tm_var ty)
+let unbind t tm_var = Map.remove t tm_var
 let transform (t : t) ~f = Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
 
 module Refinement = struct
