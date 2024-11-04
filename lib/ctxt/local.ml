@@ -38,7 +38,8 @@ let diff (t : t) ~(tl : t) ~(tr : t) =
 
     Because typing operates on the change of local contexts, we permit the
     presence of a binding in only one of the context under the assumption
-    that any such term variable must be bound in the outer continuation *)
+    that any such term variable must be bound in the outer continuation or
+    an error was already raised *)
 let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left (ty, spans) | `Right (ty, spans) -> Some (ty, spans)
@@ -46,17 +47,6 @@ let join t1 t2 ~prov =
   in
   Map.merge t1 t2 ~f
 ;;
-
-(*
-   (** [meet] of two local contexts; if the binding is present in only one of the contexts we drop the binding and if it's
-   present in both we use the intersection of the type and associated spans *)
-   let meet (t1 : t) (t2 : t) ~prov =
-   let f ~key:_ = function
-   | `Left _ | `Right _ -> None
-   | `Both ((ty1, spans1), (ty2, spans2)) -> Some (Ty.inter ~prov [ ty1; ty2 ], Set.inter spans1 spans2)
-   in
-   Map.merge t1 t2 ~f
-   ;; *)
 
 (** [extend]ing a local context means that we have all the bindings from both contexts but if a binding is present
     in both, we take the binding from the second one. *)
@@ -70,7 +60,7 @@ let extend t ~with_ : t =
 let bind (t : t) Located.{ elem; span } ty : t = Map.update t elem ~f:(fun _ -> ty, Span.Set.singleton span)
 let bind_all (t : t) tm_var_tys : t = List.fold_left tm_var_tys ~init:t ~f:(fun t (tm_var, ty) -> bind t tm_var ty)
 let unbind t tm_var = Map.remove t tm_var
-let transform (t : t) ~f = Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
+let transform (t : t) ~f : t = Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
 
 module Refinement = struct
   module Minimal = struct

@@ -248,7 +248,14 @@ end = struct
       let next = Ctxt.Cont.Delta.of_expr_delta expr_delta in
       Ctxt.Delta.create ~next ()
     | Return expr_opt ->
-      let expr_delta_opt = Option.map expr_opt ~f:(fun expr -> snd @@ Expr.synth expr ~def_ctxt ~cont_ctxt) in
+      let expr_delta_opt =
+        Option.bind expr_opt ~f:(fun expr ->
+          match Ctxt.Def.ask_return_ty def_ctxt with
+          | Some ty_return -> Some (snd @@ Expr.check expr ~against:ty_return ~def_ctxt ~cont_ctxt)
+          | _ ->
+            (* Not in function context - raise an error *)
+            None)
+      in
       let exit = Option.value_map ~default:Ctxt.Cont.Delta.empty ~f:Ctxt.Cont.Delta.of_expr_delta expr_delta_opt in
       Ctxt.Delta.create ~exit ()
     | Assign assign_stmt -> Assign.synth (assign_stmt, span) ~def_ctxt ~cont_ctxt
@@ -402,42 +409,8 @@ end = struct
       let delta = Stmt.synth else_ ~def_ctxt ~cont_ctxt in
       Exposure.promote_delta delta
     in
-    (* Before [join]ing the deltas we need to ensure that any local bound in only one of the branches was already
-       bound in the initial context
-       TODO(mjt) this should apply to all continuations, not just next, I think
-       TODO(mjt) hh enforces this by dropping bindings only present on one side of the join. We detect and report this
-       at the join point and can either unbind to get the same behavior or just treat it as bound. Is there any soundess
-       issue with the latter behavior? *)
-    let delta_then_, delta_else_ =
-      let local_diff =
-        let get_local Ctxt.Delta.{ next; _ } =
-          Option.value ~default:Ctxt.Local.empty
-          @@ Option.bind next ~f:(fun { bindings } ->
-            Option.map bindings ~f:(fun Ctxt.Cont.Bindings.{ local; _ } -> local))
-        in
-        let tl = get_local delta_then_
-        and tr = get_local delta_else_ in
-        Ctxt.Local.diff cont_ctxt.bindings.local ~tl ~tr
-      in
-      let span_then = Located.span_of then_
-      and span_else = Located.span_of else_ in
-      List.fold_left local_diff ~init:(delta_then_, delta_else_) ~f:(fun (delta_then_, delta_else_) unbound ->
-        match unbound with
-        | Either.First (name, span_bound) ->
-          let err = Err.unbound_at_join ~name ~span_bound ~span_unbound:span_else in
-          let _ : unit = Eff.log_error err in
-          delta_then_, delta_else_
-          (* Ctxt.Delta.unbind_local delta_then_ name, delta_else_ *)
-        | Either.Second (name, span_bound) ->
-          let err = Err.unbound_at_join ~name ~span_bound ~span_unbound:span_then in
-          let _ : unit = Eff.log_error err in
-          delta_then_, delta_else_
-        (* delta_then_, Ctxt.Delta.unbind_local delta_else_ name *))
-    in
-    (* Now we are guaranteed the deltas haven't introduced new type parameters and that any locals were either already
-       bound or were introduced in both branches *)
     let prov = Prov.stmt_if_join span in
-    Ctxt.Delta.join delta_then_ delta_else_ ~prov
+    Ctxt.Delta.join cont_ctxt ~tl:delta_then_ ~tr:delta_else_ ~prov
   ;;
 end
 

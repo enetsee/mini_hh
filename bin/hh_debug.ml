@@ -200,6 +200,7 @@ type status_payload =
       { of_ : Ty.Ctor.t
       ; at : Name.Ctor.t
       }
+  | Asked_ctor_info of Name.Ctor.t
   | Asked_ty_param_variances of Name.Ctor.t
   | Raised_error of Typing.Err.t
   | Raised_warning of Typing.Warn.t
@@ -278,6 +279,10 @@ let update_step step =
     let _ : unit = Lwd.set st_ctxt_cont @@ Some ctxt_cont
     and _ : unit = Lwd.set st_status_name @@ Some "entered refine union test"
     and _ : unit = Lwd.set st_status_payload @@ Some (Rfmt_request (Refine_union_test { tys_test; ty_scrut })) in
+    ()
+  | Asked_ctor { name; _ } ->
+    let _ : unit = Lwd.set st_status_name @@ Some "asked for type parmeter and superclass information"
+    and _ : unit = Lwd.set st_status_payload @@ Some (Asked_ctor_info name) in
     ()
   | Asked_up { of_; at; _ } ->
     let _ : unit = Lwd.set st_status_name @@ Some "asked for constructor type instantiation at superclass"
@@ -442,7 +447,6 @@ and render_exists Ty.Exists.{ quants; body } =
     ; W.hbox @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",") @@ List.map quants ~f:render_quant
     ; pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "."
     ; render_ty body
-    ; pad ~left:1 @@ Lwd.pure @@ W.string ">"
     ]
 
 and render_quant quant = W.hbox [ Lwd.pure @@ W.string "("; render_ty_param quant; Lwd.pure @@ W.string ")" ]
@@ -460,6 +464,17 @@ and render_ty_param_bounds Ty.Param_bounds.{ upper; lower } =
     ; pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st italic) "super"
     ; render_ty lower
     ]
+;;
+
+let render_ty_refinement ty_rfmt =
+  match ty_rfmt with
+  | Ty.Refinement.Disjoint _ ->
+    W.hbox
+      [ pad ~right:1 @@ Lwd.pure @@ W.string "_"; Lwd.pure @@ W.string "←"; pad ~left:1 @@ Lwd.pure @@ W.string "⊥" ]
+  | Ty.Refinement.Intersect_with (_, ty) ->
+    W.hbox [ pad ~right:1 @@ Lwd.pure @@ W.string "_"; Lwd.pure @@ W.string "&"; pad ~left:1 @@ render_ty ty ]
+  | Ty.Refinement.Replace_with ty ->
+    W.hbox [ pad ~right:1 @@ Lwd.pure @@ W.string "_"; Lwd.pure @@ W.string "←"; pad ~left:1 @@ render_ty ty ]
 ;;
 
 (* ~~ Program rendering ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -583,10 +598,7 @@ let render_local_ctxt local local_rfmts =
       let refined_ty = List.fold_left ty_rfmts ~init:ty ~f:(fun ty rfmt -> Ty.refine ty ~rfmt) in
       [ Lwd.pure @@ W.string ~attr:Attr.(fg yellow) @@ Name.Tm_var.to_string tm_var
       ; render_ty ty
-      ; W.scrollbox
-        @@ W.vlist
-        @@ List.map ty_rfmts ~f:(fun ty_rfmt ->
-          Lwd.pure @@ W.string ~attr:Attr.(fg lightcyan) @@ Ty.Refinement.to_string ty_rfmt)
+      ; W.scrollbox @@ W.vlist @@ List.map ty_rfmts ~f:render_ty_refinement
       ; render_ty refined_ty
       ])
     @@ Map.to_alist
@@ -822,10 +834,7 @@ let render_status_payload payload_opt =
     | Rfmt_request rfmt_request -> render_refinement_request rfmt_request
     | Rfmt (ty_rfmt, prov_ty_param_rfmt_opt) ->
       let elems =
-        [ W.hbox
-            [ Lwd.pure @@ W.string "Type refinement:"
-            ; pad ~left:2 @@ Lwd.pure @@ W.string ~attr:Attr.(fg magenta) @@ Ty.Refinement.show ty_rfmt
-            ]
+        [ W.hbox [ Lwd.pure @@ W.string "Type refinement:"; render_ty_refinement ty_rfmt ]
         ; pad ~top:1 @@ Lwd.pure @@ W.string "Type parameter refinement:"
         ; (match prov_ty_param_rfmt_opt with
            | None -> Lwd.pure @@ W.string "(no type parameter refinement)"
@@ -839,7 +848,8 @@ let render_status_payload payload_opt =
          ; pad ~left:2 ~right:2 @@ Lwd.pure @@ W.string "↑"
          ; Lwd.pure @@ W.string ~attr:Attr.(fg magenta) @@ Name.Ctor.to_string at
          ]
-    | Asked_ty_param_variances ctor_name -> Lwd.pure @@ W.string ~attr:Attr.(fg yellow) @@ Name.Ctor.to_string ctor_name
+    | Asked_ctor_info ctor_name | Asked_ty_param_variances ctor_name ->
+      Lwd.pure @@ W.string ~attr:Attr.(fg yellow) @@ Name.Ctor.to_string ctor_name
     | Raised_error err -> Lwd.pure @@ W.string ~attr:Attr.(fg red) @@ Typing.Err.to_string err
     | Raised_warning warn -> Lwd.pure @@ W.string ~attr:Attr.(fg yellow) @@ Typing.Warn.to_string warn
     | Span span -> Lwd.pure @@ W.string @@ Span.to_string span

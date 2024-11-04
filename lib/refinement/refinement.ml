@@ -134,7 +134,10 @@ and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
   let prov_exists, Ty.Exists.{ quants; body }, ty_test, ctxt =
     Eff.log_enter_refine_existential_scrut prov_exists ty_exists ty_test ctxt
   in
+  (* Generate fresh type parameters, build the substitution and apply it to the body *)
   let generics = Eff.gen_fresh_ty_params (List.length quants) in
+  (* [subst] maps from the declared type parameter name to the the fresh name
+     [quants] is the list of quantifiers using the fresh names*)
   let subst, quants =
     let subst, quants =
       List.unzip
@@ -144,8 +147,10 @@ and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
     let subst = Name.Ty_param.Map.of_alist_exn subst in
     subst, quants
   in
+  (* Apply the substitution to the body so that is mentions the new names which are guaranteed to be fresh wrt to
+     the enclosing context *)
   let body = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
-  (* Bind the quantifiers and refine the body in this context *)
+  (* Bind the quantifiers and refine the body against the test type *)
   let body_refn =
     let ctxt = Ctxt.Cont.bind_ty_params ctxt quants in
     refine_ty ~ty_scrut:body ~ty_test ~ctxt
@@ -154,6 +159,7 @@ and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
   @@
   match body_refn with
   | Ty.Refinement.Replace_with body, Some (prov, refn) ->
+    (* Find the refinement we should apply to each quantifier *)
     let quants =
       List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
         let param_bounds =
@@ -184,7 +190,10 @@ and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
   (* ~~ If we see these something has gone wrong ~~ *)
   | Ty.Refinement.Replace_with _, None | Ty.Refinement.Intersect_with _, Some _ -> failwith "impossible"
 
-and refine_existential_test ty_scrut prov_test Ty.Exists.{ quants; body } ~ctxt =
+and refine_existential_test ty_scrut prov_test ty_exists ~ctxt =
+  let ty_scrut, prov_test, Ty.Exists.{ quants; body }, ctxt =
+    Eff.log_enter_refine_existential_test ty_scrut prov_test ty_exists ctxt
+  in
   let generics = Eff.gen_fresh_ty_params (List.length quants) in
   let subst, quants =
     let subst, quants =
@@ -201,6 +210,8 @@ and refine_existential_test ty_scrut prov_test Ty.Exists.{ quants; body } ~ctxt 
     let ctxt = Ctxt.Cont.bind_ty_params ctxt quants in
     refine_ty ~ty_scrut ~ty_test:body ~ctxt
   in
+  Eff.log_exit_refine_existential_test
+  @@
   match body_refn with
   | Replace_with body, Some (prov, refn) ->
     (* Our refinement of the body gave us a type parameter refinement so we are free to drop the scrutinee type in

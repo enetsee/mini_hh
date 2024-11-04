@@ -27,3 +27,5 @@ end
 
 include Minimal
 include Pretty.Make (Minimal)
+
+let return { return; _ } = return

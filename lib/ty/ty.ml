@@ -615,8 +615,16 @@ end = struct
   ;;
 
   let elab_to_generic { quants; body } ~bound_ty_params =
-    let body = Annot.elab_to_generic body ~bound_ty_params
-    and quants = List.map quants ~f:(Param.elab_to_generic ~bound_ty_params) in
+    (* bind all the quantifiers - do this before elaborating quantifiers as they
+       may contain other quantifiers in their bounds *)
+    let bound_ty_params =
+      let declared_ty_params =
+        Name.Ty_param.Set.of_list @@ List.map ~f:(fun Param.{ name; _ } -> Located.elem name) quants
+      in
+      Set.union bound_ty_params declared_ty_params
+    in
+    let quants = List.map quants ~f:(Param.elab_to_generic ~bound_ty_params)
+    and body = Annot.elab_to_generic body ~bound_ty_params in
     { body; quants }
   ;;
 end

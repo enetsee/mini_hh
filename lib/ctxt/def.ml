@@ -29,3 +29,9 @@ let exit_fn t =
   | _ :: fns -> { t with fns }
   | _ -> t
 ;;
+
+let ask_return_ty { fns; _ } =
+  match fns with
+  | fn :: _ -> Some (Fn.return fn)
+  | _ -> None
+;;

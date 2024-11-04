@@ -119,6 +119,22 @@ let log_exit_refine_existential_test (ty_rfmt, ty_param_rfmt_opt) =
   Effect.perform (Log_exit_refine_existential_scrut { ty_rfmt; ty_param_rfmt_opt })
 ;;
 
+let log_enter_refine_union_scrut prov_scrut tys_scrut ty_test ctxt_cont =
+  Effect.perform (Log_enter_refine_union_scrut { prov_scrut; tys_scrut; ty_test; ctxt_cont })
+;;
+
+let log_exit_refine_union_scrut (ty_rfmt, ty_param_rfmt_opt) =
+  Effect.perform (Log_exit_refine_union_scrut { ty_rfmt; ty_param_rfmt_opt })
+;;
+
+let log_enter_refine_union_test ty_scrut prov_test tys_test ctxt_cont =
+  Effect.perform (Log_enter_refine_union_test { ty_scrut; prov_test; tys_test; ctxt_cont })
+;;
+
+let log_exit_refine_union_test (ty_rfmt, ty_param_rfmt_opt) =
+  Effect.perform (Log_exit_refine_union_test { ty_rfmt; ty_param_rfmt_opt })
+;;
+
 let run comp src oracle =
   let src_ref = ref src in
   Effect.Deep.match_with

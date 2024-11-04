@@ -67,7 +67,9 @@ let run comp oracle =
   let tys = ref []
   and errs = ref []
   and warns = ref [] in
-  let _ : unit = run_typing (fun () -> Refinement.Eff.run comp 0 oracle) (tys, errs, warns) in
+  let _ : unit =
+    run_typing (fun () -> Refinement.Eff.run (fun () -> Exposure.Eff.run comp oracle) 0 oracle) (tys, errs, warns)
+  in
   !tys, !errs, !warns
 ;;
 
@@ -253,6 +255,11 @@ module Debug = struct
             ; k : (Ty.Refinement.t * (Prov.t * Ctxt.Ty_param.Refinement.t) option, t) Effect.Deep.continuation
                  [@show.opaque]
             }
+        | Asked_ctor of
+            { name : Name.Ctor.t
+            ; k : ((Lang.Ty_param_def.t list * Ty.t list Name.Ctor.Map.t) option, t) Effect.Deep.continuation
+                 [@show.opaque]
+            }
         | Asked_up of
             { of_ : Ty.Ctor.t
             ; at : Name.Ctor.t
@@ -294,6 +301,9 @@ module Debug = struct
 
     let next (Step (status, state)) ~oracle =
       match status with
+      | Status.Asked_ctor { name; k } ->
+        let ty_params_supers_opt = Oracle.find_ctor oracle name in
+        step (Effect.Deep.continue k ty_params_supers_opt) state
       | Status.Asked_up { of_; at; k } ->
         let ty_args_opt = Oracle.up oracle ~of_ ~at in
         step (Effect.Deep.continue k ty_args_opt) state
@@ -444,6 +454,10 @@ module Debug = struct
               (* ~~ Refinement other ~~ *)
               | Refinement.Eff.Gen_fresh_ty_params n ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.requested_fresh_ty_params ~n ~k)
+              | Exposure.Eff.Ask_ctor name ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ctor ~name ~k)
+              | Exposure.Eff.Ask_up { of_; at } ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
               | Refinement.Eff.Ask_up { of_; at } ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
               | Refinement.Eff.Ask_ty_param_variances ctor ->

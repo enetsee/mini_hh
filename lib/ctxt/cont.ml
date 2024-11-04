@@ -136,82 +136,6 @@ module Expr_delta = struct
 
   let empty = { rfmts = None; bindings = None }
   let drop_rfmts { bindings; _ } = { bindings; rfmts = None }
-
-  (* let extend t ~with_ ~prov =
-    let local = Option.merge ~f:(fun t with_ -> Local.extend t ~with_) t.local with_.local
-    and ty_param = Option.merge ~f:(fun t with_ -> Ty_param.extend t ~with_) t.ty_param with_.ty_param
-    and rfmt = Option.merge ~f:(Refinement.meet ~prov) t.rfmt with_.rfmt in
-    { local; ty_param; rfmt }
-  ;;
-
-  let meet t1 t2 ~prov = extend t1 ~with_:t2 ~prov
-
-  let join t1 t2 ~prov =
-    let local = Option.merge ~f:(Local.join ~prov) t1.local t2.local
-    and ty_param = Option.merge ~f:(Ty_param.join ~prov) t1.ty_param t2.ty_param
-    and rfmt = Option.map2 ~f:(Refinement.join ~prov) t1.rfmt t2.rfmt in
-    { local; ty_param; rfmt }
-  ;; *)
-end
-
-module Delta = struct
-  module Minimal = struct
-    (** The incremental change in the per-continuation context after typing a statement
-        TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
-        that have been invalidated when that is implemented for expressions *)
-    type t =
-      { bindings : Bindings.t option
-      (** We get changes in local and type parameter bindings from [assign] and [unpack] statements and [as] expressions *)
-      }
-    [@@deriving create]
-
-    let pp ppf t =
-      Fmt.(
-        vbox
-        @@ record
-             ~sep:cut
-             [ field "Δ bindings" (fun { bindings; _ } -> bindings) @@ option ~none:(any "(none)") Bindings.pp ])
-        ppf
-        t
-    ;;
-  end
-
-  include Minimal
-  include Pretty.Make (Minimal)
-
-  let empty = { bindings = None }
-  let of_expr_delta Expr_delta.{ bindings; _ } = { bindings }
-
-  let extend t ~with_ =
-    let bindings = Option.merge t.bindings with_.bindings ~f:(fun t with_ -> Bindings.extend t ~with_) in
-    { bindings }
-  ;;
-
-  let unbind_local { bindings } tm_var =
-    let bindings = Option.map bindings ~f:(fun bindings -> Bindings.unbind_local bindings tm_var) in
-    { bindings }
-  ;;
-
-  let join t1 t2 ~prov =
-    let bindings =
-      Option.merge t1.bindings t2.bindings ~f:(fun { local = l1; ty_param = tp1 } { local = l2; ty_param = tp2 } ->
-        assert (Ty_param.is_empty tp1);
-        assert (Ty_param.is_empty tp2);
-        let local = Local.join l1 l2 ~prov in
-        Bindings.create ~local ~ty_param:tp1 ())
-    in
-    { bindings }
-  ;;
-
-  (* let locals = Option.merge ~f:(Local.join ~prov) t1.bindings.local t2.bindings.local
-    and ty_param = Option.merge ~f:(Ty_param.join ~prov) t1.ty_param t2.ty_param in
-    { locals; ty_param } *)
-
-  (*  let meet t1 t2 ~prov =
-    let local = Option.merge ~f:(Local.meet ~prov) t1.local t2.local
-    and ty_param = Option.merge ~f:(Ty_param.meet ~prov) t1.ty_param t2.ty_param in
-    { local; ty_param }
-  ;; *)
 end
 
 module Cont = struct
@@ -250,21 +174,6 @@ module Cont = struct
   ;;
 
   let empty = { bindings = Bindings.empty; rfmtss = [] }
-
-  (** Update the context with the changes resulting from typing an expression. This means:
-      - extending the bindings so that we prefer locals and type parameters resulting from typing the expression
-      - pushing any refinements onto the stack *)
-
-  let update_expr t ~expr_delta:Expr_delta.{ rfmts; bindings } =
-    let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_)
-    and rfmtss = rfmts :: t.rfmtss in
-    { bindings; rfmtss }
-  ;;
-
-  let update t ~delta:Delta.{ bindings } =
-    let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_) in
-    { t with bindings }
-  ;;
 
   (* ~~ Locals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
@@ -318,4 +227,112 @@ module Cont = struct
   let bind_ty_params t ty_params = List.fold_left ty_params ~init:t ~f:bind_ty_param
 end
 
+module Delta = struct
+  module Minimal = struct
+    (** The incremental change in the per-continuation context after typing a statement
+        TODO(mjt) this should include the set of refinements on locals that have been invalidated and the set of properties
+        that have been invalidated when that is implemented for expressions *)
+    type t =
+      { bindings : Bindings.t option
+      (** We get changes in local and type parameter bindings from [assign] and [unpack] statements and [as] expressions *)
+      }
+    [@@deriving create]
+
+    let pp ppf t =
+      Fmt.(
+        vbox
+        @@ record
+             ~sep:cut
+             [ field "Δ bindings" (fun { bindings; _ } -> bindings) @@ option ~none:(any "(none)") Bindings.pp ])
+        ppf
+        t
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  let empty = { bindings = None }
+  let of_expr_delta Expr_delta.{ bindings; _ } = { bindings }
+
+  let extend t ~with_ =
+    let bindings = Option.merge t.bindings with_.bindings ~f:(fun t with_ -> Bindings.extend t ~with_) in
+    { bindings }
+  ;;
+
+  let unbind_local { bindings } tm_var =
+    let bindings = Option.map bindings ~f:(fun bindings -> Bindings.unbind_local bindings tm_var) in
+    { bindings }
+  ;;
+
+  (** The join on two continuation deltas with respect to the original contination context *)
+  let join (cont : Cont.t) ~(tl : t) ~(tr : t) ~prov =
+    match tl.bindings, tr.bindings with
+    (* If both deltas are empty then the join is empty too *)
+    | None, None -> tl
+    (* If bindings are only present in one side, remove any which aren't bound in the continuation context
+       and find the join of the types for those which are *)
+    | Some { local; ty_param }, None | None, Some { local; ty_param } ->
+      (* All type parameters should have been removed during exposure *)
+      let _ : unit = assert (Ty_param.is_empty ty_param) in
+      let local =
+        Map.filter_mapi local ~f:(fun ~key ~data:(ty, spans) ->
+          Option.map ~f:(fun ty' -> Ty.union [ ty; ty' ] ~prov, spans)
+          (* TODO(mjt) this should also give use the spans *)
+          @@ Cont.find_local cont key)
+      in
+      let bindings = Some (Bindings.create ~local ~ty_param ()) in
+      { bindings }
+    (* If bindings are present on both sides, take the *)
+    | Some { local = lcl_l; ty_param = tp_l }, Some { local = lcl_r; ty_param = tp_r } ->
+      (* All type parameters should have been removed during exposure *)
+      let _ : unit = assert (Ty_param.is_empty tp_l && Ty_param.is_empty tp_r) in
+      let local =
+        Map.merge lcl_l lcl_r ~f:(fun ~key elem ->
+          match elem with
+          | `Both ((ty_l, spans_l), (ty_r, spans_r)) -> Some (Ty.union [ ty_l; ty_r ] ~prov, Set.union spans_l spans_r)
+          | `Left (ty, spans) | `Right (ty, spans) ->
+            Option.map ~f:(fun ty' -> Ty.union [ ty; ty' ] ~prov, spans)
+            (* TODO(mjt) this should also give use the spans *)
+            @@ Cont.find_local cont key)
+      in
+      let bindings = Some (Bindings.create ~local ~ty_param:tp_l ()) in
+      { bindings }
+  ;;
+  (* if Option.is_none tl.bindings && Option.is_none tr.bindings then tl else (
+     (* If one is present  *)
+     let bindings_l , bindings_r =
+     let default = Bindings.empty in
+     Option.(value ~default tl.bindings, value ~default tr.bindings)
+     in
+     let _ : unit =   assert (Ty_param.is_empty bindings_l.ty_param && Ty_param.is_empty bindings_r.ty_param) in *)
+
+  (* match tl.bindings , tr.bindings with
+    | None , None -> tl
+    | S
+    let bindings =
+      Option.merge tl.bindings tr.bindings ~f:(fun { local = l1; ty_param = tp1 } { local = l2; ty_param = tp2 } ->
+        (* We should have already applied exposure to eliminate type parameters bound in each continuation *)
+        assert (Ty_param.is_empty tp1 && Ty_param.is_empty tp2);
+        let local = Local.join l1 l2 ~prov in
+        Bindings.create ~local ~ty_param:tp1 ())
+    in
+    { bindings } *)
+end
+
 include Cont
+
+(** Update the context with the changes resulting from typing an expression. This means:
+    - extending the bindings so that we prefer locals and type parameters resulting from typing the expression
+    - pushing any refinements onto the stack *)
+
+let update_expr t ~expr_delta:Expr_delta.{ rfmts; bindings } =
+  let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_)
+  and rfmtss = rfmts :: t.rfmtss in
+  { bindings; rfmtss }
+;;
+
+let update t ~delta:Delta.{ bindings } =
+  let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_) in
+  { t with bindings }
+;;

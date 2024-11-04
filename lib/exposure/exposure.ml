@@ -2,6 +2,7 @@ open Core
 open Common
 open Lang
 module Err = Err
+module Eff = Eff
 
 exception Exposure of Err.t list
 
