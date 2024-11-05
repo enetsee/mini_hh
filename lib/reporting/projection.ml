@@ -1,3 +1,5 @@
+open Core
+
 module Variance_dir = struct
   type t =
     | Cov
@@ -13,5 +15,16 @@ module Asymm = struct
 end
 
 module Symm = struct
-  type t = Nullable [@@deriving compare, eq, sexp, show, yojson, variants]
+  type t =
+    | Nullable
+    | Tuple of
+        { idx_sub : int
+        ; idx_super : int
+        }
+    | Fn_arg of
+        { idx_sub : int
+        ; idx_super : int
+        }
+    | Fn_ret
+  [@@deriving compare, eq, sexp, show, yojson, variants]
 end

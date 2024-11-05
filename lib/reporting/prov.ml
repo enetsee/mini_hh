@@ -67,3 +67,39 @@ let prj_union_sub ~sub ~sub_prj = prj_asymm_sub ~sub ~sub_prj Projection.Asymm.U
 let prj_union_super ~super ~super_prj = prj_asymm_super ~super ~super_prj Projection.Asymm.Union
 let prj_inter_sub ~sub ~sub_prj = prj_asymm_sub ~sub ~sub_prj Projection.Asymm.Inter
 let prj_inter_super ~super ~super_prj = prj_asymm_super ~super ~super_prj Projection.Asymm.Inter
+
+(* ~~ Symmetric projections ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+let prj_symm_co ~sub ~sub_prj ~super prj = Prj_both { inner = sub_prj; prj; sub; super }
+let prj_symm_contra ~sub ~super ~super_prj prj = Prj_both { inner = super_prj; prj; sub; super }
+let prj_nullable ~sub ~sub_prj ~super = prj_symm_co ~sub ~sub_prj ~super Projection.Symm.Nullable
+
+let prj_tuple ~sub ~sub_prj ~super ~idx_sub ~idx_super =
+  let prj = Projection.Symm.Tuple { idx_sub; idx_super } in
+  prj_symm_co ~sub ~sub_prj ~super prj
+;;
+
+(* let prj_shape ~sub ~sub_prj ~super lbl ~kind_sub ~kind_super =
+   let prj = Prj_symm_shape (lbl, kind_sub, kind_super) in
+   prj_symm_co ~sub ~sub_prj ~super prj
+   ;;
+
+   let prj_fn_param ~sub ~super ~super_prj ~idx_sub ~idx_super =
+   let prj = Prj_symm_fn_param (idx_super, idx_sub) in
+   prj_symm_contra ~sub ~super ~super_prj prj
+   ;;
+
+   let prj_fn_param_inout_co ~sub ~sub_prj ~super ~idx_sub ~idx_super =
+   let prj = Prj_symm_fn_param_inout (idx_sub, idx_super, Co) in
+   prj_symm_co ~sub ~sub_prj ~super prj
+   ;;
+
+   let prj_fn_param_inout_contra ~sub ~super ~super_prj ~idx_sub ~idx_super =
+   let prj = Prj_symm_fn_param_inout (idx_super, idx_sub, Contra) in
+   prj_symm_contra ~sub ~super ~super_prj prj
+   ;;
+
+   let prj_fn_ret ~sub ~sub_prj ~super =
+   let prj = Prj_symm_fn_ret in
+   prj_symm_co ~sub ~sub_prj ~super prj
+   ;; *)
