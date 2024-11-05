@@ -4,6 +4,17 @@ type t =
   | Empty
   | Witness of Witness.t
   | Flow of flow
+  | Prj_both of
+      { inner : t
+      ; prj : Projection.Symm.t
+      ; sub : t
+      ; super : t
+      }
+  | Prj_one of
+      { inner : t
+      ; outer : t
+      ; prj : Projection.Asymm.t
+      }
 
 and flow =
   | Refine of
@@ -25,6 +36,8 @@ and flow =
 [@@deriving compare, eq, sexp, show, yojson]
 
 let empty = Empty
+
+(* ~~ Witness constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 let witness span = Witness (Witness.witness span)
 let witnesses spans = Witness (Witness.witnesses spans)
 let lit_null span = Witness (Witness.lit_null span)
@@ -39,7 +52,18 @@ let expr_tm_var span = Witness (Witness.expr_tm_var span)
 let stmt_if_join span = Witness (Witness.stmt_if_join span)
 let lvalue_tm_var span = Witness (Witness.lvalue_tm_var span)
 let def_where_clause span = Witness (Witness.def_where_clause span)
+
+(* ~~ Flow constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 let refine ~prov_test ~prov_scrut = Flow (Refine { prov_scrut; prov_test })
 let unpack ~prov_packed ~prov_unpacked = Flow (Unpack { prov_packed; prov_unpacked })
 let assign ~prov_rhs ~prov_lvalue = Flow (Assign { prov_rhs; prov_lvalue })
 let use ~prov_def ~prov_tm_var = Flow (Use { prov_def; prov_tm_var })
+
+(* ~~ Projection constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+let prj_asymm_sub ~sub ~sub_prj prj = Prj_one { inner = sub_prj; prj; outer = sub }
+let prj_asymm_super ~super ~super_prj prj = Prj_one { inner = super_prj; prj; outer = super }
+let prj_union_sub ~sub ~sub_prj = prj_asymm_sub ~sub ~sub_prj Projection.Asymm.Union
+let prj_union_super ~super ~super_prj = prj_asymm_super ~super ~super_prj Projection.Asymm.Union
+let prj_inter_sub ~sub ~sub_prj = prj_asymm_sub ~sub ~sub_prj Projection.Asymm.Inter
+let prj_inter_super ~super ~super_prj = prj_asymm_super ~super ~super_prj Projection.Asymm.Inter

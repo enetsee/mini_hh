@@ -1,9 +1,28 @@
 open Core
 open Reporting
 
+(* ~~ Type variables ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+module Var : sig
+  type t [@@deriving compare, equal, sexp, show]
+
+  val of_int : int -> t
+end = struct
+  module Minimal = struct
+    type t = Var of int [@@ocaml.unboxed] [@@deriving compare, equal, sexp]
+
+    let pp ppf (Var n) = Fmt.(any "#" ++ int) ppf n
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  let of_int n = Var n
+end
+
 (* ~~ Types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 module rec Node : sig
   type t =
+    (* | Var of Var.t *)
     | Base of Common.Base.t
     | Generic of Name.Ty_param.t
     | Tuple of Tuple.t
@@ -17,6 +36,7 @@ module rec Node : sig
 end = struct
   module Minimal = struct
     type t =
+      (* | Var of Var.t *)
       | Base of Common.Base.t
       | Generic of Name.Ty_param.t
       | Tuple of Tuple.t
@@ -823,6 +843,7 @@ end = struct
   ;;
 end
 
+(* ~~ Helpers for traversals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Ops : sig
   type 'a t =
     { ty : 'a Annot.ops
