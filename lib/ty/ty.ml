@@ -901,7 +901,8 @@ module Refinement = struct
           type. *)
       | Disjoint of Prov.t
       (** If we refine to a type which is disjoint from the scrutiness type the
-          result is always [nothing] *)
+          result is always [nothing]. This is the same as [Replace_with nothing]
+          but we keep this around so we can do partial complements of refinements *)
     [@@deriving compare, eq, sexp, show, variants]
 
     let pp ppf t =
@@ -915,25 +916,14 @@ module Refinement = struct
   include Minimal
   include Pretty.Make (Minimal)
 
-  (** The same as [Ty.refine mixed t] but without provenance *)
-  let to_ty = function
-    | Intersect_with (_, ty) -> ty
-    | Replace_with ty -> ty
-    | Disjoint prov -> Annot.nothing prov
-  ;;
-
-  let extend t ~with_ =
-    match t, with_ with
-    | Disjoint _, _ -> t
-    | _, Disjoint _ -> with_
-    | _, Replace_with _ -> t
-    | Intersect_with (prov1, ty1), Intersect_with (prov2, ty2) ->
-      Intersect_with (prov2, Annot.inter ~prov:prov1 [ ty1; ty2 ])
-    | Replace_with ty1, Intersect_with (prov, ty2) -> Replace_with (Annot.inter ~prov [ ty1; ty2 ])
-  ;;
-
   (** Applying the union of two refinements is equivalent to find the union of the types after appying each refinement.
       Given that `Replace_with ty` tells us that [ty] is a subtype of the type it is refining we can simplify as follows:
+
+      apply t (Disjoint `join` ...) ~~>
+      (apply t Disjoint) | (apply t ...) ~~>
+      nothing | ... ~~> ...
+
+      (same for ... join Disjoint)
 
       apply t (Replace_with t1 `join` Replace_with t2) ~~(meaning of join)~~>
       (apply t (Replace_with t1)) | (apply t (Replace_with t2)) ~~(definition of apply)~~>
@@ -963,8 +953,6 @@ module Refinement = struct
     | Replace_with ty1, Intersect_with (prov2, ty2) | Intersect_with (prov2, ty2), Replace_with ty1 ->
       Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov2)
   ;;
-
-  (* Union (prov, [ t1; t2 ]) *)
 
   (** Applying the intersection of two refinements is equivalent to finding the intersection of the types
       after applying each refinement
