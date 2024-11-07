@@ -121,7 +121,7 @@
   SOME 
   IS 
   LET
-  BOOL INT FLOAT STRING NONNULL THIS ARRAYKEY NUM
+  BOOL INT FLOAT STRING THIS ARRAYKEY NUM
 
   // WHILE DO FOR FOREACH BREAK CONTINUE SWITCH CASE DEFAULT EXIT
   // PROTECTED NEWTYPE ENUM SHAPE 
@@ -780,10 +780,6 @@ simple_ty_expr: (* Ty.t * Span.t *)
   | span=NUM {
      let prov = Prov.witness span in 
      Ty.num prov , span
-  } 
-  | span=NONNULL {
-     let prov = Prov.witness span in 
-     Ty.string prov , span
   } 
   | span=THIS{
      let prov = Prov.witness span in 

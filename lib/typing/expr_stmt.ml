@@ -198,7 +198,25 @@ end
 and Binary : sig
   val synth : Lang.Binary.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let synth_logical (lhs, rhs, op, span) ~def_ctxt ~cont_ctxt =
+  let synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt =
+    let prov = Prov.witness span in
+    let ty_bool = Ty.bool prov in
+    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
+    let _, expr_delta_rhs = Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
+    let expr_delta =
+      let bindings =
+        Option.merge
+          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
+          expr_delta_lhs.bindings
+          expr_delta_rhs.bindings
+      in
+      let rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.join ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts in
+      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
+    in
+    ty_bool, expr_delta
+  ;;
+
+  let synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt =
     (* TODO(mjt): logical op witness *)
     let prov = Prov.witness span in
     let ty_bool = Ty.bool prov in
@@ -215,13 +233,7 @@ end = struct
           expr_delta_lhs.bindings
           expr_delta_rhs.bindings
       in
-      let rfmts =
-        match op with
-        | Lang.Binop.Logical.And ->
-          Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts
-        | Lang.Binop.Logical.Or ->
-          Option.merge ~f:(Ctxt.Cont.Refinements.join ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts
-      in
+      let rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts in
       Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
     in
     ty_bool, expr_delta
@@ -229,7 +241,8 @@ end = struct
 
   let synth (Lang.Binary.{ lhs; rhs; binop }, span) ~def_ctxt ~cont_ctxt =
     match binop with
-    | Lang.Binop.Logical op -> synth_logical (lhs, rhs, op, span) ~def_ctxt ~cont_ctxt
+    | Lang.Binop.Logical And -> synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt
+    | Lang.Binop.Logical Or -> synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt
   ;;
 end
 

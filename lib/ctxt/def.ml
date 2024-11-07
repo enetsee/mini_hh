@@ -1,7 +1,7 @@
 module Minimal = struct
   type t =
-    { classish : Classish.t option
-    ; fns : Fn.t list
+    { classish : Classish_def.t option
+    ; fns : Fn_def.t list
     }
 
   let pp ppf t =
@@ -9,8 +9,9 @@ module Minimal = struct
       vbox
       @@ record
            ~sep:cut
-           [ field "classish definition" (fun { classish; _ } -> classish) @@ option ~none:(any "(none)") Classish.pp
-           ; field "function definitions" (fun { fns; _ } -> fns) @@ list ~sep:cut Fn.pp
+           [ field "classish definition" (fun { classish; _ } -> classish)
+             @@ option ~none:(any "(none)") Classish_def.pp
+           ; field "function definitions" (fun { fns; _ } -> fns) @@ list ~sep:cut Fn_def.pp
            ])
       ppf
       t
@@ -21,8 +22,8 @@ include Minimal
 include Pretty.Make (Minimal)
 
 let empty = { classish = None; fns = [] }
-let enter_classish t name = { t with classish = Some (Classish.create ~name ()) }
-let enter_fn t ~name ~return = { t with fns = Fn.create ~name ~return () :: t.fns }
+let enter_classish t name = { t with classish = Some (Classish_def.create ~name ()) }
+let enter_fn t ~name ~return = { t with fns = Fn_def.create ~name ~return () :: t.fns }
 
 let exit_fn t =
   match t.fns with
@@ -32,6 +33,6 @@ let exit_fn t =
 
 let ask_return_ty { fns; _ } =
   match fns with
-  | fn :: _ -> Some (Fn.return fn)
+  | fn :: _ -> Some (Fn_def.return fn)
   | _ -> None
 ;;

@@ -1,7 +1,7 @@
 open Core
 module Local = Local
-module Classish = Classish
-module Fn = Fn
+module Classish_def = Classish_def
+module Fn_def = Fn_def
 module Def = Def
 module Cont = Cont
 module Ty_param = Ty_param

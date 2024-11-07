@@ -377,7 +377,6 @@ let rec render_ty t =
   let open Ty.Node in
   match t.Ty.node with
   | Base base -> render_base base
-  | Nonnull -> Lwd.pure @@ W.string ~attr:Attr.(fg blue) "nonnull"
   | Generic name -> Lwd.pure @@ W.string ~attr:Attr.(fg green ++ st italic) @@ Name.Ty_param.to_string name
   | Tuple tuple -> render_tuple tuple
   | Fn fn -> render_fn fn
@@ -652,10 +651,22 @@ let render_ty_param_ctxt (ty_params : Ctxt.Ty_param.t) (ty_param_rfmts : Ctxt.Ty
   W.scrollbox @@ W.grid ~h_space:1 ~headers data
 ;;
 
-let render_continuation_context ctxt_cont_opt =
-  match ctxt_cont_opt with
-  | Some ctxt_cont ->
-    Tabs.view
+let render_classish_ctxt ctxt = Lwd.pure @@ W.string @@ Ctxt.Classish_def.show ctxt
+let render_fn_ctxt ctxt = Lwd.pure @@ W.string @@ Ctxt.Fn_def.show ctxt
+
+let render_def_ctxt (ctxt_def : Ctxt.Def.t) =
+  let Ctxt.Def.{ classish; fns } = ctxt_def in
+  match classish, fns with
+  | None, [] -> W.empty_lwd
+  | None, fn_ctxt :: _ -> render_fn_ctxt fn_ctxt
+  | Some classish, [] -> render_classish_ctxt classish
+  | Some classish, fn_ctxt :: _ -> W.vbox [ render_classish_ctxt classish; render_fn_ctxt fn_ctxt ]
+;;
+
+let render_continuation_context ctxt_cont_opt ctxt_def_opt =
+  let cont =
+    match ctxt_cont_opt with
+    | Some ctxt_cont ->
       [ ( "local context"
         , fun _ ->
             render_local_ctxt ctxt_cont.Ctxt.Cont.bindings.local
@@ -667,7 +678,15 @@ let render_continuation_context ctxt_cont_opt =
             @@ List.filter_map ctxt_cont.Ctxt.Cont.rfmtss ~f:(fun rfmt_opt ->
               Option.map rfmt_opt ~f:(fun rfmt -> rfmt.Ctxt.Cont.Refinements.ty_param)) )
       ]
-  | _ -> W.empty_lwd
+    | _ -> []
+  in
+  let def =
+    Option.value_map ctxt_def_opt ~default:[] ~f:(fun ctxt_def ->
+      [ ("definition context", fun _ -> render_def_ctxt ctxt_def) ])
+  in
+  match cont @ def with
+  | [] -> W.empty_lwd
+  | uis -> Tabs.view uis
 ;;
 
 (* ~~ Render expression typing delta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -947,7 +966,7 @@ let start file =
             (Lwd.bind (Lwd.map ~f:(Option.map ~f:Typing.Eff.Debug.Step.state) @@ Lwd.get st_step) ~f:render_state))
          (W.hbox
             [ W.h_pane
-                (Lwd.bind (Lwd.get st_ctxt_cont) ~f:render_continuation_context)
+                (Lwd.join @@ Lwd.map2 (Lwd.get st_ctxt_cont) (Lwd.get st_ctxt_def) ~f:render_continuation_context)
                 (W.vbox
                    [ pad ~left:1 ~bottom:1 nav
                    ; pad ~left:1

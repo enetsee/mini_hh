@@ -68,7 +68,10 @@ let run comp oracle =
   and errs = ref []
   and warns = ref [] in
   let _ : unit =
-    run_typing (fun () -> Refinement.Eff.run (fun () -> Exposure.Eff.run comp oracle) 0 oracle) (tys, errs, warns)
+    run_typing
+      (fun () ->
+        Subtyping.Eff.run (fun () -> Refinement.Eff.run (fun () -> Exposure.Eff.run comp oracle) 0 oracle) oracle)
+      (tys, errs, warns)
   in
   !tys, !errs, !warns
 ;;
@@ -456,10 +459,14 @@ module Debug = struct
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.requested_fresh_ty_params ~n ~k)
               | Exposure.Eff.Ask_ctor name ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ctor ~name ~k)
+              | Subtyping.Eff.Ask_up { of_; at } ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
               | Exposure.Eff.Ask_up { of_; at } ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
               | Refinement.Eff.Ask_up { of_; at } ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_up ~of_ ~at ~k)
+              | Subtyping.Eff.Ask_ty_param_variances ctor ->
+                Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ty_param_variances ~ctor ~k)
               | Refinement.Eff.Ask_ty_param_variances ctor ->
                 Some (fun (k : (a, _) Effect.Deep.continuation) -> Status.asked_ty_param_variances ~ctor ~k)
               | _ -> None)

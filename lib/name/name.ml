@@ -2,7 +2,7 @@ open Core
 
 module Ctor = struct
   module Minimal = struct
-    type t = Ctor of string [@@deriving compare, equal, sexp] [@@ocaml.unboxed]
+    type t = Ctor of string [@@deriving compare, equal, sexp, yojson] [@@ocaml.unboxed]
 
     let pp ppf (Ctor name) = Fmt.(string) ppf name
   end
@@ -22,7 +22,7 @@ end
 
 module Fn = struct
   module Minimal = struct
-    type t = Fn of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+    type t = Fn of string [@@deriving compare, equal, sexp, show, yojson] [@@ocaml.unboxed]
 
     let pp ppf (Fn name) = Fmt.string ppf name
   end
@@ -34,7 +34,7 @@ module Fn = struct
 end
 
 module Member = struct
-  type t = Member of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+  type t = Member of string [@@deriving compare, equal, sexp, show, yojson] [@@ocaml.unboxed]
 
   let of_string nm = Member nm
 end
@@ -44,7 +44,7 @@ module Ty_param = struct
     type t =
       | This
       | Ty_param of string
-    [@@deriving compare, equal, sexp]
+    [@@deriving compare, equal, sexp, yojson]
 
     let from_ctor_name ctor_name =
       let nm = Ctor.to_string ctor_name in
@@ -79,7 +79,7 @@ end
 
 module Tm_var = struct
   module Minimal = struct
-    type t = Tm_var of string [@@deriving compare, equal, sexp, show] [@@ocaml.unboxed]
+    type t = Tm_var of string [@@deriving compare, equal, sexp, show, yojson] [@@ocaml.unboxed]
 
     let pp ppf (Tm_var name) = Fmt.string ppf name
   end

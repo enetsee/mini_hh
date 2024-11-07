@@ -116,7 +116,6 @@ rule token = parse
   | "string"                { STRING (current_loc lexbuf) }
   | "arraykey"              { ARRAYKEY (current_loc lexbuf) }
   | "num"                   { NUM (current_loc lexbuf) }
-  | "nonnull"               { NONNULL (current_loc lexbuf) }
   | "this"                  { THIS (current_loc lexbuf) }
 
  (* ~~ Symbols & punctuation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

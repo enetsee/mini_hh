@@ -67,7 +67,7 @@ let promote_generic (prov, generic) ty_params ~dir =
 let rec promote_help ty ty_params ~dir =
   let Ty.{ node; prov } = ty in
   match node with
-  | Ty.Node.(Base _ | Nonnull) -> Ok ty
+  | Ty.Node.Base _ -> Ok ty
   | Ty.Node.Generic generic ->
     (* TODO(mjt) is this right? *)
     promote_generic (prov, generic) ty_params ~dir
