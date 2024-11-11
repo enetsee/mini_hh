@@ -29,7 +29,12 @@ interface IntfZ {}
 
 class Blah {}
 
-function foo(Blah $x): void {
+function foo(Blah $z): void {
+  $a = 1;
+  $b = 'a';
+  $c = false;
+  // ...
+  $y = 1.0;
   if ($x is IntfA) {
   } else if ($x is IntfB) {
   } else if ($x is IntfC) {

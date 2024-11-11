@@ -7,6 +7,7 @@ module Action = struct
     | Toggle_breakpoint of int
     | Next
     | Prev
+    | Run
 end
 
 module File_ok = struct
@@ -57,6 +58,20 @@ module Debugging = struct
   let next ({ history; _ } as t) =
     Option.value_map ~default:t ~f:(fun history -> { t with history })
     @@ History.next history ~oracle:t.file.oracle
+  ;;
+
+  let run { history; file } =
+    let breakpoints = file.breakpoints in
+    let rec aux history =
+      match History.next history ~oracle:file.oracle with
+      | None -> { history; file }
+      | Some history ->
+        let line =
+          1 + (Reporting.Span.start_line @@ Step.span @@ History.current history)
+        in
+        if Set.mem breakpoints line then { history; file } else aux history
+    in
+    aux history
   ;;
 
   let prev ({ history; _ } as t) =
@@ -130,6 +145,8 @@ let update t ~action =
   | Action.Next, (Init _ | File_ok _ | File_error _) -> t
   | Action.Prev, Debugging debugging -> Debugging (Debugging.prev debugging)
   | Action.Prev, (Init _ | File_ok _ | File_error _) -> t
+  | Action.Run, Debugging debugging -> Debugging (Debugging.run debugging)
+  | Action.Run, (Init _ | File_ok _ | File_error _) -> t
 ;;
 
 let state = function

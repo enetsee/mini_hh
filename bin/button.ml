@@ -44,8 +44,8 @@ let view_string ?(attr = Attr.empty) label ~on_click ~enabled ~breakpoint =
     Ui.atom
     @@
     if breakpoint
-    then Notty.I.string Attr.(attr ++ fg red) "■"
-    else Notty.I.string attr " "
+    then Notty.I.string Attr.(attr ++ fg red) "■ "
+    else Notty.I.string attr "  "
   and ui_label = Ui.atom @@ Notty.I.string attr label in
   Ui.mouse_area handler (Ui.hcat [ ui_break; ui_label ])
 ;;
