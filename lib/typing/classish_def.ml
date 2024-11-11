@@ -65,15 +65,16 @@ let this_bounds classish_def =
     Ty.Param_bounds.create ~upper ~lower ()
 ;;
 
-let synth Located.{ elem = classish_def; span } ~def_ctxt ~cont_ctxt =
+let synth classish_def ~def_ctxt ~cont_ctxt =
   (* TODO(mjt) Type parameter bounds checks, type const checks, method override checks property typing *)
-  let Lang.Classish_def.{ name; ty_params; methods; _ } = classish_def in
-  let def_ctxt, cont_ctxt = Eff.log_enter_classish_def span name.elem def_ctxt cont_ctxt in
+  let Located.{ elem = Lang.Classish_def.{ name; ty_params; methods; _ }; span }, def_ctxt, cont_ctxt =
+    Eff.log_enter_classish_def classish_def def_ctxt cont_ctxt
+  in
   let def_ctxt = Ctxt.Def.enter_classish def_ctxt name in
   let cont_ctxt =
     let ty_param =
       let this_ty_param =
-        let param_bounds = this_bounds classish_def in
+        let param_bounds = this_bounds classish_def.elem in
         let name = Located.create ~elem:Name.Ty_param.this ~span:(Located.span_of name) () in
         Ty.Param.create ~name ~param_bounds ()
       in

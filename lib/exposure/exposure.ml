@@ -3,6 +3,7 @@ open Common
 open Lang
 module Err = Err
 module Eff = Eff
+module Dir = Dir
 
 exception Exposure of Err.t list
 
@@ -41,73 +42,74 @@ let collect_tuple3 (res1, res2, res3) =
   | Error err, _, _ | _, Error err, _ | _, _, Error err -> Error err
 ;;
 
-(* ~~ Record the direction  (promotion / demotion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-type dir =
-  | Up
-  | Down
-
-let flip = function
-  | Up -> Down
-  | Down -> Up
-;;
-
-let is_up = function
-  | Up -> true
-  | _ -> false
-;;
-
 (* ~~ Implementation  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-let promote_generic (prov, generic) ty_params ~dir =
-  match Ctxt.Ty_param.find ty_params generic, dir with
-  | None, _ -> Ok (Ty.generic prov generic)
-  | Some Ty.Param_bounds.{ upper; _ }, Up -> Ok upper
-  | Some Ty.Param_bounds.{ lower; _ }, Down -> Ok lower
+let promote_generic prov name ty_params ~dir =
+  let prov, name, ty_params, dir = Eff.log_enter_generic prov name ty_params dir in
+  Eff.log_exit_generic
+  @@
+  match Ctxt.Ty_param.find ty_params name, dir with
+  | None, _ -> Error Err.(Set.singleton @@ unbound_ty_param name prov)
+  | Some Ty.Param_bounds.{ upper; _ }, Dir.Up -> Ok upper
+  | Some Ty.Param_bounds.{ lower; _ }, Dir.Down -> Ok lower
 ;;
 
-let rec promote_help ty ty_params ~dir =
+let rec promote_ty ty ty_params ~dir =
+  let ty, ty_params, dir = Eff.log_enter_ty ty ty_params dir in
   let Ty.{ node; prov } = ty in
+  Eff.log_exit_ty
+  @@
   match node with
   | Ty.Node.Base _ -> Ok ty
   | Ty.Node.Generic generic ->
     (* TODO(mjt) is this right? *)
-    promote_generic (prov, generic) ty_params ~dir
-  | Ty.Node.Fn fn ->
-    Result.map ~f:(fun fn ->
-      let node = Ty.Node.Fn fn in
-      Ty.{ prov; node })
-    @@ promote_fn fn ty_params ~dir
-  | Ty.Node.Tuple tuple ->
-    Result.map ~f:(fun tuple ->
-      let node = Ty.Node.Tuple tuple in
-      Ty.{ prov; node })
-    @@ promote_tuple tuple ty_params ~dir
-  | Ty.Node.Ctor ctor -> promote_ctor (prov, ctor) ty_params ~dir
-  | Ty.Node.Exists exists ->
-    Result.map ~f:(fun exists ->
-      let node = Ty.Node.Exists exists in
-      Ty.{ prov; node })
-    @@ promote_exists exists ty_params ~dir
-  | Ty.Node.Union union -> Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promotes union ty_params ~dir
-  | Ty.Node.Inter inter -> Result.map ~f:(fun elems -> Ty.inter ~prov elems) @@ promotes inter ty_params ~dir
+    promote_generic prov generic ty_params ~dir
+  | Ty.Node.Fn fn -> promote_fn prov fn ty_params ~dir
+  | Ty.Node.Tuple tuple -> promote_tuple prov tuple ty_params ~dir
+  | Ty.Node.Ctor ctor -> promote_ctor prov ctor ty_params ~dir
+  | Ty.Node.Exists exists -> promote_exists prov exists ty_params ~dir
+  | Ty.Node.Union union -> promote_union prov union ty_params ~dir
+  | Ty.Node.Inter inter -> promote_inter prov inter ty_params ~dir
 
-and promotes tys ty_params ~dir = collect_list @@ List.map tys ~f:(fun ty -> promote_help ty ty_params ~dir)
+and promote_tys tys ty_params ~dir = collect_list @@ List.map tys ~f:(fun ty -> promote_ty ty ty_params ~dir)
 
-and promote_opt ty_opt ty_params ~dir =
-  match ty_opt with
-  | None -> Ok None
-  | Some ty -> Result.map ~f:(fun ty -> Some ty) @@ promote_help ty ty_params ~dir
+and promote_ty_opt ty_opt ty_params ~dir =
+  Option.value_map ty_opt ~default:(Ok None) ~f:(fun ty ->
+    Result.map ~f:(fun ty -> Some ty) @@ promote_ty ty ty_params ~dir)
 
-and promote_fn Ty.Fn.{ params; return } ty_params ~dir =
-  Result.map ~f:(fun (params, return) -> Ty.Fn.{ params; return })
-  @@ collect_tuple2 (promote_tuple params ty_params ~dir:(flip dir), promote_help return ty_params ~dir)
+and promote_union prov tys ty_params ~dir =
+  let prov, tys, ty_params, dir = Eff.log_enter_union prov tys ty_params dir in
+  Eff.log_exit_union @@ Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promote_tys tys ty_params ~dir
 
-and promote_tuple Ty.Tuple.{ required; optional; variadic } ty_params ~dir =
+and promote_inter prov tys ty_params ~dir =
+  let prov, tys, ty_params, dir = Eff.log_enter_inter prov tys ty_params dir in
+  Eff.log_exit_inter @@ Result.map ~f:(fun elems -> Ty.union ~prov elems) @@ promote_tys tys ty_params ~dir
+
+and promote_fn prov fn ty_params ~dir =
+  let prov, Ty.Fn.{ params; return }, ty_params, dir = Eff.log_enter_fn prov fn ty_params dir in
+  Eff.log_exit_fn
+  @@ Result.map ~f:(fun (params, return) ->
+    let fn = Ty.Fn.create ~params ~return () in
+    let node = Ty.Node.Fn fn in
+    Ty.create ~node ~prov ())
+  @@ collect_tuple2 (promote_tuple_help params ty_params ~dir:(Dir.flip dir), promote_ty return ty_params ~dir)
+
+and promote_tuple prov tuple ty_params ~dir =
+  let prov, tuple, ty_params, dir = Eff.log_enter_tuple prov tuple ty_params dir in
+  Eff.log_exit_tuple
+  @@ Result.map ~f:(fun tuple ->
+    let node = Ty.Node.Tuple tuple in
+    Ty.create ~prov ~node ())
+  @@ promote_tuple_help tuple ty_params ~dir
+
+and promote_tuple_help Ty.Tuple.{ required; optional; variadic } ty_params ~dir =
   Result.map ~f:(fun (required, optional, variadic) -> Ty.Tuple.{ required; optional; variadic })
   @@ collect_tuple3
-       (promotes required ty_params ~dir, promotes optional ty_params ~dir, promote_opt variadic ty_params ~dir)
+       (promote_tys required ty_params ~dir, promote_tys optional ty_params ~dir, promote_ty_opt variadic ty_params ~dir)
 
-and promote_ctor (prov, ctor) ty_params ~dir =
-  let Ty.Ctor.{ name; args } = ctor in
+and promote_ctor prov ctor ty_params ~dir =
+  let prov, Ty.Ctor.{ name; args }, ty_params, dir = Eff.log_enter_ctor prov ctor ty_params dir in
+  Eff.log_exit_ctor
+  @@
   match Eff.ask_ctor name with
   | Some (params, supers) ->
     let invariant_params =
@@ -122,9 +124,9 @@ and promote_ctor (prov, ctor) ty_params ~dir =
       @@ List.map2_exn args params ~f:(fun ty Ty_param_def.{ variance; _ } ->
         match variance.elem with
         | Variance.Inv -> failwith "impossible"
-        | Variance.Cov -> promote_help ty ty_params ~dir
-        | Variance.Contrav -> promote_help ty ty_params ~dir:(flip dir))
-    else if is_up dir
+        | Variance.Cov -> promote_ty ty ty_params ~dir
+        | Variance.Contrav -> promote_ty ty ty_params ~dir:(Dir.flip dir))
+    else if Dir.is_up dir
     then
       (* We have at least one invariant parameter so there is no least supertype at the current class. Find the current
          class at each supertype, promote and take the intersection. If there are no supertypes, or no supertypes
@@ -132,7 +134,7 @@ and promote_ctor (prov, ctor) ty_params ~dir =
          going in *)
       Result.map ~f:(fun supers -> Ty.inter ~prov supers)
       @@ collect_list
-      @@ List.map ~f:(fun ctor -> promote_ctor (prov, ctor) ty_params ~dir)
+      @@ List.map ~f:(fun ctor -> promote_ctor prov ctor ty_params ~dir)
       @@ List.filter_map ~f:(fun at ->
         let up_args_opt = Eff.ask_up ~of_:ctor ~at in
         Option.map up_args_opt ~f:(fun args -> Ty.Ctor.{ name = at; args }))
@@ -143,16 +145,21 @@ and promote_ctor (prov, ctor) ty_params ~dir =
       Ok Ty.(nothing prov)
   | _ -> Error Err.(Set.singleton @@ unbound_ctor name prov)
 
-and promote_exists exists ty_params ~dir =
+and promote_exists prov exists ty_params ~dir =
   (* We don't need to worry about the quantifiers here since we won't be promoting them in the body
      TODO(mjt) -does this make sense? *)
-  let Ty.Exists.{ body; quants } = exists in
-  Result.map ~f:(fun body -> Ty.Exists.create ~quants ~body ()) @@ promote_help body ty_params ~dir
+  let prov, Ty.Exists.{ body; quants }, ty_params, dir = Eff.log_enter_exists prov exists ty_params dir in
+  Eff.log_exit_exists
+  @@ Result.map ~f:(fun body ->
+    let exists = Ty.Exists.create ~quants ~body () in
+    let node = Ty.Node.Exists exists in
+    Ty.{ prov; node })
+  @@ promote_ty body ty_params ~dir
 ;;
 
 (* ~~ API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-let promote ty ty_params = Result.map_error ~f:Set.to_list @@ promote_help ty ty_params ~dir:Up
+let promote ty ty_params = Result.map_error ~f:Set.to_list @@ promote_ty ty ty_params ~dir:Up
 
 let promote_exn ty ty_params =
   match promote ty ty_params with
@@ -161,7 +168,7 @@ let promote_exn ty ty_params =
 ;;
 
 (** Demote a type [ty] by finding its greatest subtype not containing any type parameter mentioned in [ty_params] *)
-let demote ty ty_params = promote_help ty ty_params ~dir:Down
+let demote ty ty_params = promote_ty ty ty_params ~dir:Down
 
 let demote_exn ty ty_params =
   match demote ty ty_params with
@@ -169,17 +176,22 @@ let demote_exn ty ty_params =
   | Error err -> raise (Exposure (Set.to_list err))
 ;;
 
-let promote_cont_delta Ctxt.Cont.Delta.({ bindings; _ } as delta) =
+let promote_cont_delta delta =
+  let Ctxt.Cont.Delta.({ bindings; _ } as delta) = Eff.log_enter_cont_delta delta in
   let local, ty_param =
     match bindings with
     | Some Ctxt.Cont.Bindings.{ local; ty_param } -> Some local, Some ty_param
     | _ -> None, None
   in
-  Option.value ~default:delta
+  Eff.log_exit_cont_delta
+  @@ Option.value ~default:delta
   @@ Option.map2 local ty_param ~f:(fun local ty_param ->
     let local = Ctxt.Local.transform local ~f:(fun ty -> promote_exn ty ty_param) in
     let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param:Ctxt.Ty_param.empty () in
     Ctxt.Cont.Delta.create ~bindings ())
 ;;
 
-let promote_delta delta = Ctxt.Delta.lift delta ~f:promote_cont_delta
+let promote_delta delta =
+  let delta = Eff.log_enter_delta delta in
+  Eff.log_exit_delta @@ Ctxt.Delta.lift delta ~f:promote_cont_delta
+;;

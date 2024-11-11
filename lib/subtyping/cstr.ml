@@ -5,7 +5,10 @@ module Is_subtype = struct
     }
   [@@deriving compare, create, eq, sexp]
 
-  let pp ppf { ty_sub; ty_super } = Fmt.(hovbox @@ pair ~sep:(any " <: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)
+  let pp ppf { ty_sub; ty_super } =
+    Fmt.(hovbox @@ pair ~sep:(any " <: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)
+  ;;
+
   let show t = Fmt.to_to_string pp t
 end
 
@@ -16,4 +19,7 @@ let pp ppf = function
 ;;
 
 let show t = Fmt.to_to_string pp t
-let is_subtype ~ty_sub ~ty_super = is_subtype @@ Is_subtype.create ~ty_sub ~ty_super ()
+
+let is_subtype ~ty_sub ~ty_super =
+  is_subtype @@ Is_subtype.create ~ty_sub ~ty_super ()
+;;

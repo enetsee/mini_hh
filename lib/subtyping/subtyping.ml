@@ -8,12 +8,18 @@ module Eff = Eff
 
 module Eager_leftmost_dfs = struct
   let rec tell_prop prop ~ctxt =
+    let prop, ctxt = Eff.log_enter_tell_prop prop ctxt in
+    Eff.log_exit_tell_prop
+    @@
     match prop with
     | Prop.Atom cstr -> tell_cstr cstr ~ctxt
     | Prop.Disj props -> tell_any props ~errs:[] ~ctxt
     | Prop.Conj props -> tell_all props ~errs:[] ~ctxt
 
   and tell_cstr cstr ~ctxt =
+    let cstr, ctxt = Eff.log_enter_tell_cstr cstr ctxt in
+    Eff.log_exit_tell_cstr
+    @@
     match cstr with
     | Cstr.Is_subtype { ty_sub; ty_super } ->
       (match Is_subtype.step ~ty_sub ~ty_super ~ctxt_cont:ctxt with
@@ -21,6 +27,9 @@ module Eager_leftmost_dfs = struct
        | Error err -> Some err)
 
   and tell_all props ~errs ~ctxt =
+    let props, errs, ctxt = Eff.log_enter_tell_all props errs ctxt in
+    Eff.log_exit_tell_all
+    @@
     match props with
     | [] when List.is_empty errs -> None
     | [] -> Some (Err.conj errs)
@@ -33,6 +42,9 @@ module Eager_leftmost_dfs = struct
       tell_all rest ~errs ~ctxt
 
   and tell_any props ~errs ~ctxt =
+    let props, errs, ctxt = Eff.log_enter_tell_any props errs ctxt in
+    Eff.log_exit_tell_any
+    @@
     match props with
     | [] -> Some (Err.disj errs)
     | next :: rest ->

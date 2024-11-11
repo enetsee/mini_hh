@@ -11,8 +11,8 @@ module rec Expr : sig
     -> cont_ctxt:Ctxt.Cont.t
     -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
-  let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
-    let def_ctxt, cont_ctxt = Eff.log_enter_expr span def_ctxt cont_ctxt in
+  let synth expr ~def_ctxt ~cont_ctxt =
+    let Located.{ elem; span }, def_ctxt, cont_ctxt = Eff.log_enter_synth_expr expr def_ctxt cont_ctxt in
     let open Lang.Expr_node in
     Eff.log_exit_expr span
     @@
@@ -46,10 +46,11 @@ end = struct
   ;;
 
   let check expr ~against ~def_ctxt ~cont_ctxt =
+    let expr, against, def_ctxt, cont_ctxt = Eff.log_enter_check_expr expr against def_ctxt cont_ctxt in
     let ty, refn = synth expr ~def_ctxt ~cont_ctxt in
     let subty_err_opt = Subtyping.Tell.is_subtype ~ty_sub:ty ~ty_super:against ~ctxt:cont_ctxt in
     let _ : unit = Option.iter subty_err_opt ~f:(fun err -> Eff.log_error (Err.subtyping err)) in
-    ty, refn
+    Eff.log_exit_expr expr.span (ty, refn)
   ;;
 end
 
@@ -250,8 +251,8 @@ end
 and Stmt : sig
   val synth : Lang.Stmt.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
 end = struct
-  let synth Located.{ elem; span } ~def_ctxt ~cont_ctxt =
-    let def_ctxt, cont_ctxt = Eff.log_enter_stmt span def_ctxt cont_ctxt in
+  let synth stmt ~def_ctxt ~cont_ctxt =
+    let Located.{ elem; span }, def_ctxt, cont_ctxt = Eff.log_enter_stmt stmt def_ctxt cont_ctxt in
     Eff.log_exit_stmt span
     @@
     let open Lang.Stmt_node in

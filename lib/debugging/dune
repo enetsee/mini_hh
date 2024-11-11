@@ -1,0 +1,26 @@
+(library
+ (name debugging)
+ (libraries
+  core
+  fmt
+  pretty
+  name
+  reporting
+  ty
+  ctxt
+  lang
+  source
+  oracle
+  typing
+  subtyping
+  refinement
+  exposure)
+ (inline_tests)
+ (preprocess
+  (pps
+   ppx_jane
+   ppx_deriving.map
+   ppx_deriving.eq
+   ppx_deriving.fold
+   ppx_deriving.create
+   ppx_deriving.show)))

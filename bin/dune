@@ -14,13 +14,8 @@
   lang
   ty
   common
-  typing))
-
-; common
-; name
-; source
-; lang
-; ty
-; ctxt
-; typing
-; oracle))
+  typing
+  subtyping
+  exposure
+  refinement
+  debugging))
