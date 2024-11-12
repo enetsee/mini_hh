@@ -2,7 +2,11 @@ open Core
 open Reporting
 
 module rec Expr : sig
-  val synth : Lang.Expr.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+  val synth
+    :  Lang.Expr.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
 
   val check
     :  Lang.Expr.t
@@ -12,7 +16,9 @@ module rec Expr : sig
     -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let synth expr ~def_ctxt ~cont_ctxt =
-    let Located.{ elem; span }, def_ctxt, cont_ctxt = Eff.log_enter_synth_expr expr def_ctxt cont_ctxt in
+    let Located.{ elem; span }, def_ctxt, cont_ctxt =
+      Eff.log_enter_synth_expr expr def_ctxt cont_ctxt
+    in
     let open Lang.Expr_node in
     Eff.log_exit_expr span
     @@
@@ -46,19 +52,32 @@ end = struct
   ;;
 
   let check expr ~against ~def_ctxt ~cont_ctxt =
-    let expr, against, def_ctxt, cont_ctxt = Eff.log_enter_check_expr expr against def_ctxt cont_ctxt in
+    let expr, against, def_ctxt, cont_ctxt =
+      Eff.log_enter_check_expr expr against def_ctxt cont_ctxt
+    in
     let ty, refn = synth expr ~def_ctxt ~cont_ctxt in
-    let subty_err_opt = Subtyping.Tell.is_subtype ~ty_sub:ty ~ty_super:against ~ctxt:cont_ctxt in
-    let _ : unit = Option.iter subty_err_opt ~f:(fun err -> Eff.log_error (Err.subtyping err)) in
+    let subty_err_opt =
+      Subtyping.Tell.is_subtype ~ty_sub:ty ~ty_super:against ~ctxt:cont_ctxt
+    in
+    let _ : unit =
+      Option.iter subty_err_opt ~f:(fun err ->
+        Eff.log_error (Err.subtyping err))
+    in
     Eff.log_exit_expr expr.span (ty, refn)
   ;;
 end
 
 and Is : sig
-  val synth : Lang.Is.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+  val synth
+    :  Lang.Is.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let refine_by expr_scrut ~ty_scrut ~ty_test cont_ctxt =
-    let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt in
+    let ty_refinement, ty_param_refinement_opt =
+      Refinement.refine ~ty_scrut ~ty_test ~ctxt:cont_ctxt
+    in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
       let local = Ctxt.Local.Refinement.singleton tm_var ty_refinement
@@ -88,7 +107,9 @@ end = struct
     let ty_scrut, expr_delta_scrut = Expr.synth scrut ~def_ctxt ~cont_ctxt in
     (* The refinements from typing from the scrutinee subexpression apply when typing the [is] expression to in the
        expression *)
-    let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
+    let cont_ctxt =
+      Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut
+    in
     (* Build the result is refinement and put it into a delta *)
     let expr_delta_is =
       let rfmts = refine_by scrut ~ty_scrut ~ty_test cont_ctxt in
@@ -111,7 +132,12 @@ end = struct
           ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
           expr_delta_scrut.bindings
           expr_delta_is.bindings
-      and rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_scrut.rfmts expr_delta_is.rfmts in
+      and rfmts =
+        Option.merge
+          ~f:(Ctxt.Cont.Refinements.meet ~prov)
+          expr_delta_scrut.rfmts
+          expr_delta_is.rfmts
+      in
       Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
     in
     ty, delta
@@ -119,44 +145,66 @@ end = struct
 end
 
 and As : sig
-  val synth : Lang.As.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+  val synth
+    :  Lang.As.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let refine_by expr_scrut prov ~ty_scrut ~ty_assert cont_ctxt =
-    let ty_refinement, ty_param_refinement_opt = Refinement.refine ~ty_scrut ~ty_test:ty_assert ~ctxt:cont_ctxt in
+    let ty_refinement, ty_param_refinement_opt =
+      Refinement.refine ~ty_scrut ~ty_test:ty_assert ~ctxt:cont_ctxt
+    in
     let ty = Ty.refine ty_scrut ~rfmt:ty_refinement in
     match Located.elem expr_scrut with
     | Lang.Expr_node.Local tm_var ->
       let local =
-        let tm_var = Located.create ~elem:tm_var ~span:(Located.span_of expr_scrut) () in
+        let tm_var =
+          Located.create ~elem:tm_var ~span:(Located.span_of expr_scrut) ()
+        in
         Ctxt.Local.singleton tm_var ty
       and ty_param =
-        Option.value_map ty_param_refinement_opt ~default:Ctxt.Ty_param.empty ~f:(fun (_, ty_param_rfmt) ->
-          match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
-          | `Bounds bounds ->
-            let ty_params =
-              List.map bounds ~f:(fun (name, delta) ->
-                let bounds = Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name in
-                name, Ty.Param_bounds.meet bounds delta ~prov)
-            in
-            Ctxt.Ty_param.of_alist ty_params
-          | `Top -> Ctxt.Ty_param.empty
-          | `Bottom -> failwith "[Typing.As] Encoutered bottom in type parameter refinement")
+        Option.value_map
+          ty_param_refinement_opt
+          ~default:Ctxt.Ty_param.empty
+          ~f:(fun (_, ty_param_rfmt) ->
+            match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
+            | `Bounds bounds ->
+              let ty_params =
+                List.map bounds ~f:(fun (name, delta) ->
+                  let bounds =
+                    Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name
+                  in
+                  name, Ty.Param_bounds.meet bounds delta ~prov)
+              in
+              Ctxt.Ty_param.of_alist ty_params
+            | `Top -> Ctxt.Ty_param.empty
+            | `Bottom ->
+              failwith
+                "[Typing.As] Encoutered bottom in type parameter refinement")
       in
       ty, Some (Ctxt.Cont.Bindings.create ~local ~ty_param ())
     | Lang.Expr_node.This ->
       let local = Ctxt.Local.empty
       and ty_param =
-        Option.value_map ty_param_refinement_opt ~default:Ctxt.Ty_param.empty ~f:(fun (_, ty_param_rfmt) ->
-          match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
-          | `Bounds bounds ->
-            let ty_params =
-              List.map bounds ~f:(fun (name, delta) ->
-                let bounds = Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name in
-                name, Ty.Param_bounds.meet bounds delta ~prov)
-            in
-            Ctxt.Ty_param.of_alist ty_params
-          | `Top -> Ctxt.Ty_param.empty
-          | `Bottom -> failwith "[Typing.As] Encoutered bottom in type parameter refinement")
+        Option.value_map
+          ty_param_refinement_opt
+          ~default:Ctxt.Ty_param.empty
+          ~f:(fun (_, ty_param_rfmt) ->
+            match Ctxt.Ty_param.Refinement.bindings ty_param_rfmt with
+            | `Bounds bounds ->
+              let ty_params =
+                List.map bounds ~f:(fun (name, delta) ->
+                  let bounds =
+                    Option.value_exn @@ Ctxt.Cont.ty_param_bounds cont_ctxt name
+                  in
+                  name, Ty.Param_bounds.meet bounds delta ~prov)
+              in
+              Ctxt.Ty_param.of_alist ty_params
+            | `Top -> Ctxt.Ty_param.empty
+            | `Bottom ->
+              failwith
+                "[Typing.As] Encoutered bottom in type parameter refinement")
       in
       ty, Some (Ctxt.Cont.Bindings.create ~local ~ty_param ())
     | _ -> ty, None
@@ -167,7 +215,9 @@ end = struct
     let ty_scrut, expr_delta_scrut = Expr.synth scrut ~def_ctxt ~cont_ctxt in
     (* The refinements from typing from the scrutinee subexpression apply when typing the [as] expression to in the
        expression *)
-    let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut in
+    let cont_ctxt =
+      Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_scrut
+    in
     let ty, expr_delta_as =
       let ty, bindings = refine_by scrut prov ~ty_scrut ~ty_assert cont_ctxt in
       ty, Ctxt.Cont.Expr_delta.create ?bindings ()
@@ -189,7 +239,12 @@ end = struct
           ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
           expr_delta_scrut.bindings
           expr_delta_as.bindings
-      and rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_scrut.rfmts expr_delta_as.rfmts in
+      and rfmts =
+        Option.merge
+          ~f:(Ctxt.Cont.Refinements.meet ~prov)
+          expr_delta_scrut.rfmts
+          expr_delta_as.rfmts
+      in
       Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
     in
     ty, delta
@@ -197,34 +252,19 @@ end = struct
 end
 
 and Binary : sig
-  val synth : Lang.Binary.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ty.t * Ctxt.Cont.Expr_delta.t
+  val synth
+    :  Lang.Binary.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
 end = struct
   let synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt =
     let prov = Prov.witness span in
     let ty_bool = Ty.bool prov in
-    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
-    let _, expr_delta_rhs = Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
-    let expr_delta =
-      let bindings =
-        Option.merge
-          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
-          expr_delta_lhs.bindings
-          expr_delta_rhs.bindings
-      in
-      let rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.join ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts in
-      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
+    let _, expr_delta_lhs =
+      Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt
     in
-    ty_bool, expr_delta
-  ;;
-
-  let synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt =
-    (* TODO(mjt): logical op witness *)
-    let prov = Prov.witness span in
-    let ty_bool = Ty.bool prov in
-    let _, expr_delta_lhs = Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt in
     let _, expr_delta_rhs =
-      (* Refinements and bindings from the lhs should be applied in the rhs *)
-      let cont_ctxt = Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_lhs in
       Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt
     in
     let expr_delta =
@@ -234,7 +274,44 @@ end = struct
           expr_delta_lhs.bindings
           expr_delta_rhs.bindings
       in
-      let rfmts = Option.merge ~f:(Ctxt.Cont.Refinements.meet ~prov) expr_delta_lhs.rfmts expr_delta_rhs.rfmts in
+      let rfmts =
+        Option.merge
+          ~f:(Ctxt.Cont.Refinements.join ~prov)
+          expr_delta_lhs.rfmts
+          expr_delta_rhs.rfmts
+      in
+      Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
+    in
+    ty_bool, expr_delta
+  ;;
+
+  let synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt =
+    (* TODO(mjt): logical op witness *)
+    let prov = Prov.witness span in
+    let ty_bool = Ty.bool prov in
+    let _, expr_delta_lhs =
+      Expr.check lhs ~against:ty_bool ~def_ctxt ~cont_ctxt
+    in
+    let _, expr_delta_rhs =
+      (* Refinements and bindings from the lhs should be applied in the rhs *)
+      let cont_ctxt =
+        Ctxt.Cont.update_expr cont_ctxt ~expr_delta:expr_delta_lhs
+      in
+      Expr.check rhs ~against:ty_bool ~def_ctxt ~cont_ctxt
+    in
+    let expr_delta =
+      let bindings =
+        Option.merge
+          ~f:(fun t with_ -> Ctxt.Cont.Bindings.extend t ~with_)
+          expr_delta_lhs.bindings
+          expr_delta_rhs.bindings
+      in
+      let rfmts =
+        Option.merge
+          ~f:(Ctxt.Cont.Refinements.meet ~prov)
+          expr_delta_lhs.rfmts
+          expr_delta_rhs.rfmts
+      in
       Ctxt.Cont.Expr_delta.create ?bindings ?rfmts ()
     in
     ty_bool, expr_delta
@@ -242,17 +319,25 @@ end = struct
 
   let synth (Lang.Binary.{ lhs; rhs; binop }, span) ~def_ctxt ~cont_ctxt =
     match binop with
-    | Lang.Binop.Logical And -> synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt
-    | Lang.Binop.Logical Or -> synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt
+    | Lang.Binop.Logical And ->
+      synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt
+    | Lang.Binop.Logical Or ->
+      synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt
   ;;
 end
 
 (* ~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Stmt : sig
-  val synth : Lang.Stmt.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+  val synth
+    :  Lang.Stmt.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ctxt.Delta.t
 end = struct
   let synth stmt ~def_ctxt ~cont_ctxt =
-    let Located.{ elem; span }, def_ctxt, cont_ctxt = Eff.log_enter_stmt stmt def_ctxt cont_ctxt in
+    let Located.{ elem; span }, def_ctxt, cont_ctxt =
+      Eff.log_enter_stmt stmt def_ctxt cont_ctxt
+    in
     Eff.log_exit_stmt span
     @@
     let open Lang.Stmt_node in
@@ -265,22 +350,34 @@ end = struct
       let expr_delta_opt =
         Option.bind expr_opt ~f:(fun expr ->
           match Ctxt.Def.ask_return_ty def_ctxt with
-          | Some ty_return -> Some (snd @@ Expr.check expr ~against:ty_return ~def_ctxt ~cont_ctxt)
+          | Some ty_return ->
+            Some (snd @@ Expr.check expr ~against:ty_return ~def_ctxt ~cont_ctxt)
           | _ ->
             (* Not in function context - raise an error *)
             None)
       in
-      let exit = Option.value_map ~default:Ctxt.Cont.Delta.empty ~f:Ctxt.Cont.Delta.of_expr_delta expr_delta_opt in
+      let exit =
+        Option.value_map
+          ~default:Ctxt.Cont.Delta.empty
+          ~f:Ctxt.Cont.Delta.of_expr_delta
+          expr_delta_opt
+      in
       Ctxt.Delta.create ~exit ()
-    | Assign assign_stmt -> Assign.synth (assign_stmt, span) ~def_ctxt ~cont_ctxt
+    | Assign assign_stmt ->
+      Assign.synth (assign_stmt, span) ~def_ctxt ~cont_ctxt
     | If if_stmt -> If.synth (if_stmt, span) ~def_ctxt ~cont_ctxt
     | Seq seq_stmt -> Seq.synth (seq_stmt, span) ~def_ctxt ~cont_ctxt
-    | Unpack unpack_stmt -> Unpack.synth (unpack_stmt, span) ~def_ctxt ~cont_ctxt
+    | Unpack unpack_stmt ->
+      Unpack.synth (unpack_stmt, span) ~def_ctxt ~cont_ctxt
   ;;
 end
 
 and Assign : sig
-  val synth : Lang.Assign.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+  val synth
+    :  Lang.Assign.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ctxt.Delta.t
 end = struct
   let synth_tm_var tm_var rhs ~def_ctxt ~cont_ctxt =
     let ty_rhs, expr_delta = Expr.synth rhs ~def_ctxt ~cont_ctxt in
@@ -289,14 +386,22 @@ end = struct
     let assign_delta =
       let local =
         let prov_lvalue = Prov.lvalue_tm_var @@ Located.span_of tm_var in
-        let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) ty_rhs in
+        let ty =
+          Ty.map_prov
+            ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue)
+            ty_rhs
+        in
         Ctxt.Local.singleton tm_var ty
       in
       let ty_param = Ctxt.Ty_param.empty in
       let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
       Ctxt.Cont.Delta.create ~bindings ()
     in
-    let delta = Ctxt.Cont.Delta.extend (Ctxt.Cont.Delta.of_expr_delta expr_delta) ~with_:assign_delta in
+    let delta =
+      Ctxt.Cont.Delta.extend
+        (Ctxt.Cont.Delta.of_expr_delta expr_delta)
+        ~with_:assign_delta
+    in
     Ctxt.Delta.create ~next:delta ()
   ;;
 
@@ -309,7 +414,11 @@ end = struct
 end
 
 and Unpack : sig
-  val synth : Lang.Unpack.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+  val synth
+    :  Lang.Unpack.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ctxt.Delta.t
 end = struct
   let get_bounds span quants names =
     let rec aux n_names quants names ~k =
@@ -339,7 +448,9 @@ end = struct
         in
         let ty_params =
           List.map rest ~f:(fun new_name ->
-            let param_bounds = Ty.Param_bounds.bottom (Prov.witness @@ Located.span_of new_name) in
+            let param_bounds =
+              Ty.Param_bounds.bottom (Prov.witness @@ Located.span_of new_name)
+            in
             Ty.Param.create ~name:new_name ~param_bounds ())
         in
         k (ty_params, Name.Ty_param.Map.empty)
@@ -370,7 +481,8 @@ end = struct
         let bounds, subst = get_bounds span quants ty_params in
         ( bounds
         , Ty.(
-            map_prov ~f:(fun prov_unpacked -> Prov.unpack ~prov_packed ~prov_unpacked)
+            map_prov ~f:(fun prov_unpacked ->
+              Prov.unpack ~prov_packed ~prov_unpacked)
             @@ apply_subst body ~subst ~combine_prov:(fun _ p -> p)) )
       | _ ->
         ( List.map ty_params ~f:(fun (Located.{ span; _ } as name) ->
@@ -384,20 +496,32 @@ end = struct
       let local =
         let span = Located.span_of tm_var in
         let prov_lvalue = Prov.lvalue_tm_var span in
-        let ty = Ty.map_prov ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue) body_ty in
+        let ty =
+          Ty.map_prov
+            ~f:(fun prov_rhs -> Prov.assign ~prov_rhs ~prov_lvalue)
+            body_ty
+        in
         Ctxt.Local.singleton tm_var ty
       in
       let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
       Ctxt.Cont.Delta.create ~bindings ()
     in
     (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression *)
-    let delta = Ctxt.Cont.Delta.extend (Ctxt.Cont.Delta.of_expr_delta expr_delta) ~with_:unpack_delta in
+    let delta =
+      Ctxt.Cont.Delta.extend
+        (Ctxt.Cont.Delta.of_expr_delta expr_delta)
+        ~with_:unpack_delta
+    in
     Ctxt.Delta.create ~next:delta ()
   ;;
 end
 
 and If : sig
-  val synth : Lang.If.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+  val synth
+    :  Lang.If.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ctxt.Delta.t
 end = struct
   let synth (Lang.If.{ cond; then_; else_ }, span) ~def_ctxt ~cont_ctxt =
     (* Check the condition expression against [bool] *)
@@ -429,7 +553,11 @@ end = struct
 end
 
 and Seq : sig
-  val synth : Lang.Seq.t * Span.t -> def_ctxt:Ctxt.Def.t -> cont_ctxt:Ctxt.Cont.t -> Ctxt.Delta.t
+  val synth
+    :  Lang.Seq.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ctxt.Delta.t
 end = struct
   let rec synth_help span_return span_all stmts ~def_ctxt ~acc_ctxt ~acc_delta =
     match stmts with
@@ -443,7 +571,13 @@ end = struct
             statement and any refinement made to a local or $this and any corresponding refinement to type parameters *)
          let acc_ctxt = Ctxt.update acc_ctxt ~delta
          and acc_delta = Ctxt.Delta.extend acc_delta ~with_:delta in
-         synth_help (Some (Located.span_of stmt)) span_all stmts ~def_ctxt ~acc_ctxt ~acc_delta
+         synth_help
+           (Some (Located.span_of stmt))
+           span_all
+           stmts
+           ~def_ctxt
+           ~acc_ctxt
+           ~acc_delta
        | None ->
          (* We don't have a next continuation which means the previous statment cause an [exit]. All subsequent
             statements are unreachable so we finish typing and raise a warning *)
