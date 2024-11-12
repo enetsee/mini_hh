@@ -31,6 +31,7 @@ let toggle_breakpoint line =
 ;;
 
 let run () = update @@ Debugging.Model.Action.Run
+let restart () = update @@ Debugging.Model.Action.Restart
 
 module Definitions = struct
   let def_to_string def =
@@ -58,7 +59,8 @@ let nav =
   Lwd.bind (Lwd.get model) ~f:(fun model ->
     let enabled = Debugging.Model.is_debugging model in
     W.hbox
-      [ Lwd.pure @@ Button.view ~label:"< step back" ~on_click:prev ~enabled
+      [ Lwd.pure @@ Button.view ~label:"<< restart" ~on_click:restart ~enabled
+      ; Lwd.pure @@ Button.view ~label:"< step back" ~on_click:prev ~enabled
       ; Lwd.pure @@ Button.view ~label:"step forward >" ~on_click:next ~enabled
       ; Lwd.pure @@ Button.view ~label:"run >>" ~on_click:run ~enabled
       ])

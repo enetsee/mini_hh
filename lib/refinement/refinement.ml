@@ -425,7 +425,7 @@ and refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt =
   Eff.log_exit_ctor
   @@
   match Eff.ask_up ~of_:ctor_test ~at:name_scrut with
-  | None ->
+  | Not_a_subclass ->
     (* The constructor in test position does not have the constructor in 
        scrutinee position as a superclass so we can't refine any type parameters. 
        It's still possible that this test will pass if there is a third class 
@@ -449,7 +449,7 @@ and refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt =
     let node = Ty.Node.Ctor ctor_test in
     let ty = Ty.create ~node ~prov:prov_test () in
     Intersect_with (prov, ty), None
-  | Some args_up ->
+  | Direct args_up | Transitive args_up ->
     (* The test type is a subtype of the scrutinee type and we now have the type
        arguments for the test constructor seen at its instantiation at the
        scrutinee so we can refine each argument

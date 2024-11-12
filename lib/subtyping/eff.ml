@@ -47,7 +47,7 @@ type ask_up =
   }
 
 type _ Effect.t +=
-  | Ask_up : ask_up -> Ty.t list option Effect.t
+  | Ask_up : ask_up -> Oracle.Classish.instantiation Effect.t
   | Ask_ty_param_variances :
       Name.Ctor.t
       -> Variance.t Located.t list option Effect.t
@@ -97,10 +97,10 @@ let run comp oracle =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
           | Ask_up { of_; at } ->
-            let ty_args_opt = Oracle.up oracle ~of_ ~at in
+            let inst = Oracle.up oracle ~of_ ~at in
             Some
               (fun (k : (a, _) Effect.Deep.continuation) ->
-                Effect.Deep.continue k ty_args_opt)
+                Effect.Deep.continue k inst)
           | Ask_ty_param_variances ctor ->
             let ty_param_vars_opt = Oracle.param_variances_opt oracle ~ctor in
             Some

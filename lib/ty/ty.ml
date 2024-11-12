@@ -55,9 +55,11 @@ end = struct
       | Ctor ctor -> Ctor.pp ppf ctor
       | Exists exists -> Exists.pp ppf exists
       | Union [] -> Fmt.any "nothing" ppf ()
-      | Union tys -> Fmt.(hovbox @@ parens @@ list ~sep:(any " | ") Annot.pp) ppf tys
+      | Union tys ->
+        Fmt.(hovbox @@ parens @@ list ~sep:(any " | ") Annot.pp) ppf tys
       | Inter [] -> Fmt.any "mixed" ppf ()
-      | Inter tys -> Fmt.(hovbox @@ parens @@ list ~sep:(any " & ") Annot.pp) ppf tys
+      | Inter tys ->
+        Fmt.(hovbox @@ parens @@ list ~sep:(any " & ") Annot.pp) ppf tys
     ;;
   end
 
@@ -90,7 +92,13 @@ and Annot : sig
   val id_ops : unit -> 'acc ops
   val map_prov : t -> f:(Prov.t -> Prov.t) -> t
   val with_prov : t -> Prov.t -> t
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
   val bool : Prov.t -> t
   val null : Prov.t -> t
@@ -98,8 +106,22 @@ and Annot : sig
   val float : Prov.t -> t
   val string : Prov.t -> t
   val generic : Prov.t -> Name.Ty_param.t -> t
-  val tuple : Prov.t -> required:t list -> optional:t list -> variadic:t option -> t
-  val fn : Prov.t -> required:t list -> optional:t list -> variadic:t option -> return:t -> t
+
+  val tuple
+    :  Prov.t
+    -> required:t list
+    -> optional:t list
+    -> variadic:t option
+    -> t
+
+  val fn
+    :  Prov.t
+    -> required:t list
+    -> optional:t list
+    -> variadic:t option
+    -> return:t
+    -> t
+
   val ctor : Prov.t -> name:Name.Ctor.t -> args:t list -> t
   val exists : Prov.t -> quants:Param.t list -> body:t -> t
   val union : t list -> prov:Prov.t -> t
@@ -112,7 +134,8 @@ and Annot : sig
   val this : Prov.t -> t
 end = struct
   type t =
-    { prov : Prov.t [@equal.opaque] [@compare.opaque] [@equal.ignore] [@compare.ignore]
+    { prov : Prov.t
+         [@equal.opaque] [@compare.opaque] [@equal.ignore] [@compare.ignore]
     ; node : Node.t
     }
   [@@deriving compare, create, equal, sexp]
@@ -174,10 +197,14 @@ end = struct
       let init = Exists.bottom_up exists ~ops ~init in
       ty_ops.on_exists init prov exists
     | Union ts ->
-      let init = List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init) in
+      let init =
+        List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init)
+      in
       ty_ops.on_union init prov ts
     | Inter ts ->
-      let init = List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init) in
+      let init =
+        List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init)
+      in
       ty_ops.on_inter init prov ts
   ;;
 
@@ -206,10 +233,14 @@ end = struct
       let node = Node.exists (Exists.apply_subst exists ~subst ~combine_prov) in
       { prov; node }
     | Union union ->
-      let node = Node.union (List.map ~f:(apply_subst ~subst ~combine_prov) union) in
+      let node =
+        Node.union (List.map ~f:(apply_subst ~subst ~combine_prov) union)
+      in
       { prov; node }
     | Inter inter ->
-      let node = Node.inter (List.map ~f:(apply_subst ~subst ~combine_prov) inter) in
+      let node =
+        Node.inter (List.map ~f:(apply_subst ~subst ~combine_prov) inter)
+      in
       { prov; node }
   ;;
 
@@ -238,10 +269,14 @@ end = struct
       let node = Node.exists (Exists.elab_to_generic exists ~bound_ty_params) in
       { prov; node }
     | Union union ->
-      let node = Node.union (List.map ~f:(elab_to_generic ~bound_ty_params) union) in
+      let node =
+        Node.union (List.map ~f:(elab_to_generic ~bound_ty_params) union)
+      in
       { prov; node }
     | Inter inter ->
-      let node = Node.inter (List.map ~f:(elab_to_generic ~bound_ty_params) inter) in
+      let node =
+        Node.inter (List.map ~f:(elab_to_generic ~bound_ty_params) inter)
+      in
       { prov; node }
   ;;
 
@@ -355,7 +390,13 @@ and Fn : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
@@ -365,7 +406,9 @@ end = struct
       }
     [@@deriving compare, create, equal, create, sexp]
 
-    let pp ppf { params; return } = Fmt.(hovbox @@ pair ~sep:(any ": ") Tuple.pp Annot.pp) ppf (params, return)
+    let pp ppf { params; return } =
+      Fmt.(hovbox @@ pair ~sep:(any ": ") Tuple.pp Annot.pp) ppf (params, return)
+    ;;
   end
 
   include Minimal
@@ -389,7 +432,9 @@ end = struct
     }
 
   let id_ops =
-    let ops = { on_params = (fun acc _ -> acc); on_return = (fun acc _ -> acc) } in
+    let ops =
+      { on_params = (fun acc _ -> acc); on_return = (fun acc _ -> acc) }
+    in
     fun _ -> ops
   ;;
 
@@ -418,7 +463,13 @@ and Tuple : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'acc Ops.t -> init:'acc -> 'acc
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
@@ -429,8 +480,13 @@ end = struct
       }
     [@@deriving compare, create, equal, create, map, sexp]
 
-    let pp_optional ppf annot = Fmt.(hbox @@ (any "optional " ++ Annot.pp)) ppf annot
-    let pp_variadic ppf annot = Fmt.(hbox @@ (any ", ..." ++ Annot.pp)) ppf annot
+    let pp_optional ppf annot =
+      Fmt.(hbox @@ (any "optional " ++ Annot.pp)) ppf annot
+    ;;
+
+    let pp_variadic ppf annot =
+      Fmt.(hbox @@ (any ", ..." ++ Annot.pp)) ppf annot
+    ;;
 
     let pp ppf { required; optional; variadic } =
       Fmt.(
@@ -455,33 +511,57 @@ end = struct
 
   let bottom_up { required; optional; variadic } ~ops ~init =
     let tuple_ops = ops.Ops.tuple in
-    let init = List.fold_left required ~init ~f:(fun init ty -> Annot.bottom_up ~ops ~init ty) in
+    let init =
+      List.fold_left required ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
     let init = tuple_ops.on_required init required in
-    let init = List.fold_left optional ~init ~f:(fun init ty -> Annot.bottom_up ~ops ~init ty) in
+    let init =
+      List.fold_left optional ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
     let init = tuple_ops.on_optional init optional in
-    let init = Option.fold variadic ~init ~f:(fun init ty -> Annot.bottom_up ~ops ~init ty) in
+    let init =
+      Option.fold variadic ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
     let init = tuple_ops.on_variadic init variadic in
     init
   ;;
 
   let id_ops =
     let ops =
-      { on_required = (fun acc _ -> acc); on_optional = (fun acc _ -> acc); on_variadic = (fun acc _ -> acc) }
+      { on_required = (fun acc _ -> acc)
+      ; on_optional = (fun acc _ -> acc)
+      ; on_variadic = (fun acc _ -> acc)
+      }
     in
     fun _ -> ops
   ;;
 
   let apply_subst { required; optional; variadic } ~subst ~combine_prov =
-    let required = List.map required ~f:(Annot.apply_subst ~subst ~combine_prov) in
-    let optional = List.map optional ~f:(Annot.apply_subst ~subst ~combine_prov) in
-    let variadic = Option.map variadic ~f:(Annot.apply_subst ~subst ~combine_prov) in
+    let required =
+      List.map required ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
+    let optional =
+      List.map optional ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
+    let variadic =
+      Option.map variadic ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
     { required; optional; variadic }
   ;;
 
   let elab_to_generic { required; optional; variadic } ~bound_ty_params =
-    let required = List.map required ~f:(Annot.elab_to_generic ~bound_ty_params) in
-    let optional = List.map optional ~f:(Annot.elab_to_generic ~bound_ty_params) in
-    let variadic = Option.map variadic ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    let required =
+      List.map required ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
+    let optional =
+      List.map optional ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
+    let variadic =
+      Option.map variadic ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
     { required; optional; variadic }
   ;;
 end
@@ -501,7 +581,13 @@ and Ctor : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
@@ -524,7 +610,13 @@ end = struct
       if List.is_empty args
       then Name.Ctor.pp ppf name
       else
-        Fmt.(hovbox @@ pair ~sep:nop (styled `Cyan Name.Ctor.pp) @@ angles @@ list ~sep:comma Annot.pp) ppf (name, args)
+        Fmt.(
+          hovbox
+          @@ pair ~sep:nop (styled `Cyan Name.Ctor.pp)
+          @@ angles
+          @@ list ~sep:comma Annot.pp)
+          ppf
+          (name, args)
     ;;
   end
 
@@ -544,7 +636,10 @@ end = struct
   let bottom_up { name; args } ~ops ~init =
     let ctor_ops = ops.Ops.ctor in
     let init = ctor_ops.on_name init name in
-    let init = List.fold_left args ~init ~f:(fun init ty -> Annot.bottom_up ~ops ~init ty) in
+    let init =
+      List.fold_left args ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
     let init = ctor_ops.on_args init args in
     init
   ;;
@@ -575,7 +670,13 @@ and Exists : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
@@ -588,7 +689,12 @@ end = struct
     let pp ppf { quants; body } =
       if List.is_empty quants
       then Annot.pp ppf body
-      else Fmt.(hovbox @@ pair ~sep:(any ". ") (any "∃ " ++ list ~sep:sp Param.pp) Annot.pp) ppf (quants, body)
+      else
+        Fmt.(
+          hovbox
+          @@ pair ~sep:(any ". ") (any "∃ " ++ list ~sep:sp Param.pp) Annot.pp)
+          ppf
+          (quants, body)
     ;;
   end
 
@@ -601,13 +707,18 @@ end = struct
     }
 
   let id_ops =
-    let ops = { on_quants = (fun acc _ -> acc); on_body = (fun acc _ -> acc) } in
+    let ops =
+      { on_quants = (fun acc _ -> acc); on_body = (fun acc _ -> acc) }
+    in
     fun _ -> ops
   ;;
 
   let bottom_up { quants; body } ~ops ~init =
     let exists_ops = ops.Ops.exists in
-    let init = List.fold_left quants ~init ~f:(fun init param -> Param.bottom_up ~ops ~init param) in
+    let init =
+      List.fold_left quants ~init ~f:(fun init param ->
+        Param.bottom_up ~ops ~init param)
+    in
     let init = exists_ops.on_quants init quants in
     let init = Annot.bottom_up ~ops ~init body in
     let init = exists_ops.on_body init body in
@@ -625,7 +736,8 @@ end = struct
        may contain other quantifiers in their bounds *)
     let bound_ty_params =
       let declared_ty_params =
-        Name.Ty_param.Set.of_list @@ List.map ~f:(fun Param.{ name; _ } -> Located.elem name) quants
+        Name.Ty_param.Set.of_list
+        @@ List.map ~f:(fun Param.{ name; _ } -> Located.elem name) quants
       in
       Set.union bound_ty_params declared_ty_params
     in
@@ -649,7 +761,13 @@ and Param : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
   module Minimal = struct
@@ -660,7 +778,9 @@ end = struct
     [@@deriving eq, compare, create, sexp]
 
     let pp ppf { name; param_bounds } =
-      Fmt.(hovbox @@ pair ~sep:sp (Located.pp Name.Ty_param.pp) Param_bounds.pp) ppf (name, param_bounds)
+      Fmt.(hovbox @@ pair ~sep:sp (Located.pp Name.Ty_param.pp) Param_bounds.pp)
+        ppf
+        (name, param_bounds)
     ;;
   end
 
@@ -673,7 +793,9 @@ end = struct
     }
 
   let id_ops =
-    let ops = { on_name = (fun acc _ -> acc); on_param_bounds = (fun acc _ -> acc) } in
+    let ops =
+      { on_name = (fun acc _ -> acc); on_param_bounds = (fun acc _ -> acc) }
+    in
     fun _ -> ops
   ;;
 
@@ -686,12 +808,16 @@ end = struct
   ;;
 
   let apply_subst { name; param_bounds } ~subst ~combine_prov =
-    let param_bounds = Param_bounds.apply_subst param_bounds ~subst ~combine_prov in
+    let param_bounds =
+      Param_bounds.apply_subst param_bounds ~subst ~combine_prov
+    in
     { name; param_bounds }
   ;;
 
   let elab_to_generic { name; param_bounds } ~bound_ty_params =
-    let param_bounds = Param_bounds.elab_to_generic param_bounds ~bound_ty_params in
+    let param_bounds =
+      Param_bounds.elab_to_generic param_bounds ~bound_ty_params
+    in
     { name; param_bounds }
   ;;
 end
@@ -712,7 +838,13 @@ and Param_bounds : sig
 
   val id_ops : unit -> 'a ops
   val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
-  val apply_subst : t -> subst:Annot.t Name.Ty_param.Map.t -> combine_prov:(Prov.t -> Prov.t -> Prov.t) -> t
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 
   (* TODO(mjt) add order sigs *)
@@ -732,7 +864,10 @@ end = struct
     [@@deriving eq, compare, create, sexp]
 
     let pp ppf { lower; upper } =
-      Fmt.(hbox @@ pair ~sep:sp (any "as " ++ Annot.pp) (any "super " ++ Annot.pp)) ppf (upper, lower)
+      Fmt.(
+        hbox @@ pair ~sep:sp (any "as " ++ Annot.pp) (any "super " ++ Annot.pp))
+        ppf
+        (upper, lower)
     ;;
   end
 
@@ -747,7 +882,9 @@ end = struct
     }
 
   let id_ops =
-    let ops = { on_lower = (fun acc _ -> acc); on_upper = (fun acc _ -> acc) } in
+    let ops =
+      { on_lower = (fun acc _ -> acc); on_upper = (fun acc _ -> acc) }
+    in
     fun _ -> ops
   ;;
 
@@ -804,10 +941,13 @@ end = struct
 
   let meet_many ts ~prov =
     let lowers, uppers =
-      List.fold_left ts ~init:([], []) ~f:(fun (lowers, uppers) { lower; upper } ->
-        let lowers = lower :: lowers
-        and uppers = upper :: uppers in
-        lowers, uppers)
+      List.fold_left
+        ts
+        ~init:([], [])
+        ~f:(fun (lowers, uppers) { lower; upper } ->
+          let lowers = lower :: lowers
+          and uppers = upper :: uppers in
+          lowers, uppers)
     in
     let lower = Annot.union ~prov lowers
     and upper = Annot.inter ~prov uppers in
@@ -818,10 +958,13 @@ end = struct
 
   let join_many ts ~prov =
     let lowers, uppers =
-      List.fold_left ts ~init:([], []) ~f:(fun (lowers, uppers) { lower; upper } ->
-        let lowers = lower :: lowers
-        and uppers = upper :: uppers in
-        lowers, uppers)
+      List.fold_left
+        ts
+        ~init:([], [])
+        ~f:(fun (lowers, uppers) { lower; upper } ->
+          let lowers = lower :: lowers
+          and uppers = upper :: uppers in
+          lowers, uppers)
     in
     let lower = Annot.inter ~prov lowers
     and upper = Annot.union ~prov uppers in
@@ -933,10 +1076,12 @@ module Refinement = struct
     match t1, t2 with
     | Disjoint _, _ -> t2
     | _, Disjoint _ -> t1
-    | Replace_with ty1, Replace_with ty2 -> Replace_with (Annot.union [ ty1; ty2 ] ~prov)
+    | Replace_with ty1, Replace_with ty2 ->
+      Replace_with (Annot.union [ ty1; ty2 ] ~prov)
     | Intersect_with (prov1, ty1), Intersect_with (_prov2, ty2) ->
       Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov1)
-    | Replace_with ty1, Intersect_with (prov2, ty2) | Intersect_with (prov2, ty2), Replace_with ty1 ->
+    | Replace_with ty1, Intersect_with (prov2, ty2)
+    | Intersect_with (prov2, ty2), Replace_with ty1 ->
       Intersect_with (prov, Annot.union [ ty1; ty2 ] ~prov:prov2)
   ;;
 
@@ -968,7 +1113,8 @@ module Refinement = struct
       (* TODO(mjt) We lose provenance in the other cases so maybe rexamine this in the prov language *)
     | Intersect_with (prov1, ty1), Intersect_with (_prov2, ty2) ->
       Intersect_with (prov, Annot.inter [ ty1; ty2 ] ~prov:prov1)
-    | Replace_with ty1, Intersect_with (_prov, ty2) | Intersect_with (_prov, ty2), Replace_with ty1 ->
+    | Replace_with ty1, Intersect_with (_prov, ty2)
+    | Intersect_with (_prov, ty2), Replace_with ty1 ->
       Replace_with (Annot.inter [ ty1; ty2 ] ~prov)
   ;;
 end

@@ -672,6 +672,21 @@ module Variance = struct
   ;;
 end
 
+module Instantiation = struct
+  let render inst =
+    match inst with
+    | Oracle.Classish.Not_a_subclass -> Lwd.pure @@ W.string "Not a sublass"
+    | Oracle.Classish.Direct ty_args ->
+      W.hbox
+        ((Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "Direct sublass:")
+         :: List.map ty_args ~f:Ty_view.render)
+    | Oracle.Classish.Transitive ty_args ->
+      W.hbox
+        ((Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "Transitive sublass:")
+         :: List.map ty_args ~f:Ty_view.render)
+  ;;
+end
+
 module Status = struct
   let render_comp name =
     Helpers.pad ~bottom:1
@@ -840,18 +855,8 @@ module Status = struct
               ; Lwd.pure @@ W.string @@ Name.Ctor.to_string at
               ]
           ]
-      | Answered_up { data = Some ty_args; _ } ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; W.vbox
-              ((pad ~right:1 @@ Lwd.pure @@ W.string "args:")
-               :: List.map ~f:Ty_view.render ty_args)
-          ]
-      | Answered_up _ ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; Lwd.pure @@ W.string "(not a subtype)"
-          ]
+      | Answered_up { data = inst; _ } ->
+        W.vbox [ render_status_desc "Answered up"; Instantiation.render inst ]
       | Asked_ty_param_variances { data; _ } ->
         W.vbox
           [ render_status_desc "Asked variance"
@@ -1038,18 +1043,8 @@ module Status = struct
               ; Lwd.pure @@ W.string @@ Name.Ctor.to_string at
               ]
           ]
-      | Answered_up { data = Some ty_args; _ } ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; W.vbox
-              ((pad ~right:1 @@ Lwd.pure @@ W.string "args:")
-               :: List.map ~f:Ty_view.render ty_args)
-          ]
-      | Answered_up _ ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; Lwd.pure @@ W.string "(not a subtype)"
-          ]
+      | Answered_up { data = inst; _ } ->
+        W.vbox [ render_status_desc "Answered up"; Instantiation.render inst ]
       | Asked_ty_param_variance { data; _ } ->
         W.vbox
           [ render_status_desc "Asked variance"
@@ -1128,18 +1123,8 @@ module Status = struct
               ; Lwd.pure @@ W.string @@ Name.Ctor.to_string at
               ]
           ]
-      | Answered_up { data = Some ty_args; _ } ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; W.vbox
-              ((pad ~right:1 @@ Lwd.pure @@ W.string "args:")
-               :: List.map ~f:Ty_view.render ty_args)
-          ]
-      | Answered_up _ ->
-        W.vbox
-          [ render_status_desc "Answered up"
-          ; Lwd.pure @@ W.string "(not a subtype)"
-          ]
+      | Answered_up { data = inst; _ } ->
+        W.vbox [ render_status_desc "Answered up"; Instantiation.render inst ]
       | _ -> W.empty_lwd
     in
     W.vbox [ render_comp "Exposure"; status_ui ]
