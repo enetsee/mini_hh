@@ -92,7 +92,7 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   | (prov_scrut, _), (prov_test, _) ->
     let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
     (match
-       Subtyping.Ask.is_subtype ~ty_sub:ty_scrut ~ty_super:ty_test ~ctxt
+       Subtyping.Ask.is_subtype ~ty_sub:ty_test ~ty_super:ty_scrut ~ctxt
      with
      | Subtyping.Answer.No _err ->
        (* The test type is not a subtype of the scrutinee so the refinement is to 
