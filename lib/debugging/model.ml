@@ -103,6 +103,16 @@ type t =
   | File_error of File_error.t
   | Debugging of Debugging.t
 
+let is_uninit = function
+  | Uninit -> true
+  | Init _ | File_ok _ | File_error _ | Debugging _ -> false
+;;
+
+let is_file_error = function
+  | File_error _ -> true
+  | Init _ | File_ok _ | Uninit | Debugging _ -> false
+;;
+
 (** Given a directory and a file, try initialise a [File_ok.t] or a [File_error.t] *)
 let init_file start_directory current_file =
   match
@@ -206,4 +216,9 @@ let breakpoints = function
 let is_debugging = function
   | Debugging _ -> true
   | _ -> false
+;;
+
+let parse_err_opt = function
+  | File_error { parse_err; _ } -> Some parse_err
+  | _ -> None
 ;;

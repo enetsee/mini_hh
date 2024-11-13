@@ -27,6 +27,7 @@ let add_def_res t def =
   | Lang.Def.Classish Located.{ elem = classish_def; span } ->
     add_classish t classish_def span
   | Lang.Def.Fn _ -> Ok (t, [])
+  | Lang.Def.Ty _ -> Ok (t, [])
 ;;
 
 let of_program Lang.Prog.{ defs } =

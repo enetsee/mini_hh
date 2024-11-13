@@ -729,7 +729,7 @@ module Status = struct
               [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "kind:"
               ; Lwd.pure
                 @@ W.string
-                @@ Lang.Classish_kind.to_string
+                @@ Lang.Classish_def.Kind.to_string
                 @@ Located.elem elem.kind
               ]
           ]

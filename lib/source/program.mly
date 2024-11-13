@@ -116,7 +116,7 @@
   AS SUPER
   STATIC PUBLIC PRIVATE
   FUNCTION OPTIONAL RETURN WHERE
-  CONST TYPE
+  CONST CASE TYPE NEWTYPE
   IF ELSE
   SOME 
   IS 
@@ -196,8 +196,8 @@ toplevel_def:
   | class_def { Def.classish $1 }
   | intf_def { Def.classish $1 }
   | trait_def { Def.classish $1 }
-//   | type_def  { Def.ty $1  }
-  | fn_def    { Def.fn $1 }
+  | type_def { Def.ty $1 }
+  | fn_def { Def.fn $1 }
 ;
 
 (* ~~ Class, interface & trait definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -212,7 +212,7 @@ class_def: (* Classish_def.t Located.t *)
     let span_start = Option.value ~default:span_class span_start_opt in
     let kind = 
       let span = Span.join span_start span_class in
-      let elem = Classish_kind.class_ ~is_abstract ~is_final in
+      let elem = Classish_def.Kind.class_ ~is_abstract ~is_final in
       Located.create ~elem ~span ()
     in
     let span = Span.join span_start span_end in
@@ -249,7 +249,7 @@ intf_def: (* Classish_def.t Located.t *)
   {
     let span = Span.join span_start span_end in
     let kind = 
-      let elem = Classish_kind.Intf in
+      let elem = Classish_def.Kind.Intf in
       Located.create ~elem ~span:span_start ()
     in
     let elem = 
@@ -272,7 +272,7 @@ trait_def: (* Classish_def.t Located.t *)
   { 
     let span = Span.join span_start span_end in
     let kind = 
-      let elem = Classish_kind.Intf in
+      let elem = Classish_def.Kind.Intf in
       Located.create ~elem ~span:span_start ()
     in
     let elem = 
@@ -362,6 +362,9 @@ visibility:
     Located.create ~elem ~span ()
   }
 ;
+
+
+
 (* ~~ Function definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 fn_def: (* Fn_def.t Located.t *)
@@ -890,6 +893,71 @@ ty_args: (* Ty.t list, Span.t option *)
     (List.map ~f:fst elems , Some(Span.join span_start span_end))
   }
 ;
+
+
+(* ~~ Type definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+
+type_def: (* Lang.Ty_def.t Located.t *)
+  | kind=type_def_kind name_span=ty_ctor_name 
+    ty_params_opt=ty_param_defs? 
+    cstrs=type_def_bound* 
+    EQUAL  
+    defs=type_def_rhs 
+    span_end=SEMICOLON { 
+      let span = 
+        let span_start = Located.span_of kind in
+        Span.join span_start span_end
+      in
+      let name = 
+        let elem , span = name_span in
+        Located.create ~elem ~span () 
+      in
+      let bounds = 
+       ty_param_bounds_of_constraints cstrs in 
+      let ty_params = 
+        match ty_params_opt with
+        | None -> []
+        | Some (xs,_) -> xs
+      in
+      let elem = 
+        Lang.Ty_def.create ~kind ~name ~ty_params ~bounds ~defs ()
+      in
+      Located.create ~elem ~span ()
+  } 
+
+type_def_rhs :
+  | PIPE defs=lseparated_list(PIPE,type_def_rhs_elem) { defs }
+  | def=type_def_rhs_elem  { [def] }
+
+type_def_kind: (* Type_def.Kind.t Located.t *)
+  | span_start=CASE span_end=TYPE  { 
+    let span = Span.join  span_start span_end in
+    Located.create ~elem:Lang.Ty_def.Kind.Case ~span ()
+  }
+  | span=NEWTYPE { Located.create ~elem:Lang.Ty_def.Kind.New ~span () }
+  | span=TYPE { Located.create ~elem:Lang.Ty_def.Kind.Alias ~span () }
+
+
+type_def_rhs_elem : (*  Ty.t * Ctxt.Ty_param.t *) 
+  | ty_span=ty_expr where_constraints_opt=where_constraints? { 
+    let (ty,_) = ty_span in
+    let where_constraints = Option.value ~default:[] where_constraints_opt in
+    ty , where_constraints
+  }
+
+type_def_bound: (* Lang.Ty_param_bound_def.t Located.t *)
+  | span_start=AS ty_span=ty_expr { 
+    let ty,span_end= ty_span in
+    let span = Span.join span_start span_end 
+    and elem = Lang.Ty_param_bound_def.As ty in
+    Located.create ~elem ~span ()
+  }
+  | span_start=SUPER ty_span=ty_expr {
+    let ty,span_end= ty_span in
+    let span = Span.join span_start span_end 
+    and elem = Lang.Ty_param_bound_def.Super ty in
+    Located.create ~elem ~span ()
+  }
 
 
 (* ~~ Generic definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

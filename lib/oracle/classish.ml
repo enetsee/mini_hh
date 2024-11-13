@@ -22,7 +22,7 @@ module Entry = struct
     (** The type parameters declared in the class along with there declared bounds *)
     ; supers : Ty.t list Name.Ctor.Map.t
     ; span : Span.t
-    ; kind : Classish_kind.t Located.t
+    ; kind : Classish_def.Kind.t Located.t
     (** Any superclass the class extends and the list any interfaces it implements. The args in each [Ty.Ctor.t]
         must either be concreate types or be bound *)
     }

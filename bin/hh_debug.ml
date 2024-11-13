@@ -38,12 +38,16 @@ module Definitions = struct
     match def with
     | Lang.Def.Classish
         Located.{ elem = Lang.Classish_def.{ kind; name; _ }; _ } ->
-      let kind_string = Lang.Classish_kind.to_string @@ Located.elem kind
+      let kind_string = Lang.Classish_def.Kind.to_string @@ Located.elem kind
       and classish_name = Name.Ctor.to_string @@ Located.elem name in
       Format.sprintf "%s %s" kind_string classish_name
     | Lang.Def.Fn Located.{ elem = Lang.Fn_def.{ name; _ }; _ } ->
       let fn_name = Name.Fn.to_string @@ Located.elem name in
       fn_name
+    | Lang.Def.Ty Located.{ elem = Lang.Ty_def.{ name; kind; _ }; _ } ->
+      let kind_string = Lang.Ty_def.Kind.to_string @@ Located.elem kind
+      and classish_name = Name.Ctor.to_string @@ Located.elem name in
+      Format.sprintf "%s %s" kind_string classish_name
   ;;
 
   let view_def def =
@@ -96,10 +100,25 @@ let start start_directory =
   let program =
     W.vbox
       [ Lwd.bind (Lwd.get model) ~f:(fun model ->
-          let lines =
-            Option.value ~default:logo @@ Debugging.Model.source_opt model
-          and span_opt = Debugging.Model.span_opt model
-          and breakpoints = Debugging.Model.breakpoints model in
+          let lines, span_opt, breakpoints =
+            if Debugging.Model.is_uninit model
+            then logo, None, Int.Set.empty
+            else if Debugging.Model.is_file_error model
+            then (
+              let lines =
+                Option.value_map
+                  ~f:(fun err -> [ Source.Parse.Err.show err ])
+                  ~default:logo
+                @@ Debugging.Model.parse_err_opt model
+              in
+              lines, None, Int.Set.empty)
+            else (
+              let lines =
+                Option.value ~default:logo @@ Debugging.Model.source_opt model
+              and span_opt = Debugging.Model.span_opt model
+              and breakpoints = Debugging.Model.breakpoints model in
+              lines, span_opt, breakpoints)
+          in
           W.scrollbox
           @@ View.Program_view.render
                lines

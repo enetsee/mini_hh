@@ -79,7 +79,7 @@ rule token = parse
   (* | "break"                 { BREAK (current_loc lexbuf) } *)
   (* | "continue"              { CONTINUE (current_loc lexbuf) } *)
   (* | "switch"                { SWITCH (current_loc lexbuf) } *)
-  (* | "case"                  { CASE (current_loc lexbuf) } *)
+  | "case"                  { CASE (current_loc lexbuf) }
   (* | "default"               { DEFAULT (current_loc lexbuf) } *)
   (* | "exit"                  { EXIT (current_loc lexbuf) } *) 
   | "return"                { RETURN (current_loc lexbuf) }
@@ -99,7 +99,7 @@ rule token = parse
   | "private"               { PRIVATE (current_loc lexbuf) }
   | "function"              { FUNCTION (current_loc lexbuf) }
   | "static"                { STATIC (current_loc lexbuf) }
-  (* | "newtype"               { NEWTYPE (current_loc lexbuf) } *)
+  | "newtype"               { NEWTYPE (current_loc lexbuf) }
   | "is"                    { IS (current_loc lexbuf) }
   (* | "enum"                  { ENUM (current_loc lexbuf) } *)
   | "super"                 { SUPER (current_loc lexbuf) }
