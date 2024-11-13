@@ -506,11 +506,13 @@ end = struct
       let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
       Ctxt.Cont.Delta.create ~bindings ()
     in
-    (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression *)
+    (* Now bind the new type parameters , the new local in addition to any bound when typing the rhs expression
+       TODO(mjt): invalidations!!!!!!!
+    *)
     let delta =
       Ctxt.Cont.Delta.extend
-        (Ctxt.Cont.Delta.of_expr_delta expr_delta)
-        ~with_:unpack_delta
+        unpack_delta
+        ~with_:(Ctxt.Cont.Delta.of_expr_delta expr_delta)
     in
     Ctxt.Delta.create ~next:delta ()
   ;;

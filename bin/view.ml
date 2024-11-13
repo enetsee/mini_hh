@@ -438,6 +438,7 @@ module Cont_delta = struct
         [ Lwd.pure
           @@ W.string ~attr:Attr.(fg yellow)
           @@ Name.Tm_var.to_string tm_var
+        ; Helpers.pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string ":"
         ; Ty_view.render ty
         ])
     @@ Ctxt.Local.bindings local
@@ -531,6 +532,7 @@ module Expr_delta = struct
         [ Lwd.pure
           @@ W.string ~attr:Attr.(fg yellow)
           @@ Name.Tm_var.to_string tm_var
+        ; Helpers.pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string ":"
         ; Ty_view.render ty
         ])
     @@ Ctxt.Local.bindings local

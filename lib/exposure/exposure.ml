@@ -91,7 +91,7 @@ and promote_union prov tys ty_params ~dir =
 and promote_inter prov tys ty_params ~dir =
   let prov, tys, ty_params, dir = Eff.log_enter_inter prov tys ty_params dir in
   Eff.log_exit_inter
-  @@ Result.map ~f:(fun elems -> Ty.union ~prov elems)
+  @@ Result.map ~f:(fun elems -> Ty.inter ~prov elems)
   @@ promote_tys tys ty_params ~dir
 
 and promote_fn prov fn ty_params ~dir =

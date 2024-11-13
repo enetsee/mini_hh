@@ -10,8 +10,9 @@ class MyClass {}
 function foo(MyClass $scrut): void {
   $x = null;
   if ($scrut is some T. IBox<T>) {
+    // hh implicitly unpacks the existential, here we do it explicitly
     let {T,$box} = $scrut;
-    $x = $scrut;
+    $x = $box;
     // $x = $scrut->get();
   }
   $_ = $x;

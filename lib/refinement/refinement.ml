@@ -70,7 +70,7 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
     refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt
   | _, (prov_test, Ty.Node.Generic name_test) ->
     refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt
-    (* ~~ Existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Exists exists_scrut), _ ->
     refine_existential_scrut prov_scrut exists_scrut ty_test ~ctxt
   | _, (prov_test, Ty.Node.Exists exists_test) ->
@@ -94,9 +94,29 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
     (match
        Subtyping.Ask.is_subtype ~ty_sub:ty_scrut ~ty_super:ty_test ~ctxt
      with
-     | Subtyping.Answer.No _err -> Ty.Refinement.disjoint prov, None
-     | Subtyping.Answer.Yes -> Ty.Refinement.replace_with ty_test, None
-     | _ -> Ty.Refinement.intersect_with prov ty_test, None)
+     | Subtyping.Answer.No _err ->
+       (* The test type is not a subtype of the scrutinee so the refinement is to 
+         nothing. The complement of the refinement is just the original
+         scrutinee type : if T </: S,  S & T = nothing , S - T = T. 
+         - *)
+       let rfmt = Ty.Refinement.disjoint prov, None in
+       (* and _rtmt_cmpl = Ty.Refinement.replace_with ty_scrut, None in *)
+       rfmt
+       (* , rfmt_cmpl *)
+     | Subtyping.Answer.Yes ->
+       (* The test type is a subtype of the scrutinee so the refinement is to
+          exactly the test type. The complement of the refinement is to nothing:
+          if T <: S, T & S = T, S - T == S & ~T
+       *)
+       (* let rfmt = Ty.Refinement.replace_with ty_test, None in *)
+       let rfmt = Ty.Refinement.intersect_with prov ty_test, None in
+       (* and _rfmt_cmpl = Ty.Refinement.disjoint prov, None in *)
+       rfmt
+       (* , rfmt_cmpl *)
+     | Subtyping.Answer.Maybe ->
+       (* The test type might be a subtype. The complement is the difference
+          between the scrutinee and test type *)
+       Ty.Refinement.intersect_with prov ty_test, None)
 
 (* ~~ Refine top-level generics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt =
@@ -498,7 +518,8 @@ and refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt =
        *)
        let node = Ty.Node.Ctor ctor_test in
        let ty = Ty.create ~node ~prov () in
-       ( Replace_with ty
+       (* ( Replace_with ty *)
+       ( Intersect_with (prov, ty)
        , Some (prov, Ctxt.Ty_param.Refinement.meet_many refns ~prov:prov_test) )
      | Error _provs -> Ty.Refinement.disjoint prov, None)
 
