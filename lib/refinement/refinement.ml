@@ -87,7 +87,9 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   (* ~~ Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Ctor ctor_scrut), (prov_test, Ty.Node.Ctor ctor_test)
     -> refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt
-  (* ~~ Everything else ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Tuples ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Base-types and nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
   | (prov_scrut, _), (prov_test, _) ->
     let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in

@@ -16,10 +16,10 @@ let rec step_tuple_elem
   (* ~~ Success conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* -- No (remaining) params -- *)
   | ([], [], None), ([], [], None) -> Ok cstrs
-  (* -- Fewer optional and/or variadic params in the supertype than the subtype -- *)
-  | ([], _ :: _, _), ([], [], None) -> Ok cstrs
+  (* -- Fewer optional and/or variadic params in the subtype than the supertype -- *)
+  | ([], [], None), ([], _ :: _, _) -> Ok cstrs
   (* -- No variadic param in the supertype with variadic param in subtype -- *)
-  | ([], [], Some _), ([], [], None) -> Ok cstrs
+  | ([], [], None), ([], [], Some _) -> Ok cstrs
   (* -- Variadic params in both subtype and supertyep -- *)
   | ([], [], Some ty_sub), ([], [], Some ty_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
@@ -54,47 +54,35 @@ let rec step_tuple_elem
       ~idx_super
       ~cstrs
   (* ~~ Match up optional-required and variadic-required params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Match a required param in the supertype with optional param in the subtype -- *)
-  | ([], ty_sub :: opts_sub, var_sub), (ty_super :: reqs_sup, opts_sup, var_sup)
-    ->
+  (* -- Match a required param in the subtype with optional param in the supertype -- *)
+  | ( (ty_sub :: reqs_sub, opts_sub, var_sub)
+    , ([], ty_super :: opts_super, var_super) ) ->
     (* Contravariance *)
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
     step_tuple_elem
       prov_sub
-      ([], opts_sub, var_sub)
+      (reqs_sub, opts_sub, var_sub)
       prov_super
-      (reqs_sup, opts_sup, var_sup)
+      ([], opts_super, var_super)
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* -- Match a required param in the supertype with a variadic param in the subtype -- *)
-  | ([], [], Some ty_sub), (ty_super :: reqs_sup, opts_sup, var_sup) ->
+  (* -- Match a required param in the subtype with a variadic param in the supertype -- *)
+  | (ty_sub :: reqs_sub, opts_sub, var_sub), ([], [], Some ty_super) ->
     (* Contravariance *)
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
     step_tuple_elem
       prov_sub
-      ([], [], Some ty_sub)
+      (reqs_sub, opts_sub, var_sub)
       prov_super
-      (reqs_sup, opts_sup, var_sup)
+      ([], [], Some ty_super)
       ~idx_sub
       ~idx_super
       ~cstrs
   (* ~~ Match up variadic-optional and optional-variadic params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Match an optional param in the supertype with a variadic param in the subtype -- *)
-  | ([], [], Some ty_sub), ([], ty_super :: opts_sup, var_sup) ->
-    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
-    let cstrs = cstr :: cstrs in
-    step_tuple_elem
-      prov_sub
-      ([], [], Some ty_sub)
-      prov_super
-      ([], opts_sup, var_sup)
-      ~idx_sub
-      ~idx_super
-      ~cstrs
-  (* -- Match a variadic param in the supertype with an optional param in the subtype -- *)
+  (* -- Match an optional param in the subtype with a variadic param in the supertype -- *)
   | ([], ty_sub :: opts_sub, var_sub), ([], [], Some ty_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
@@ -106,24 +94,36 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
+  (* -- Match a variadic param in the subtype with an optional param in the supertype -- *)
+  | ([], [], Some ty_sub), ([], ty_super :: opts_super, var_super) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_tuple_elem
+      prov_sub
+      ([], [], Some ty_sub)
+      prov_super
+      ([], opts_super, var_super)
+      ~idx_sub
+      ~idx_super
+      ~cstrs
   (* ~~ Error conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Fewer required params in supertype than in subtype -- *)
-  | ((_ :: _ as reqs), _, _), ([], _, _) ->
+  (* -- Fewer required params in subtype than in supertype -- *)
+  | ([], _, _), ((_ :: _ as reqs), _, _) ->
     let n_sub = idx_sub + List.length reqs in
     Error
       (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub ~n_super:idx_super)
-  (* -- Required params in supertype but no params in subtype -- *)
-  | ([], [], None), ((_ :: _ as reqs), _, _) ->
+  (* -- Required params in subtype but no params in subtype -- *)
+  | ((_ :: _ as reqs), _, _), ([], [], None) ->
     let n_super = idx_super + List.length reqs in
     Error
       (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
   (* -- More optional params in the supertype with no params in the subtype -- *)
-  | ([], [], None), ([], (_ :: _ as opts), _) ->
+  | ([], (_ :: _ as opts), _), ([], [], None) ->
     let n_super = idx_super + List.length opts in
     Error
       (Err.tuple_arity_optional ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
   (* -- Variadic param in the supertype with no params in the subtype -- *)
-  | ([], [], None), ([], [], Some _) ->
+  | ([], [], Some _), ([], [], None) ->
     Error (Err.tuple_arity_variadic ~prov_sub ~prov_super)
 ;;
 
