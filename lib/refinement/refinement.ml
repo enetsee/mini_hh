@@ -105,10 +105,13 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
        (* , rfmt_cmpl *)
      | Subtyping.Answer.Yes ->
        (* The test type is a subtype of the scrutinee so the refinement is to
-          exactly the test type. The complement of the refinement is to nothing:
+          exactly the test type i.e. it is _technically_ redunant to apply an
+          intersection. We do still generate this as the refinement since we
+          need to keep track of the supertype in some cases for exposure to
+          work correctly. The complement of the refinement is the difference
+          of the scrutinee and the test types:
           if T <: S, T & S = T, S - T == S & ~T
        *)
-       (* let rfmt = Ty.Refinement.replace_with ty_test, None in *)
        let rfmt = Ty.Refinement.intersect_with prov ty_test, None in
        (* and _rfmt_cmpl = Ty.Refinement.disjoint prov, None in *)
        rfmt
@@ -176,7 +179,10 @@ and refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt =
         ~f:(fun (prov, other_rfmts) ->
           Ctxt.Ty_param.Refinement.meet this_rfmt other_rfmts ~prov)
     in
-    Ty.Refinement.replace_with ty_scrut, Some (prov, rfmt)
+    (* TODO(mjt) we don't actually refine the type in this case but it seems
+       overkill to make the refinement optional so we just intersect with
+       itself for now *)
+    Ty.Refinement.intersect_with prov ty_scrut, Some (prov, rfmt)
   (* ~~ generic in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* If we have a non-this generic in scrutinee position then we can't refine
        the generic but we can refine the type. Consider this case: 
@@ -192,15 +198,20 @@ and refine_top_level_generic_scrut prov_scrut name_scrut ty_test ~ctxt =
   | _ -> ty_rfmt, None
 (* ~~ Refine existentials ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
-and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
-  let prov_exists, Ty.Exists.{ quants; body }, ty_test, ctxt =
-    Eff.log_enter_existential_scrut prov_exists ty_exists ty_test ctxt
+and refine_existential_scrut prov_scrut exists_scrut ty_test ~ctxt =
+  let prov_scrut, Ty.Exists.{ quants; body }, ty_test, ctxt =
+    Eff.log_enter_existential_scrut prov_scrut exists_scrut ty_test ctxt
   in
-  (* Generate fresh type parameters, build the substitution and apply it to the body *)
-  let generics = Eff.request_fresh_ty_params (List.length quants) in
-  (* [subst] maps from the declared type parameter name to the the fresh name
+  let prov =
+    let prov_test = Ty.prov_of ty_test in
+    Prov.refine ~prov_test ~prov_scrut
+  in
+  (* Unpack, bind and subsitute fresh names for the quantifiers in the body of
+     the scrutinee type
+     [subst] maps from the declared type parameter name to the the fresh name
      [quants] is the list of quantifiers using the fresh names*)
   let subst, quants =
+    let generics = Eff.request_fresh_ty_params (List.length quants) in
     let subst, quants =
       List.unzip
       @@ List.map2_exn
@@ -218,56 +229,75 @@ and refine_existential_scrut prov_exists ty_exists ty_test ~ctxt =
     let subst = Name.Ty_param.Map.of_alist_exn subst in
     subst, quants
   in
-  (* Apply the substitution to the body so that is mentions the new names which are guaranteed to be fresh wrt to
-     the enclosing context *)
+  (* Apply the substitution to the body so that is mentions the new names which
+     are fresh wrt to the enclosing context *)
   let body = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
   (* Bind the quantifiers and refine the body against the test type *)
-  let body_refn =
+  let ty_rfmt, ty_param_rfmt_opt =
     let ctxt = Ctxt.Cont.bind_ty_params ctxt quants in
     refine_ty ~ty_scrut:body ~ty_test ~ctxt
   in
-  Eff.log_exit_existential_scrut
-  @@
-  match body_refn with
-  | Ty.Refinement.Replace_with body, Some (prov, refn) ->
-    (* Find the refinement we should apply to each quantifier *)
-    let quants =
-      List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
-        let param_bounds =
-          match Ctxt.Ty_param.Refinement.find refn name.Located.elem with
-          | Ctxt.Ty_param.Refinement.Bounds bounds_delta ->
-            (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
-            Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_exists
-          | Ctxt.Ty_param.Refinement.Bounds_top -> param_bounds
-          | Ctxt.Ty_param.Refinement.Bounds_bottom ->
-            Ty.Param_bounds.bottom prov_exists
+  (* If we have refined any type parameters corresponding
+     to our quantfiers we need to apply them before doing this. We also need
+     to remove those type parameters from the refinement since they don't
+     exist in the outer scope *)
+  let quants, ty_param_rfmt_opt =
+    Option.value_map
+      ty_param_rfmt_opt
+      ~default:(quants, ty_param_rfmt_opt)
+      ~f:(fun (prov_refn, refn) ->
+        (* We have type parameter refinements so find the refinement we should
+           apply to each quantifier *)
+        let quants =
+          List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
+            let param_bounds =
+              match Ctxt.Ty_param.Refinement.find refn name.Located.elem with
+              | Ctxt.Ty_param.Refinement.Bounds bounds_delta ->
+                (* TODO(mjt): find an example where we haven't solved and figure out
+                   if we actually do need to meet here *)
+                Ty.Param_bounds.meet param_bounds bounds_delta ~prov
+              | Ctxt.Ty_param.Refinement.Bounds_top -> param_bounds
+              | Ctxt.Ty_param.Refinement.Bounds_bottom ->
+                Ty.Param_bounds.bottom prov
+            in
+            Ty.Param.{ name; param_bounds })
         in
-        Ty.Param.{ name; param_bounds })
-    in
-    (* 2) Unbind the quantifiers in the refinement *)
-    let refn =
-      Ctxt.Ty_param.Refinement.unbind_all refn
-      @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
-    in
-    (* 3) Pack the existential *)
-    let ty_test = Ty.exists ~quants ~body prov_exists in
-    Ty.Refinement.replace_with ty_test, Some (prov, refn)
-  | Ty.Refinement.Intersect_with (prov, body'), None ->
-    (* In the case that we couldn't determine the body was a subtype of the scrutinee (and we therefore have no
-       type parameter refinement) we need to intersect the body with the scrutinee type before repacking. Since
-       there is no refinement the quantifiers are unchanged and there is nothing to unbind *)
-    let body = Ty.inter ~prov [ body; body' ] in
-    let ty_test = Ty.exists ~quants ~body prov_exists in
-    Replace_with ty_test, Some (prov, Ctxt.Ty_param.Refinement.top)
-  | Ty.Refinement.Disjoint _, _ -> body_refn
-  (* ~~ If we see these something has gone wrong ~~ *)
-  | Ty.Refinement.Replace_with _, None | Ty.Refinement.Intersect_with _, Some _
-    -> failwith "impossible"
-
-and refine_existential_test ty_scrut prov_test ty_exists ~ctxt =
-  let ty_scrut, prov_test, Ty.Exists.{ quants; body }, ctxt =
-    Eff.log_enter_existential_test ty_scrut prov_test ty_exists ctxt
+        (* Then unbind the quantifiers in the refinement *)
+        let refn =
+          Ctxt.Ty_param.Refinement.unbind_all refn
+          @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
+        in
+        quants, Some (prov_refn, refn))
   in
+  (* Update the type refinement to re-pack the existential, using the possibly
+     refined quantifiers *)
+  let ty_rfmt =
+    match ty_rfmt with
+    | Ty.Refinement.Disjoint _ -> ty_rfmt
+    | Ty.Refinement.Intersect_with (prov_body, body') ->
+      (* If the refinement is the intersection with the scrutinee type, bring that
+         inside the body - this is ok since they must share the same quantifiers *)
+      let body = Ty.inter ~prov:prov_body [ body; body' ] in
+      let ty_test = Ty.exists ~quants ~body prov in
+      Ty.Refinement.replace_with ty_test
+    | Ty.Refinement.Replace_with body ->
+      let ty_test = Ty.exists ~quants ~body prov in
+      Ty.Refinement.replace_with ty_test
+  in
+  Eff.log_exit_existential_scrut (ty_rfmt, ty_param_rfmt_opt)
+
+and refine_existential_test ty_scrut prov_test exists_test ~ctxt =
+  let ty_scrut, prov_test, Ty.Exists.{ quants; body }, ctxt =
+    Eff.log_enter_existential_test ty_scrut prov_test exists_test ctxt
+  in
+  let prov =
+    let prov_scrut = Ty.prov_of ty_scrut in
+    Prov.refine ~prov_test ~prov_scrut
+  in
+  (* Unpack, bind and subsitute fresh names for the quantifiers in the body of
+     the test type.
+     [subst] maps from the declared type parameter name to the the fresh name
+     [quants] is the list of quantifiers using the fresh names*)
   let generics = Eff.request_fresh_ty_params (List.length quants) in
   let subst, quants =
     let subst, quants =
@@ -288,53 +318,52 @@ and refine_existential_test ty_scrut prov_test ty_exists ~ctxt =
     subst, quants
   in
   let body = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
-  (* Refine the body in this context *)
-  let body_refn =
+  (* Bind the quantifiers and refine the scrutinee against the body of the test type *)
+  let ty_rfmt, ty_param_rfmt_opt =
     let ctxt = Ctxt.Cont.bind_ty_params ctxt quants in
     refine_ty ~ty_scrut ~ty_test:body ~ctxt
   in
-  Eff.log_exit_existential_test
-  @@
-  match body_refn with
-  | Replace_with body, Some (prov, refn) ->
-    (* Our refinement of the body gave us a type parameter refinement so we are free to drop the scrutinee type in
-       the refined type (i.e. the body is a subtype of the scrutinee type). Before we return this type we need
-       to pack the existential with refinements applied to the quantifier and then unbind the quantifiers from the
-       type parameter refinement *)
-
-    (* 1) Apply the type parameter refinements to the quantifiers *)
-    let quants =
-      List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
-        let param_bounds =
-          match Ctxt.Ty_param.Refinement.find refn name.Located.elem with
-          | Ctxt.Ty_param.Refinement.Bounds bounds_delta ->
-            (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
-            Ty.Param_bounds.meet param_bounds bounds_delta ~prov:prov_test
-          | Ctxt.Ty_param.Refinement.Bounds_top -> param_bounds
-          | Ctxt.Ty_param.Refinement.Bounds_bottom ->
-            Ty.Param_bounds.bottom prov_test
+  let quants, ty_param_rfmt_opt =
+    Option.value_map
+      ty_param_rfmt_opt
+      ~default:(quants, None)
+      ~f:(fun (prov_rfmt, refn) ->
+        let quants =
+          List.map quants ~f:(fun Ty.Param.{ name; param_bounds } ->
+            let param_bounds =
+              match Ctxt.Ty_param.Refinement.find refn name.Located.elem with
+              | Ctxt.Ty_param.Refinement.Bounds bounds_delta ->
+                (* TODO(mjt): find an example where we haven't solved and figure out if we actually do need to meet here *)
+                Ty.Param_bounds.meet param_bounds bounds_delta ~prov
+              | Ctxt.Ty_param.Refinement.Bounds_top -> param_bounds
+              | Ctxt.Ty_param.Refinement.Bounds_bottom ->
+                Ty.Param_bounds.bottom prov
+            in
+            Ty.Param.{ name; param_bounds })
         in
-        Ty.Param.{ name; param_bounds })
-    in
-    (* 2) Unbind the quantifiers in the refinement *)
-    let refn =
-      Ctxt.Ty_param.Refinement.unbind_all refn
-      @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
-    in
-    (* 3) Pack the existential *)
-    let ty_test = Ty.exists ~quants ~body prov_test in
-    Ty.Refinement.replace_with ty_test, Some (prov, refn)
-  | Intersect_with (prov, body), None ->
-    (* In the case that we couldn't determine the body was a subtype of the scrutinee (and we therefore have no
-       type parameter refinement) we need to intersect the body with the scrutinee type before repacking. Since
-       there is no refinement the quantifiers are unchanged and there is nothing to unbind *)
-    let body = Ty.inter ~prov [ ty_scrut; body ] in
-    let ty_test = Ty.exists ~quants ~body prov_test in
-    Replace_with ty_test, Some (prov, Ctxt.Ty_param.Refinement.top)
-  | Ty.Refinement.Disjoint _, _ -> body_refn
-  (* ~~ If we see these something has gone wrong ~~ *)
-  | Ty.Refinement.Replace_with _, None | Ty.Refinement.Intersect_with _, Some _
-    -> failwith "impossible"
+        (* 2) Unbind the quantifiers in the refinement *)
+        let refn =
+          Ctxt.Ty_param.Refinement.unbind_all refn
+          @@ List.map quants ~f:(fun Ty.Param.{ name; _ } -> name.Located.elem)
+        in
+        quants, Some (prov_rfmt, refn))
+  in
+  (* Update the type refinement to re-pack the existential, using the possibly
+     refined quantifiers *)
+  let ty_rfmt =
+    match ty_rfmt with
+    | Ty.Refinement.Disjoint _ -> ty_rfmt
+    | Ty.Refinement.Intersect_with (prov_body, body) ->
+      (* If the refinement is the intersection with the scrutinee type, bring that
+         inside the body - this is ok since they must share the same quantifiers *)
+      let body = Ty.inter ~prov [ ty_scrut; body ] in
+      let ty_test = Ty.exists ~quants ~body prov_body in
+      Ty.Refinement.replace_with ty_test
+    | Ty.Refinement.Replace_with body ->
+      let ty_test = Ty.exists ~quants ~body prov in
+      Ty.Refinement.replace_with ty_test
+  in
+  Eff.log_exit_existential_test (ty_rfmt, ty_param_rfmt_opt)
 
 (* ~~ Refine union types in scrutinee position ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
@@ -545,11 +574,6 @@ and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
         , Ctxt.Ty_param.Refinement.bounds
             [ g_scrut, Option.value_exn (Ctxt.Cont.ty_param_bounds ctxt g_test)
             ; g_test, Option.value_exn (Ctxt.Cont.ty_param_bounds ctxt g_scrut)
-              (* ; ( g_test
-              , Ty.Param_bounds.(
-                  meet (create ~lower:ty_scrut ~upper:ty_scrut ()))
-                  (Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt g_scrut)
-                  ~prov ) *)
             ] ) )
   | Ty.Node.Generic g_scrut, _, _ ->
     (* GADT case - we have a concrete type in test position so refine the bounds of the generic to this type *)
