@@ -9,7 +9,8 @@ open Reporting
 
 module Ctxt = struct
   module Minimal = struct
-    type t = Ty.Param_bounds.t Name.Ty_param.Map.t [@@deriving compare, eq, sexp]
+    type t = Ty.Param_bounds.t Name.Ty_param.Map.t
+    [@@deriving compare, eq, sexp]
 
     let pp ppf t = Name.Ty_param.Map.pp Ty.Param_bounds.pp ppf t
   end
@@ -28,8 +29,11 @@ module Ctxt = struct
   ;;
 
   let bind_all t ty_params =
-    List.fold_left ty_params ~init:t ~f:(fun t Ty.Param.{ name; param_bounds } ->
-      bind t (Located.elem name) param_bounds)
+    List.fold_left
+      ty_params
+      ~init:t
+      ~f:(fun t Ty.Param.{ name; param_bounds } ->
+        bind t (Located.elem name) param_bounds)
   ;;
 
   let of_alist nm_bounds : t = Name.Ty_param.Map.of_alist_exn nm_bounds
@@ -44,7 +48,8 @@ module Ctxt = struct
   let meet t1 t2 ~prov =
     let f ~key:_ = function
       | `Left bounds | `Right bounds -> Some bounds
-      | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.meet ~prov bounds_l bounds_r)
+      | `Both (bounds_l, bounds_r) ->
+        Some (Ty.Param_bounds.meet ~prov bounds_l bounds_r)
     in
     Map.merge t1 t2 ~f
   ;;
@@ -52,7 +57,8 @@ module Ctxt = struct
   let join t1 t2 ~prov =
     let f ~key:_ = function
       | `Left _bounds | `Right _bounds -> None
-      | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.join ~prov bounds_l bounds_r)
+      | `Both (bounds_l, bounds_r) ->
+        Some (Ty.Param_bounds.join ~prov bounds_l bounds_r)
     in
     Map.merge t1 t2 ~f
   ;;
@@ -82,7 +88,13 @@ module Refinement : sig
   val join_many : t list -> prov:Prov.t -> t
   val unbind : t -> Name.Ty_param.t -> t
   val unbind_all : t -> Name.Ty_param.t list -> t
-  val bindings : t -> [> `Bottom | `Bounds of (Name.Ty_param.t * Ty.Param_bounds.t) list | `Top ]
+
+  val bindings
+    :  t
+    -> [> `Bottom
+       | `Bounds of (Name.Ty_param.t * Ty.Param_bounds.t) list
+       | `Top
+       ]
 
   type result =
     | Bounds_top
@@ -93,13 +105,15 @@ module Refinement : sig
 end = struct
   module Minimal = struct
     type t =
-      | Top (** The top element:
-                meet top t = meet t top = t
-                join top _ = join _ top = top *)
+      | Top
+      (** The top element:
+          meet top t = meet t top = t
+          join top _ = join _ top = top *)
       | Bounds of Ty.Param_bounds.t Name.Ty_param.Map.t
-      | Bottom (** The bottom element:
-                   meet bottom _ = meet _ bottom = bottom
-                   join bottom t = join t bottom = t *)
+      | Bottom
+      (** The bottom element:
+          meet bottom _ = meet _ bottom = bottom
+          join bottom t = join t bottom = t *)
     [@@deriving compare, eq, sexp]
 
     let pp ppf t =
@@ -116,7 +130,10 @@ end = struct
   let top = Top
   let bottom = Bottom
   let bounds ty_params = Bounds (Name.Ty_param.Map.of_alist_exn ty_params)
-  let singleton generic param_bounds = Bounds (Name.Ty_param.Map.singleton generic param_bounds)
+
+  let singleton generic param_bounds =
+    Bounds (Name.Ty_param.Map.singleton generic param_bounds)
+  ;;
 
   let pp ppf = function
     | Top -> Fmt.any "T" ppf ()
@@ -152,7 +169,8 @@ end = struct
           (* If the bounds are missing in the left (resp. right) refinement then they are implicitly top so the meet is
              the bounds in the right (resp. left) refinement *)
           Some bounds
-        | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.meet bounds_l bounds_r ~prov)
+        | `Both (bounds_l, bounds_r) ->
+          Some (Ty.Param_bounds.meet bounds_l bounds_r ~prov)
       in
       Bounds (Map.merge b1 b2 ~f)
   ;;
@@ -174,7 +192,8 @@ end = struct
           (* If the bounds are missing in the left (resp. right) refinement they are implicitly top so the join so the
              union is also top which is encoded as [None] *)
           None
-        | `Both (bounds_l, bounds_r) -> Some (Ty.Param_bounds.join bounds_l bounds_r ~prov)
+        | `Both (bounds_l, bounds_r) ->
+          Some (Ty.Param_bounds.join bounds_l bounds_r ~prov)
       in
       Bounds (Map.merge b1 b2 ~f)
   ;;
@@ -190,7 +209,9 @@ end = struct
     match t with
     | Top -> Bounds_top
     | Bottom -> Bounds_bottom
-    | Bounds m -> Option.value_map ~f:(fun b -> Bounds b) ~default:Bounds_top @@ Map.find m name
+    | Bounds m ->
+      Option.value_map ~f:(fun b -> Bounds b) ~default:Bounds_top
+      @@ Map.find m name
   ;;
 
   let unbind t generic =

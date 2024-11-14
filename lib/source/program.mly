@@ -112,7 +112,7 @@
 
 %token<Reporting.Span.t> 
   SCRIPT_MARKER
-  NEW CLASS INTERFACE TRAIT REQUIRE EXTENDS IMPLEMENTS USE ABSTRACT FINAL
+  CLASS INTERFACE TRAIT REQUIRE EXTENDS IMPLEMENTS USE ABSTRACT FINAL
   AS SUPER
   STATIC PUBLIC PRIVATE
   FUNCTION OPTIONAL RETURN WHERE
@@ -121,18 +121,20 @@
   SOME 
   IS 
   LET
-  BOOL INT FLOAT STRING THIS ARRAYKEY NUM
+  BOOL INT FLOAT STRING THIS ARRAYKEY NUM NONNULL MIXED NOTHING
 
-  // WHILE DO FOR FOREACH BREAK CONTINUE SWITCH CASE DEFAULT EXIT
-  // PROTECTED NEWTYPE ENUM SHAPE 
+  // NEW 
+  // WHILE DO FOR FOREACH BREAK CONTINUE SWITCH DEFAULT EXIT
+  // PROTECTED ENUM SHAPE 
 
 (* ~~ Symbols & punctuation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 %token<Reporting.Span.t> 
   LPAREN RPAREN LBRACE RBRACE LANGLE RANGLE COLON QUESTION ELLIPSIS PLUS MINUS
-  COMMA DOT AMPERSAND PIPE EQUAL LOGICAL_AND LOGICAL_OR SEMICOLON UNDERSCORE
+  COMMA DOT AMPERSAND PIPE EQUAL LOGICAL_AND LOGICAL_OR SEMICOLON 
 
-  // MUL DIV IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL
+  // UNDERSCORE
+  // MUL DIV IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL 
   // IS_NOT_IDENTICAL IS_LESS_THAN_OR_EQUAL IS_GREATER_THAN_OR_EQUAL 
   // BANG LBRACKET RBRACKET
   // DOUBLE_ARROW LONG_DOUBLE_ARROW QUESTION_ARROW 
@@ -759,6 +761,18 @@ simple_ty_expr: (* Ty.t * Span.t *)
      let prov = Prov.witness span in 
      Ty.null prov , span
   } 
+  | span=NONNULL {
+     let prov = Prov.witness span in 
+     Ty.nonnull prov , span
+  } 
+  | span=MIXED {
+     let prov = Prov.witness span in 
+     Ty.mixed prov , span
+  } 
+  | span=NOTHING {
+     let prov = Prov.witness span in 
+     Ty.nothing prov , span
+  } 
   | span=BOOL{
      let prov = Prov.witness span in 
      Ty.bool prov , span
@@ -779,7 +793,6 @@ simple_ty_expr: (* Ty.t * Span.t *)
      let prov = Prov.witness span in 
      Ty.arraykey prov , span
   } 
-
   | span=NUM {
      let prov = Prov.witness span in 
      Ty.num prov , span

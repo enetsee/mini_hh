@@ -26,7 +26,12 @@ end
 module type Minimal1_prec = sig
   type 'a t
 
-  val pp_prec : (int -> Format.formatter -> 'a -> unit) -> int -> Format.formatter -> 'a t -> unit
+  val pp_prec
+    :  (int -> Format.formatter -> 'a -> unit)
+    -> int
+    -> Format.formatter
+    -> 'a t
+    -> unit
 end
 
 module type S = sig
@@ -44,7 +49,14 @@ module type S1 = sig
   type 'a t
 
   val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
-  val pp_prec : (int -> Format.formatter -> 'a -> unit) -> int -> Format.formatter -> 'a t -> unit
+
+  val pp_prec
+    :  (int -> Format.formatter -> 'a -> unit)
+    -> int
+    -> Format.formatter
+    -> 'a t
+    -> unit
+
   val to_string : 'a t -> pp_a:(Format.formatter -> 'a -> unit) -> string
   val show : (Format.formatter -> 'a -> unit) -> 'a t -> string
   val print : 'a t -> pp_a:(Format.formatter -> 'a -> unit) -> unit

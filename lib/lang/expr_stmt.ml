@@ -45,7 +45,9 @@ and Expr : sig
 end = struct
   type t = Expr_node.t Located.t [@@deriving eq, compare, sexp, show]
 
-  let elab_to_generic t ~bound_ty_params = Located.map (Expr_node.elab_to_generic ~bound_ty_params) t
+  let elab_to_generic t ~bound_ty_params =
+    Located.map (Expr_node.elab_to_generic ~bound_ty_params) t
+  ;;
 end
 
 (* ~~ Lambdas ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -65,19 +67,25 @@ end = struct
     }
   [@@deriving compare, create, eq, sexp, show]
 
-  let empty = { lambda_sig = Located.create_empty Lambda_sig.empty; body = Seq.empty }
+  let empty =
+    { lambda_sig = Located.create_empty Lambda_sig.empty; body = Seq.empty }
+  ;;
 
   let elab_to_generic { lambda_sig; body } ~bound_ty_params =
     let Lambda_sig.{ ty_params; params; return } = Located.elem lambda_sig in
     (* Bind function level generics *)
     let bound_ty_params =
       let declared_ty_params =
-        Name.Ty_param.Set.of_list @@ List.map ~f:(fun Ty_param_def.{ name; _ } -> Located.elem name) ty_params
+        Name.Ty_param.Set.of_list
+        @@ List.map
+             ~f:(fun Ty_param_def.{ name; _ } -> Located.elem name)
+             ty_params
       in
       Set.union bound_ty_params declared_ty_params
     in
     let lambda_sig =
-      let ty_params = List.map ~f:(Ty_param_def.elab_to_generic ~bound_ty_params) ty_params
+      let ty_params =
+        List.map ~f:(Ty_param_def.elab_to_generic ~bound_ty_params) ty_params
       and params = Fn_param_defs.elab_to_generic params ~bound_ty_params
       and return = Ty.elab_to_generic return ~bound_ty_params in
       let elem = Lambda_sig.create ~ty_params ~params ~return () in
@@ -105,7 +113,12 @@ end = struct
     }
   [@@deriving compare, create, eq, sexp, show]
 
-  let empty = { ty_params = []; params = Fn_param_defs.empty; return = Ty.nothing Prov.empty }
+  let empty =
+    { ty_params = []
+    ; params = Fn_param_defs.empty
+    ; return = Ty.nothing Prov.empty
+    }
+  ;;
 end
 
 and Fn_param_defs : sig
@@ -129,10 +142,15 @@ end = struct
   let empty = { required = []; optional = []; variadic = None }
 
   let elab_to_generic { required; optional; variadic } ~bound_ty_params =
-    let f fn_param_def = Located.map (Fn_param_def.elab_to_generic ~bound_ty_params) fn_param_def in
+    let f fn_param_def =
+      Located.map (Fn_param_def.elab_to_generic ~bound_ty_params) fn_param_def
+    in
     let required = List.map ~f required
     and optional =
-      List.map ~f:(fun (fn_param_def, expr) -> f fn_param_def, Expr.elab_to_generic expr ~bound_ty_params) optional
+      List.map
+        ~f:(fun (fn_param_def, expr) ->
+          f fn_param_def, Expr.elab_to_generic expr ~bound_ty_params)
+        optional
     and variadic = Option.map ~f variadic in
     { required; optional; variadic }
   ;;
@@ -262,7 +280,8 @@ end = struct
     | Assign assign -> Assign (Assign.elab_to_generic assign ~bound_ty_params)
     | If if_ -> If (If.elab_to_generic if_ ~bound_ty_params)
     | Seq seq -> Seq (Seq.elab_to_generic seq ~bound_ty_params)
-    | Return expr_opt -> Return (Option.map expr_opt ~f:(Expr.elab_to_generic ~bound_ty_params))
+    | Return expr_opt ->
+      Return (Option.map expr_opt ~f:(Expr.elab_to_generic ~bound_ty_params))
     | Unpack unpack -> Unpack (Unpack.elab_to_generic unpack ~bound_ty_params)
   ;;
 end
@@ -274,7 +293,9 @@ and Stmt : sig
 end = struct
   type t = Stmt_node.t Located.t [@@deriving eq, compare, sexp, show]
 
-  let elab_to_generic t ~bound_ty_params = Located.map (Stmt_node.elab_to_generic ~bound_ty_params) t
+  let elab_to_generic t ~bound_ty_params =
+    Located.map (Stmt_node.elab_to_generic ~bound_ty_params) t
+  ;;
 end
 
 (* ~~ Assignment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -327,15 +348,20 @@ end
 
 (* ~~ Sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Seq : sig
-  type t = Seq of Stmt.t list [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
+  type t = Seq of Stmt.t list
+  [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
 
   val empty : t
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
 end = struct
-  type t = Seq of Stmt.t list [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
+  type t = Seq of Stmt.t list
+  [@@ocaml.unboxed] [@@deriving eq, compare, sexp, show]
 
   let empty = Seq []
-  let elab_to_generic (Seq stmts) ~bound_ty_params = Seq (List.map stmts ~f:(Stmt.elab_to_generic ~bound_ty_params))
+
+  let elab_to_generic (Seq stmts) ~bound_ty_params =
+    Seq (List.map stmts ~f:(Stmt.elab_to_generic ~bound_ty_params))
+  ;;
 end
 
 (* ~~ Unpack ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -364,7 +390,9 @@ end
 
 (* ~~ L-values ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Lvalue : sig
-  type t = Local of Name.Tm_var.t [@@deriving eq, compare, sexp, show, variants]
+  type t = Local of Name.Tm_var.t
+  [@@deriving eq, compare, sexp, show, variants]
 end = struct
-  type t = Local of Name.Tm_var.t [@@deriving eq, compare, sexp, show, variants]
+  type t = Local of Name.Tm_var.t
+  [@@deriving eq, compare, sexp, show, variants]
 end

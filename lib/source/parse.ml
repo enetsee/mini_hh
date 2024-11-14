@@ -49,7 +49,9 @@ let parse_string str =
   loop lexbuf @@ Program.Incremental.program lexbuf.lex_curr_p
 ;;
 
-let parse_string_exn str = Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_string str
+let parse_string_exn str =
+  Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_string str
+;;
 
 let parse_file path =
   try
@@ -60,4 +62,6 @@ let parse_file path =
   | _ -> Error (Err.File_not_found path)
 ;;
 
-let parse_file_exn file = Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_file file
+let parse_file_exn file =
+  Result.ok_or_failwith @@ Result.map_error ~f:Err.show @@ parse_file file
+;;

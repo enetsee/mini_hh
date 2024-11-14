@@ -63,17 +63,18 @@ let rec promote_ty ty ty_params ~dir =
   let Ty.{ node; prov } = ty in
   Eff.log_exit_ty
   @@
+  let open Ty.Node in
   match node with
-  | Ty.Node.Base _ -> Ok ty
-  | Ty.Node.Generic generic ->
+  | Base _ | Nonnull -> Ok ty
+  | Generic generic ->
     (* TODO(mjt) is this right? *)
     promote_generic prov generic ty_params ~dir
-  | Ty.Node.Fn fn -> promote_fn prov fn ty_params ~dir
-  | Ty.Node.Tuple tuple -> promote_tuple prov tuple ty_params ~dir
-  | Ty.Node.Ctor ctor -> promote_ctor prov ctor ty_params ~dir
-  | Ty.Node.Exists exists -> promote_exists prov exists ty_params ~dir
-  | Ty.Node.Union union -> promote_union prov union ty_params ~dir
-  | Ty.Node.Inter inter -> promote_inter prov inter ty_params ~dir
+  | Fn fn -> promote_fn prov fn ty_params ~dir
+  | Tuple tuple -> promote_tuple prov tuple ty_params ~dir
+  | Ctor ctor -> promote_ctor prov ctor ty_params ~dir
+  | Exists exists -> promote_exists prov exists ty_params ~dir
+  | Union union -> promote_union prov union ty_params ~dir
+  | Inter inter -> promote_inter prov inter ty_params ~dir
 
 and promote_tys tys ty_params ~dir =
   collect_list @@ List.map tys ~f:(fun ty -> promote_ty ty ty_params ~dir)

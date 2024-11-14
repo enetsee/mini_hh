@@ -31,6 +31,7 @@ module rec Node : sig
     | Exists of Exists.t
     | Union of Annot.t list
     | Inter of Annot.t list
+    | Nonnull
   [@@deriving compare, equal, sexp, show, variants]
 end = struct
   module Minimal = struct
@@ -44,6 +45,7 @@ end = struct
       | Exists of Exists.t
       | Union of Annot.t list
       | Inter of Annot.t list
+      | Nonnull
     [@@deriving compare, equal, sexp, variants]
 
     let pp ppf t =
@@ -60,6 +62,7 @@ end = struct
       | Inter [] -> Fmt.any "mixed" ppf ()
       | Inter tys ->
         Fmt.(hovbox @@ parens @@ list ~sep:(any " & ") Annot.pp) ppf tys
+      | Nonnull -> Fmt.any "nonnull" ppf ()
     ;;
   end
 
@@ -85,6 +88,7 @@ and Annot : sig
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
+    ; on_nonnull : 'acc -> Prov.t -> 'acc
     }
 
   val prov_of : t -> Prov.t
@@ -132,6 +136,7 @@ and Annot : sig
   val mixed : Prov.t -> t
   val nothing : Prov.t -> t
   val this : Prov.t -> t
+  val nonnull : Prov.t -> t
 end = struct
   type t =
     { prov : Prov.t
@@ -162,6 +167,7 @@ end = struct
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
+    ; on_nonnull : 'acc -> Prov.t -> 'acc
     }
 
   let id_ops =
@@ -174,6 +180,7 @@ end = struct
       ; on_exists = (fun acc _ _ -> acc)
       ; on_union = (fun acc _ _ -> acc)
       ; on_inter = (fun acc _ _ -> acc)
+      ; on_nonnull = (fun acc _ -> acc)
       }
     in
     fun _ -> ops
@@ -206,6 +213,7 @@ end = struct
         List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init)
       in
       ty_ops.on_inter init prov ts
+    | Nonnull -> ty_ops.on_nonnull init prov
   ;;
 
   (* ~~ Modify provenance ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -215,7 +223,7 @@ end = struct
   (* ~~ Generic substitution ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   let rec apply_subst ({ prov; node } as t) ~subst ~combine_prov =
     match node with
-    | Base _ -> t
+    | Base _ | Nonnull -> t
     | Generic name ->
       (match Map.find subst name with
        | Some t -> map_prov t ~f:(combine_prov prov)
@@ -248,7 +256,7 @@ end = struct
       TODO(mjt) Ideally we will do this when we elaborate from CST to AST *)
   let rec elab_to_generic ({ prov; node } as t) ~bound_ty_params =
     match node with
-    | Base _ | Generic _ -> t
+    | Base _ | Generic _ | Nonnull -> t
     | Fn fn ->
       let node = Node.fn (Fn.elab_to_generic fn ~bound_ty_params) in
       { prov; node }
@@ -308,6 +316,11 @@ end = struct
 
   let exists prov ~quants ~body =
     let node = Node.exists @@ Exists.create ~quants ~body () in
+    create ~prov ~node ()
+  ;;
+
+  let nonnull prov =
+    let node = Node.nonnull in
     create ~prov ~node ()
   ;;
 

@@ -10,12 +10,19 @@ end
 include Minimal
 include Pretty.Make (Minimal)
 
-let bindings t = List.map ~f:(fun (nm, (ty, spans)) -> nm, ty, Set.to_list spans) @@ Map.to_alist t
+let bindings t =
+  List.map ~f:(fun (nm, (ty, spans)) -> nm, ty, Set.to_list spans)
+  @@ Map.to_alist t
+;;
+
 let empty = Name.Tm_var.Map.empty
 let bottom = empty
 let find (t : t) local = Option.map ~f:fst @@ Map.find t local
 let is_bound (t : t) local = Map.mem t local
-let singleton Located.{ span; elem } ty : t = Name.Tm_var.Map.singleton elem (ty, Span.Set.singleton span)
+
+let singleton Located.{ span; elem } ty : t =
+  Name.Tm_var.Map.singleton elem (ty, Span.Set.singleton span)
+;;
 
 let diff (t : t) ~(tl : t) ~(tr : t) =
   let outer = Map.key_set t in
@@ -43,7 +50,8 @@ let diff (t : t) ~(tl : t) ~(tr : t) =
 let join t1 t2 ~prov =
   let f ~key:_ = function
     | `Left (ty, spans) | `Right (ty, spans) -> Some (ty, spans)
-    | `Both ((ty1, spans1), (ty2, spans2)) -> Some (Ty.union ~prov [ ty1; ty2 ], Set.union spans1 spans2)
+    | `Both ((ty1, spans1), (ty2, spans2)) ->
+      Some (Ty.union ~prov [ ty1; ty2 ], Set.union spans1 spans2)
   in
   Map.merge t1 t2 ~f
 ;;
@@ -57,10 +65,19 @@ let extend t ~with_ : t =
   Map.merge t with_ ~f
 ;;
 
-let bind (t : t) Located.{ elem; span } ty : t = Map.update t elem ~f:(fun _ -> ty, Span.Set.singleton span)
-let bind_all (t : t) tm_var_tys : t = List.fold_left tm_var_tys ~init:t ~f:(fun t (tm_var, ty) -> bind t tm_var ty)
+let bind (t : t) Located.{ elem; span } ty : t =
+  Map.update t elem ~f:(fun _ -> ty, Span.Set.singleton span)
+;;
+
+let bind_all (t : t) tm_var_tys : t =
+  List.fold_left tm_var_tys ~init:t ~f:(fun t (tm_var, ty) -> bind t tm_var ty)
+;;
+
 let unbind t tm_var = Map.remove t tm_var
-let transform (t : t) ~f : t = Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
+
+let transform (t : t) ~f : t =
+  Name.Tm_var.Map.map t ~f:(fun (ty, spans) -> f ty, spans)
+;;
 
 module Refinement = struct
   module Minimal = struct
@@ -80,7 +97,8 @@ module Refinement = struct
     let f ~key:_ elem =
       match elem with
       | `Left _ty_rfmt | `Right _ty_rfmt -> None
-      | `Both (ty_rfmt1, ty_rfmt2) -> Some (Ty.Refinement.join ty_rfmt1 ty_rfmt2 ~prov)
+      | `Both (ty_rfmt1, ty_rfmt2) ->
+        Some (Ty.Refinement.join ty_rfmt1 ty_rfmt2 ~prov)
     in
     Map.merge t1 t2 ~f
   ;;
@@ -89,7 +107,8 @@ module Refinement = struct
     let f ~key:_ elem =
       match elem with
       | `Left ty_rfmt | `Right ty_rfmt -> Some ty_rfmt
-      | `Both (ty_rfmt1, ty_rfmt2) -> Some (Ty.Refinement.meet ty_rfmt1 ty_rfmt2 ~prov)
+      | `Both (ty_rfmt1, ty_rfmt2) ->
+        Some (Ty.Refinement.meet ty_rfmt1 ty_rfmt2 ~prov)
     in
     Map.merge t1 t2 ~f
   ;;

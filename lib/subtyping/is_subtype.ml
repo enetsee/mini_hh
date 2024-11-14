@@ -235,14 +235,15 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         | Generic _
         | Tuple _
         | Ctor _
+        | Nonnull
         | Base _ ) )
     , (_prov_super, Inter []) ) -> Ok Prop.true_
   | ( (_prov_sub, Inter [])
     , ( _prov_super
       , ( Union _
         | Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _ ) ) ) ->
-    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
+    ) -> Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Bot ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (_, Union [])
     , ( _
@@ -253,17 +254,26 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         | Generic _
         | Tuple _
         | Ctor _
+        | Nonnull
         | Base _ ) ) ) -> Ok Prop.true_
   | ( ( _
       , ( Union (_ :: _)
-        | Inter _ | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _ ) )
+        | Inter _
+        | Exists _
+        | Fn _
+        | Generic _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) )
     , (_, Union []) ) -> Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Union-L ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (prov_sub, Union tys_sub)
     , ( _
       , ( Union (_ :: _)
         | Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _ ) ) ) ->
+        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
+    ) ->
     let props =
       List.map tys_sub ~f:(fun ty ->
         let ty_sub =
@@ -276,7 +286,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Inter-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _ ) )
+        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
     , (prov_super, Inter tys_super) ) ->
     let props =
       List.map tys_super ~f:(fun ty ->
@@ -290,7 +300,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Union-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _ ) )
+        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
     , (prov_super, Union tys_super) ) ->
     let props =
       List.map tys_super ~f:(fun ty ->
@@ -303,7 +313,8 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     Ok (Prop.disj props)
   (* ~~ C-Inter-L ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (prov_sub, Inter tys_sub)
-    , (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _)) ) ->
+    , (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _)) )
+    ->
     let props =
       List.map tys_sub ~f:(fun ty ->
         let ty_sub =
@@ -317,7 +328,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Generic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Generic name_sub), (_prov_super, Generic name_super)
     when Name.Ty_param.equal name_sub name_super -> Ok Prop.true_
-  | ( (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Base _))
+  | ( (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _))
     , (prov_super, Generic name_super) ) ->
     let ty_super =
       let Ty.Param_bounds.{ lower; _ } =
@@ -328,7 +339,8 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     in
     Ok (Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
   | ( (prov_sub, Generic name_sub)
-    , (_prov_super, (Exists _ | Fn _ | Tuple _ | Ctor _ | Base _)) ) ->
+    , (_prov_super, (Exists _ | Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)) )
+    ->
     let ty_sub =
       let Ty.Param_bounds.{ upper; _ } =
         Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt_cont name_sub
@@ -337,15 +349,20 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         Prov.axiom_upper_bound ~bound ~of_:prov_sub)
     in
     Ok (Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
-  (* ~~ C-Exists ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ C-Exists (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Exists _exists_sub), (_prov_super, Exists _exists_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
-  | ( (_prov_sub, (Fn _ | Tuple _ | Ctor _ | Base _))
+  | ( (_prov_sub, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _))
     , (_prov_super, Exists _exist_super) ) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | ( (_prov_sub, Exists _exists_sub)
-    , (_prov_super, (Fn _ | Tuple _ | Ctor _ | Base _)) ) ->
+    , (_prov_super, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)) ) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
+  (* ~~ C-Nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (_, Nonnull), (_, (Fn _ | Tuple _ | Ctor _ | Base _)) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+  | (_, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)), (_, Nonnull) ->
+    Ok Prop.true_
   (* ~~ C-Fn ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Fn fn_sub), (prov_super, Fn fn_super) ->
     step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super

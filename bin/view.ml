@@ -14,6 +14,7 @@ module Ty_view = struct
     let open Ty.Node in
     match t.Ty.node with
     | Base base -> render_base base
+    | Nonnull -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "nonnull"
     | Generic name ->
       Lwd.pure
       @@ W.string ~attr:Attr.(fg green ++ st italic)

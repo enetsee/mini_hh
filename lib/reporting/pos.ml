@@ -8,13 +8,18 @@ module Minimal = struct
     }
   [@@deriving create, equal, fields, sexp, yojson]
 
-  let pp ppf { line; bol; offset } = Fmt.(vbox @@ pair ~sep:(any ":") int int) ppf (line, offset - bol)
+  let pp ppf { line; bol; offset } =
+    Fmt.(vbox @@ pair ~sep:(any ":") int int) ppf (line, offset - bol)
+  ;;
 end
 
 include Minimal
 include Pretty.Make (Minimal)
 
-let compare { line = line1; bol = bol1; offset = offset1 } { line = line2; bol = bol2; offset = offset2 } =
+let compare
+  { line = line1; bol = bol1; offset = offset1 }
+  { line = line2; bol = bol2; offset = offset2 }
+  =
   let c = Int.compare line1 line2 in
   if c <> 0 then c else Int.compare (offset1 + bol1) (offset2 + bol2)
 ;;

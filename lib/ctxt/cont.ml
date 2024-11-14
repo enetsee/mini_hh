@@ -15,7 +15,10 @@ module Refinements = struct
         @@ record
              ~sep:cut
              [ field "locals" (fun { local; _ } -> local) Local.Refinement.pp
-             ; field "type parameters" (fun { ty_param; _ } -> ty_param) Ty_param.Refinement.pp
+             ; field
+                 "type parameters"
+                 (fun { ty_param; _ } -> ty_param)
+                 Ty_param.Refinement.pp
              ])
         ppf
         t
@@ -25,7 +28,10 @@ module Refinements = struct
   include Minimal
   include Pretty.Make (Minimal)
 
-  let empty = { local = Local.Refinement.empty; ty_param = Ty_param.Refinement.empty }
+  let empty =
+    { local = Local.Refinement.empty; ty_param = Ty_param.Refinement.empty }
+  ;;
+
   let param_rfmnt { ty_param; _ } nm = Ty_param.Refinement.find ty_param nm
   let tm_var_rfmt { local; _ } nm = Local.Refinement.find local nm
 
@@ -35,14 +41,22 @@ module Refinements = struct
   ;;
 
   (** Lifts [meet] on locals and type parameters *)
-  let meet { local = local1; ty_param = ty_param1 } { local = local2; ty_param = ty_param2 } ~prov =
+  let meet
+    { local = local1; ty_param = ty_param1 }
+    { local = local2; ty_param = ty_param2 }
+    ~prov
+    =
     let local = Local.Refinement.meet local1 local2 ~prov
     and ty_param = Ty_param.Refinement.meet ty_param1 ty_param2 ~prov in
     { local; ty_param }
   ;;
 
   (** Lifts [join] on locals and type parameters *)
-  let join { local = local1; ty_param = ty_param1 } { local = local2; ty_param = ty_param2 } ~prov =
+  let join
+    { local = local1; ty_param = ty_param1 }
+    { local = local2; ty_param = ty_param2 }
+    ~prov
+    =
     let local = Local.Refinement.join local1 local2 ~prov
     and ty_param = Ty_param.Refinement.join ty_param1 ty_param2 ~prov in
     { local; ty_param }
@@ -63,7 +77,10 @@ module Bindings = struct
         @@ record
              ~sep:cut
              [ field "locals" (fun { local; _ } -> local) Local.pp
-             ; field "type parameters" (fun { ty_param; _ } -> ty_param) Ty_param.pp
+             ; field
+                 "type parameters"
+                 (fun { ty_param; _ } -> ty_param)
+                 Ty_param.pp
              ])
         ppf
         t
@@ -113,8 +130,10 @@ module Expr_delta = struct
         TODO(mjt) when we have object access this should include the set of refinements on properties that have been
         invalidated *)
     type t =
-      { rfmts : Refinements.t option (** [is] expressions may refine local variables and type parameters *)
-      ; bindings : Bindings.t option (** [as] expressions redefine locals and type parameters *)
+      { rfmts : Refinements.t option
+      (** [is] expressions may refine local variables and type parameters *)
+      ; bindings : Bindings.t option
+      (** [as] expressions redefine locals and type parameters *)
       }
     [@@deriving create]
 
@@ -123,8 +142,10 @@ module Expr_delta = struct
         vbox
         @@ record
              ~sep:cut
-             [ field "Δ refinements" (fun { rfmts; _ } -> rfmts) @@ option ~none:(any "(none)") Refinements.pp
-             ; field "Δ bindings" (fun { bindings; _ } -> bindings) @@ option ~none:(any "(none)") Bindings.pp
+             [ field "Δ refinements" (fun { rfmts; _ } -> rfmts)
+               @@ option ~none:(any "(none)") Refinements.pp
+             ; field "Δ bindings" (fun { bindings; _ } -> bindings)
+               @@ option ~none:(any "(none)") Bindings.pp
              ])
         ppf
         t
@@ -142,7 +163,8 @@ module Cont = struct
   module Minimal = struct
     (** The per-continuation context *)
     type t =
-      { bindings : Bindings.t (** Local variables & type parameters bound in this continuation *)
+      { bindings : Bindings.t
+      (** Local variables & type parameters bound in this continuation *)
       ; rfmtss : Refinements.t option list
       (** The stack of refinements corresponding to successive type tests, if any *)
       }
@@ -168,7 +190,9 @@ module Cont = struct
 
   let invalidate_local_refinement ({ rfmtss; _ } as t) tm_var =
     let rfmtss =
-      List.map rfmtss ~f:(fun rfmt_opt -> Option.map rfmt_opt ~f:(fun rfmt -> Refinements.invalidate_local rfmt tm_var))
+      List.map rfmtss ~f:(fun rfmt_opt ->
+        Option.map rfmt_opt ~f:(fun rfmt ->
+          Refinements.invalidate_local rfmt tm_var))
     in
     { t with rfmtss }
   ;;
@@ -181,8 +205,10 @@ module Cont = struct
   let find_local t tm_var =
     Option.map ~f:(fun ty ->
       List.fold_left t.rfmtss ~init:ty ~f:(fun ty rfmt_opt ->
-        Option.value_map ~default:ty ~f:(fun ty_rfmt -> Ty.refine ty ~rfmt:ty_rfmt)
-        @@ Option.bind rfmt_opt ~f:(fun rfmt -> Refinements.tm_var_rfmt rfmt tm_var)))
+        Option.value_map ~default:ty ~f:(fun ty_rfmt ->
+          Ty.refine ty ~rfmt:ty_rfmt)
+        @@ Option.bind rfmt_opt ~f:(fun rfmt ->
+          Refinements.tm_var_rfmt rfmt tm_var)))
     @@ Local.find t.bindings.local tm_var
   ;;
 
@@ -196,16 +222,21 @@ module Cont = struct
     let rec aux acc res =
       match res with
       | Ty_param.Refinement.Bounds_top :: rest -> aux acc rest
-      | Ty_param.Refinement.Bounds_bottom :: _ -> Some (Ty.Param_bounds.bottom Prov.empty)
+      | Ty_param.Refinement.Bounds_bottom :: _ ->
+        Some (Ty.Param_bounds.bottom Prov.empty)
       | Ty_param.Refinement.Bounds bounds :: rest ->
         let acc =
-          Option.value_map ~default:bounds ~f:(fun acc -> Ty.Param_bounds.meet acc bounds ~prov:Prov.empty) acc
+          Option.value_map
+            ~default:bounds
+            ~f:(fun acc -> Ty.Param_bounds.meet acc bounds ~prov:Prov.empty)
+            acc
         in
         aux (Some acc) rest
       | [] -> acc
     in
     let rmfts =
-      List.filter_map rfmtss ~f:(fun rfmt_opt -> Option.map rfmt_opt ~f:(fun rfmt -> Refinements.param_rfmnt rfmt nm))
+      List.filter_map rfmtss ~f:(fun rfmt_opt ->
+        Option.map rfmt_opt ~f:(fun rfmt -> Refinements.param_rfmnt rfmt nm))
     in
     aux None rmfts
   ;;
@@ -224,7 +255,9 @@ module Cont = struct
     { t with bindings }
   ;;
 
-  let bind_ty_params t ty_params = List.fold_left ty_params ~init:t ~f:bind_ty_param
+  let bind_ty_params t ty_params =
+    List.fold_left ty_params ~init:t ~f:bind_ty_param
+  ;;
 end
 
 module Delta = struct
@@ -243,7 +276,9 @@ module Delta = struct
         vbox
         @@ record
              ~sep:cut
-             [ field "Δ bindings" (fun { bindings; _ } -> bindings) @@ option ~none:(any "(none)") Bindings.pp ])
+             [ field "Δ bindings" (fun { bindings; _ } -> bindings)
+               @@ option ~none:(any "(none)") Bindings.pp
+             ])
         ppf
         t
     ;;
@@ -256,12 +291,18 @@ module Delta = struct
   let of_expr_delta Expr_delta.{ bindings; _ } = { bindings }
 
   let extend t ~with_ =
-    let bindings = Option.merge t.bindings with_.bindings ~f:(fun t with_ -> Bindings.extend t ~with_) in
+    let bindings =
+      Option.merge t.bindings with_.bindings ~f:(fun t with_ ->
+        Bindings.extend t ~with_)
+    in
     { bindings }
   ;;
 
   let unbind_local { bindings } tm_var =
-    let bindings = Option.map bindings ~f:(fun bindings -> Bindings.unbind_local bindings tm_var) in
+    let bindings =
+      Option.map bindings ~f:(fun bindings ->
+        Bindings.unbind_local bindings tm_var)
+    in
     { bindings }
   ;;
 
@@ -284,13 +325,17 @@ module Delta = struct
       let bindings = Some (Bindings.create ~local ~ty_param ()) in
       { bindings }
     (* If bindings are present on both sides, take the *)
-    | Some { local = lcl_l; ty_param = tp_l }, Some { local = lcl_r; ty_param = tp_r } ->
+    | ( Some { local = lcl_l; ty_param = tp_l }
+      , Some { local = lcl_r; ty_param = tp_r } ) ->
       (* All type parameters should have been removed during exposure *)
-      let _ : unit = assert (Ty_param.is_empty tp_l && Ty_param.is_empty tp_r) in
+      let _ : unit =
+        assert (Ty_param.is_empty tp_l && Ty_param.is_empty tp_r)
+      in
       let local =
         Map.merge lcl_l lcl_r ~f:(fun ~key elem ->
           match elem with
-          | `Both ((ty_l, spans_l), (ty_r, spans_r)) -> Some (Ty.union [ ty_l; ty_r ] ~prov, Set.union spans_l spans_r)
+          | `Both ((ty_l, spans_l), (ty_r, spans_r)) ->
+            Some (Ty.union [ ty_l; ty_r ] ~prov, Set.union spans_l spans_r)
           | `Left (ty, spans) | `Right (ty, spans) ->
             Option.map ~f:(fun ty' -> Ty.union [ ty; ty' ] ~prov, spans)
             (* TODO(mjt) this should also give use the spans *)
@@ -327,12 +372,17 @@ include Cont
     - pushing any refinements onto the stack *)
 
 let update_expr t ~expr_delta:Expr_delta.{ rfmts; bindings } =
-  let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_)
+  let bindings =
+    Option.value_map bindings ~default:t.bindings ~f:(fun with_ ->
+      Bindings.extend t.bindings ~with_)
   and rfmtss = rfmts :: t.rfmtss in
   { bindings; rfmtss }
 ;;
 
 let update t ~delta:Delta.{ bindings } =
-  let bindings = Option.value_map bindings ~default:t.bindings ~f:(fun with_ -> Bindings.extend t.bindings ~with_) in
+  let bindings =
+    Option.value_map bindings ~default:t.bindings ~f:(fun with_ ->
+      Bindings.extend t.bindings ~with_)
+  in
   { t with bindings }
 ;;

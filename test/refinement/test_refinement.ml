@@ -8,28 +8,37 @@ let ty_param_nm nm = Name.Ty_param.of_string nm
 let mk_generic nm = ty_param_nm nm
 
 let program_of_string prog_str =
-  Result.ok_or_failwith @@ Result.map_error ~f:Source.Parse.Err.show @@ Source.Parse.parse_string prog_str
+  Result.ok_or_failwith
+  @@ Result.map_error ~f:Source.Parse.Err.show
+  @@ Source.Parse.parse_string prog_str
 ;;
 
 let result =
-  Alcotest.pair Testable.refinement @@ Alcotest.option @@ Alcotest.pair Testable.prov Testable.ty_param_refine
+  Alcotest.pair Testable.refinement
+  @@ Alcotest.option
+  @@ Alcotest.pair Testable.prov Testable.ty_param_refine
 ;;
 
 module Gadt_covariant = struct
   let agreement =
-    let prog_str = {|class Four {}
+    let prog_str =
+      {|class Four {}
 interface I<+T> {}
 class A implements I<Four> {}
-|} in
+|}
+    in
     let prog = program_of_string prog_str in
     let oracle, errs = Oracle.of_program prog in
     assert (List.is_empty errs);
     (* Scrutinee and test type *)
     let ta = ty_param_nm "Ta" in
-    let ty_scrut = Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty ta ]
+    let ty_scrut =
+      Ty.ctor Prov.empty ~name:(ctor_nm "I") ~args:[ Ty.generic Prov.empty ta ]
     and ty_test = Ty.ctor Prov.empty ~name:(ctor_nm "A") ~args:[] in
     (* Set up context *)
-    let ty_param = Ctxt.Ty_param.(bind empty ta @@ Ty.Param_bounds.top Prov.empty) in
+    let ty_param =
+      Ctxt.Ty_param.(bind empty ta @@ Ty.Param_bounds.top Prov.empty)
+    in
     let local = Ctxt.Local.empty in
     let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
     let cont_ctxt = Ctxt.Cont.{ empty with bindings } in
@@ -43,10 +52,17 @@ class A implements I<Four> {}
       and prov_test = Ty.prov_of ty_test in
       let prov = Prov.refine ~prov_scrut ~prov_test in
       ( Ty.Refinement.Replace_with ty_test
-      , Some (prov, Ctxt.Ty_param.Refinement.(singleton ta @@ Ty.Param_bounds.create ~lower:four ~upper:four ())) )
+      , Some
+          ( prov
+          , Ctxt.Ty_param.Refinement.(
+              singleton ta @@ Ty.Param_bounds.create ~lower:four ~upper:four ())
+          ) )
     in
     let test () = Alcotest.check result prog_str actual expect in
-    Alcotest.test_case "gadt refinement with agreement between bounds" `Quick test
+    Alcotest.test_case
+      "gadt refinement with agreement between bounds"
+      `Quick
+      test
   ;;
 
   let test_cases = [ agreement ]

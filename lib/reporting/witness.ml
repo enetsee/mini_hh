@@ -1,7 +1,8 @@
 open Core
 
 module Def = struct
-  type t = Where_clause of Span.t [@@deriving compare, eq, sexp, show, variants, yojson]
+  type t = Where_clause of Span.t
+  [@@deriving compare, eq, sexp, show, variants, yojson]
 end
 
 module Lit = struct
@@ -15,7 +16,8 @@ module Lit = struct
 end
 
 module Lvalue = struct
-  type t = Tm_var of Span.t [@@deriving compare, eq, sexp, show, variants, yojson]
+  type t = Tm_var of Span.t
+  [@@deriving compare, eq, sexp, show, variants, yojson]
 end
 
 module Expr = struct
@@ -28,7 +30,8 @@ module Expr = struct
 end
 
 module Stmt = struct
-  type t = If_join of Span.t [@@deriving compare, eq, sexp, show, variants, yojson]
+  type t = If_join of Span.t
+  [@@deriving compare, eq, sexp, show, variants, yojson]
 end
 
 type t =

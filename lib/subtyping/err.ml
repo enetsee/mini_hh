@@ -32,19 +32,35 @@ module Minimal = struct
     | Variadic -> Fmt.any "variadic" ppf ()
   ;;
 
-  let pp_param_plural ppf n = if n = 1 then Fmt.any "parameter" ppf () else Fmt.any "parameters" ppf ()
+  let pp_param_plural ppf n =
+    if n = 1 then Fmt.any "parameter" ppf () else Fmt.any "parameters" ppf ()
+  ;;
+
   let pp_num_or_no ppf n = if n = 0 then Fmt.any "no" ppf () else Fmt.int ppf n
-  let pp_num_or_none ppf n = if n = 0 then Fmt.any "none" ppf () else Fmt.int ppf n
+
+  let pp_num_or_none ppf n =
+    if n = 0 then Fmt.any "none" ppf () else Fmt.int ppf n
+  ;;
 
   let pp_arity ppf (n, param_kind) =
-    Fmt.(pair ~sep:sp pp_num_or_no @@ pair ~sep:sp pp_param_kind pp_param_plural) ppf (n, (param_kind, n))
+    Fmt.(
+      pair ~sep:sp pp_num_or_no @@ pair ~sep:sp pp_param_kind pp_param_plural)
+      ppf
+      (n, (param_kind, n))
   ;;
 
   let rec pp ppf t =
     match t with
-    | Not_a_subtype { ty_sub; ty_super } -> Fmt.(hovbox @@ pair ~sep:(any " </: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)
-    | Tuple_arity { param_kind; prov_sub = _; n_sub; prov_super = _; n_super } ->
-      Fmt.(hovbox @@ pair ~sep:sp (any "The subtype had " ++ pp_arity) (any "but the supertype had " ++ pp_num_or_none))
+    | Not_a_subtype { ty_sub; ty_super } ->
+      Fmt.(hovbox @@ pair ~sep:(any " </: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)
+    | Tuple_arity { param_kind; prov_sub = _; n_sub; prov_super = _; n_super }
+      ->
+      Fmt.(
+        hovbox
+        @@ pair
+             ~sep:sp
+             (any "The subtype had " ++ pp_arity)
+             (any "but the supertype had " ++ pp_num_or_none))
         ppf
         ((n_sub, param_kind), n_super)
     | Disj ts -> Fmt.(hovbox @@ list ~sep:(any " | ") pp) ppf ts

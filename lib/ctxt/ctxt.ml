@@ -20,8 +20,10 @@ module Ctxt = struct
         vbox
         @@ record
              ~sep:cut
-             [ field "next" (fun { next; _ } -> next) @@ option ~none:(any "(none)") Cont.pp
-             ; field "exit" (fun { exit; _ } -> exit) @@ option ~none:(any "(none)") Cont.pp
+             [ field "next" (fun { next; _ } -> next)
+               @@ option ~none:(any "(none)") Cont.pp
+             ; field "exit" (fun { exit; _ } -> exit)
+               @@ option ~none:(any "(none)") Cont.pp
              ])
         ppf
         t
@@ -47,8 +49,10 @@ module Delta = struct
         vbox
         @@ record
              ~sep:cut
-             [ field "Δ next" (fun { next; _ } -> next) @@ option ~none:(any "(none)") Cont.Delta.pp
-             ; field "Δ exit" (fun { exit; _ } -> exit) @@ option ~none:(any "(none)") Cont.Delta.pp
+             [ field "Δ next" (fun { next; _ } -> next)
+               @@ option ~none:(any "(none)") Cont.Delta.pp
+             ; field "Δ exit" (fun { exit; _ } -> exit)
+               @@ option ~none:(any "(none)") Cont.Delta.pp
              ])
         ppf
         t
@@ -59,7 +63,10 @@ module Delta = struct
   include Pretty.Make (Minimal)
 
   let empty = { next = None; exit = None }
-  let lift { next; exit } ~f = { next = Option.map ~f next; exit = Option.map ~f exit }
+
+  let lift { next; exit } ~f =
+    { next = Option.map ~f next; exit = Option.map ~f exit }
+  ;;
 
   let lift2 { next = next1; exit = exit1 } { next = next2; exit = exit2 } ~f =
     let next = Option.merge ~f next1 next2
@@ -67,11 +74,18 @@ module Delta = struct
     { next; exit }
   ;;
 
-  let join ctxt ~tl ~tr ~prov = lift2 tl tr ~f:Cont.Delta.(fun tl tr -> join ctxt ~tl ~tr ~prov)
-  let extend t ~with_ = lift2 t with_ ~f:(fun t with_ -> Cont.Delta.extend t ~with_)
+  let join ctxt ~tl ~tr ~prov =
+    lift2 tl tr ~f:Cont.Delta.(fun tl tr -> join ctxt ~tl ~tr ~prov)
+  ;;
+
+  let extend t ~with_ =
+    lift2 t with_ ~f:(fun t with_ -> Cont.Delta.extend t ~with_)
+  ;;
 
   let unbind_local ({ next; _ } as t) tm_var =
-    let next = Option.map next ~f:(fun next -> Cont.Delta.unbind_local next tm_var) in
+    let next =
+      Option.map next ~f:(fun next -> Cont.Delta.unbind_local next tm_var)
+    in
     { t with next }
   ;;
 end

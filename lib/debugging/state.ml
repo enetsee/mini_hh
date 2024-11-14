@@ -17,10 +17,20 @@ module Minimal = struct
       vbox
       @@ record
            ~sep:cut
-           [ field "types" (fun { tys; _ } -> tys) @@ vbox @@ list ~sep:cut @@ pair ~sep:sp Span.pp Ty.pp
-           ; field "errors" (fun { errs; _ } -> errs) @@ vbox @@ list ~sep:cut Typing.Err.pp
-           ; field "warnings " (fun { warns; _ } -> warns) @@ vbox @@ list ~sep:cut Typing.Warn.pp
-           ; field "type parameter name source" (fun { ty_param_name_source; _ } -> ty_param_name_source) int
+           [ field "types" (fun { tys; _ } -> tys)
+             @@ vbox
+             @@ list ~sep:cut
+             @@ pair ~sep:sp Span.pp Ty.pp
+           ; field "errors" (fun { errs; _ } -> errs)
+             @@ vbox
+             @@ list ~sep:cut Typing.Err.pp
+           ; field "warnings " (fun { warns; _ } -> warns)
+             @@ vbox
+             @@ list ~sep:cut Typing.Warn.pp
+           ; field
+               "type parameter name source"
+               (fun { ty_param_name_source; _ } -> ty_param_name_source)
+               int
            ])
       ppf
       t
@@ -38,6 +48,9 @@ let fresh_ty_params t n =
   let { ty_param_name_source; _ } = t in
   let offset = ty_param_name_source in
   let ty_param_name_source = offset + n in
-  let names = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset)) in
+  let names =
+    List.init n ~f:(fun i ->
+      Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset))
+  in
   { t with ty_param_name_source }, names
 ;;

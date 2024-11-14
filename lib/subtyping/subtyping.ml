@@ -58,7 +58,10 @@ module Tell = struct
   let all props ~ctxt = Eager_leftmost_dfs.tell_all props ~errs:[] ~ctxt
   let any props ~ctxt = Eager_leftmost_dfs.tell_any props ~errs:[] ~ctxt
   let one cstr ~ctxt = Eager_leftmost_dfs.tell_cstr cstr ~ctxt
-  let is_subtype ~ty_sub ~ty_super ~ctxt = one (Cstr.is_subtype ~ty_sub ~ty_super) ~ctxt
+
+  let is_subtype ~ty_sub ~ty_super ~ctxt =
+    one (Cstr.is_subtype ~ty_sub ~ty_super) ~ctxt
+  ;;
 end
 
 module Ask = struct

@@ -76,13 +76,13 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   | _, (prov_test, Ty.Node.Exists exists_test) ->
     refine_existential_test ty_scrut prov_test exists_test ~ctxt
   (* ~~ Unions & intersections ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | _, (prov_test, Ty.Node.Union ty_tests) ->
+  | _, (prov_test, Ty.Node.Union (_ :: _ as ty_tests)) ->
     refine_union_test prov_test ~ty_tests ~ty_scrut ~ctxt
-  | _, (prov_test, Ty.Node.Inter ty_tests) ->
+  | _, (prov_test, Ty.Node.Inter (_ :: _ as ty_tests)) ->
     refine_inter_test prov_test ~ty_tests ~ty_scrut ~ctxt
-  | (prov_scrut, Ty.Node.Union ty_scruts), _ ->
+  | (prov_scrut, Ty.Node.Union (_ :: _ as ty_scruts)), _ ->
     refine_union_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
-  | (prov_scrut, Ty.Node.Inter ty_scruts), _ ->
+  | (prov_scrut, Ty.Node.Inter (_ :: _ as ty_scruts)), _ ->
     refine_inter_scrut prov_scrut ~ty_scruts ~ty_test ~ctxt
   (* ~~ Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Ctor ctor_scrut), (prov_test, Ty.Node.Ctor ctor_test)
@@ -100,9 +100,9 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
          scrutinee type : if T </: S,  S & T = nothing , S - T = T. 
          - *)
        let rfmt = Ty.Refinement.disjoint prov, None in
-       (* and _rtmt_cmpl = Ty.Refinement.replace_with ty_scrut, None in *)
        rfmt
-       (* , rfmt_cmpl *)
+       (* and rtmt_cmpl = Ty.Refinement.replace_with ty_scrut, None in in
+          rfmt, rfmt_cmpl in *)
      | Subtyping.Answer.Yes ->
        (* The test type is a subtype of the scrutinee so the refinement is to
           exactly the test type i.e. it is _technically_ redunant to apply an
@@ -111,6 +111,10 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
           work correctly. The complement of the refinement is the difference
           of the scrutinee and the test types:
           if T <: S, T & S = T, S - T == S & ~T
+
+          In hh its possible to express negation for a subset of type. We don't
+          support that here so, unless there is an exact negation of the test
+          type.
        *)
        let rfmt = Ty.Refinement.intersect_with prov ty_test, None in
        (* and _rfmt_cmpl = Ty.Refinement.disjoint prov, None in *)

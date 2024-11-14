@@ -48,7 +48,9 @@ let view (tabs : (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
       let tab_bar =
         tabs
         |> List.mapi ~f:(fun i (s, _) ->
-          let tab_annot = if i = idx_sel then render_tab_active s else render_tab s in
+          let tab_annot =
+            if i = idx_sel then render_tab_active s else render_tab s
+          in
           Ui.mouse_area
             (fun ~x:_ ~y:_ l ->
               match l with

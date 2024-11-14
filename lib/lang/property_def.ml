@@ -13,6 +13,10 @@ type t =
 
 let elab_to_generic t ~bound_ty_params =
   let ty = Ty.elab_to_generic t.ty ~bound_ty_params
-  and default_value = Option.map t.default_value ~f:(Expr_stmt.Expr.elab_to_generic ~bound_ty_params) in
+  and default_value =
+    Option.map
+      t.default_value
+      ~f:(Expr_stmt.Expr.elab_to_generic ~bound_ty_params)
+  in
   { t with ty; default_value }
 ;;

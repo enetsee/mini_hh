@@ -16,5 +16,7 @@ let to_string = function
       (Span.to_string @@ Option.value ~default:Span.empty span_return)
       (Span.to_string span_dead)
   | Impossible_refinement err ->
-    Format.sprintf {|Impossible refinement: this refinement will never be true (%s)|} (Subtyping.Err.to_string err)
+    Format.sprintf
+      {|Impossible refinement: this refinement will never be true (%s)|}
+      (Subtyping.Err.to_string err)
 ;;

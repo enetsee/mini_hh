@@ -10,6 +10,9 @@ let fresh_generic { ty_param_source } =
 
 let fresh_generics { ty_param_source } n =
   let ty_param_source = ty_param_source + n in
-  let ty_params = List.init n ~f:(fun i -> Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + n)) in
+  let ty_params =
+    List.init n ~f:(fun i ->
+      Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + n))
+  in
   { ty_param_source }, ty_params
 ;;

@@ -90,7 +90,7 @@ rule token = parse
   | "extends"               { EXTENDS (current_loc lexbuf) }
   | "implements"            { IMPLEMENTS (current_loc lexbuf) }
   | "require"               { REQUIRE (current_loc lexbuf) }
-  | "new"                   { NEW (current_loc lexbuf) }
+  (* | "new"                   { NEW (current_loc lexbuf) } *)
   | "use"                   { USE (current_loc lexbuf) }
   | "abstract"              { ABSTRACT (current_loc lexbuf) }
   | "final"                 { FINAL (current_loc lexbuf) }
@@ -117,6 +117,10 @@ rule token = parse
   | "arraykey"              { ARRAYKEY (current_loc lexbuf) }
   | "num"                   { NUM (current_loc lexbuf) }
   | "this"                  { THIS (current_loc lexbuf) }
+  | "null"                  { NULL (current_loc lexbuf) }
+  | "nonnull"               { NONNULL (current_loc lexbuf) }
+  | "mixed"                 { MIXED (current_loc lexbuf) }
+  | "nothing"               { NOTHING (current_loc lexbuf) }
 
  (* ~~ Symbols & punctuation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | '+'                     { PLUS (current_loc lexbuf) }
@@ -154,7 +158,7 @@ rule token = parse
   | "..."                   { ELLIPSIS (current_loc lexbuf)}
   | "&"                     { AMPERSAND (current_loc lexbuf)}
   | "|"                     { PIPE (current_loc lexbuf)}
-  | "_"                     { UNDERSCORE (current_loc lexbuf)}
+  (* | "_"                     { UNDERSCORE (current_loc lexbuf)} *)
 
   (* ~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 

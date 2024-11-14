@@ -20,14 +20,22 @@ module Minimal = struct
 
   let pp ppf t =
     match t with
-    | Subtyping err -> Fmt.(hovbox @@ (any "subtyping: " ++ Subtyping.Err.pp)) ppf err
-    | Alread_bound nm -> Fmt.(hovbox @@ (any "already bound: " ++ Name.Tm_var.pp)) ppf nm
-    | Unbound_local nm -> Fmt.(hovbox @@ (any "unbound local: " ++ Located.pp Name.Tm_var.pp)) ppf nm
+    | Subtyping err ->
+      Fmt.(hovbox @@ (any "subtyping: " ++ Subtyping.Err.pp)) ppf err
+    | Alread_bound nm ->
+      Fmt.(hovbox @@ (any "already bound: " ++ Name.Tm_var.pp)) ppf nm
+    | Unbound_local nm ->
+      Fmt.(hovbox @@ (any "unbound local: " ++ Located.pp Name.Tm_var.pp))
+        ppf
+        nm
     | Unbound_at_join { name; span_bound; span_unbound } ->
       Fmt.(
         hovbox
         @@ pair ~sep:sp (any "unbound at join: " ++ Name.Tm_var.pp)
-        @@ pair ~sep:sp (any " was bound here " ++ Span.pp) (any " but wasn't bound in this continuation " ++ Span.pp))
+        @@ pair
+             ~sep:sp
+             (any " was bound here " ++ Span.pp)
+             (any " but wasn't bound in this continuation " ++ Span.pp))
         ppf
         (name, (span_bound, span_unbound))
     | Unpack_arity { n_quants; n_names; _ } ->
@@ -36,7 +44,10 @@ module Minimal = struct
         @@ (any "unpack arity: "
             ++ pair
                  ~sep:sp
-                 (int ++ (any @@ if n_quants = 1 then " quantifier" else " quantifiers"))
+                 (int
+                  ++ (any
+                      @@ if n_quants = 1 then " quantifier" else " quantifiers"
+                     ))
                  (int ++ (any @@ if n_names = 1 then " name" else " names"))))
         ppf
         (n_quants, n_names)
