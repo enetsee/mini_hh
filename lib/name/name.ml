@@ -116,3 +116,17 @@ module Tm_var = struct
     let pp ppf t = Fmt.(hovbox @@ braces @@ list ~sep:comma pp) ppf t
   end
 end
+
+module Shape_field_label = struct
+  module Minimal = struct
+    type t = Label of string
+    [@@deriving compare, equal, sexp, show, yojson] [@@ocaml.unboxed]
+
+    let pp ppf (Label name) = Fmt.string ppf name
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  let of_string nm = Label nm
+end

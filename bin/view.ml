@@ -19,6 +19,7 @@ module Ty_view = struct
       Lwd.pure
       @@ W.string ~attr:Attr.(fg green ++ st italic)
       @@ Name.Ty_param.to_string name
+    | Shape shape -> render_shape shape
     | Tuple tuple -> render_tuple tuple
     | Fn fn -> render_fn fn
     | Ctor ctor -> render_ctor ctor
@@ -47,6 +48,47 @@ module Ty_view = struct
         @@ List.map tys ~f:render
       ; Lwd.pure @@ W.string ")"
       ]
+
+  and render_shape Ty.Shape.{ required; optional; variadic } =
+    let sep = pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "," in
+    let required = Map.to_alist required
+    and optional = Map.to_alist optional in
+    let req =
+      W.hbox @@ List.intersperse ~sep @@ List.map required ~f:render_shape_field
+    and optional =
+      match optional with
+      | [] -> W.empty_lwd
+      | _ ->
+        W.hbox
+        @@ (sep
+            :: (List.intersperse ~sep
+                @@ List.map optional ~f:(fun field ->
+                  W.hbox [ Lwd.pure @@ W.string "?"; render_shape_field field ])
+               ))
+    and variadic =
+      Option.value_map variadic ~default:W.empty_lwd ~f:(fun ty ->
+        W.hbox [ sep; render ty; Lwd.pure @@ W.string "..." ])
+    in
+    let elems = W.hbox [ req; optional; variadic ] in
+    W.hbox
+      [ pad ~right:1 @@ Lwd.pure @@ W.string "shape ("
+      ; elems
+      ; pad ~left:1 @@ Lwd.pure @@ W.string ")"
+      ]
+
+  and render_shape_field (lbl, ty) =
+    W.hbox
+      [ render_shape_field_lbl lbl
+      ; pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "=>"
+      ; render ty
+      ]
+
+  and render_shape_field_lbl lbl =
+    match lbl with
+    | Ty.Shape_field_label.Lit lit ->
+      Lwd.pure
+      @@ W.string ~attr:Attr.(st italic)
+      @@ Name.Shape_field_label.to_string lit
 
   and render_tuple Ty.Tuple.{ required; optional; variadic } =
     let sep = pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "," in

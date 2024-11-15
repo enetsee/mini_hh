@@ -71,6 +71,7 @@ let rec promote_ty ty ty_params ~dir =
     promote_generic prov generic ty_params ~dir
   | Fn fn -> promote_fn prov fn ty_params ~dir
   | Tuple tuple -> promote_tuple prov tuple ty_params ~dir
+  | Shape shape -> promote_shape prov shape ty_params ~dir
   | Ctor ctor -> promote_ctor prov ctor ty_params ~dir
   | Exists exists -> promote_exists prov exists ty_params ~dir
   | Union union -> promote_union prov union ty_params ~dir
@@ -78,6 +79,12 @@ let rec promote_ty ty ty_params ~dir =
 
 and promote_tys tys ty_params ~dir =
   collect_list @@ List.map tys ~f:(fun ty -> promote_ty ty ty_params ~dir)
+
+and promote_shape_field_label_map tys_map ty_params ~dir =
+  Result.map ~f:Ty.Shape_field_label.Map.of_alist_exn
+  @@ collect_list
+  @@ List.map (Map.to_alist tys_map) ~f:(fun (key, ty) ->
+    Result.map ~f:(fun ty -> key, ty) @@ promote_ty ty ty_params ~dir)
 
 and promote_ty_opt ty_opt ty_params ~dir =
   Option.value_map ty_opt ~default:(Ok None) ~f:(fun ty ->
@@ -124,6 +131,16 @@ and promote_tuple_help Ty.Tuple.{ required; optional; variadic } ty_params ~dir 
   @@ collect_tuple3
        ( promote_tys required ty_params ~dir
        , promote_tys optional ty_params ~dir
+       , promote_ty_opt variadic ty_params ~dir )
+
+and promote_shape prov Ty.Shape.{ required; optional; variadic } ty_params ~dir =
+  Result.map ~f:(fun (required, optional, variadic) ->
+    let shape = Ty.Shape.{ required; optional; variadic } in
+    let node = Ty.Node.Shape shape in
+    Ty.create ~prov ~node ())
+  @@ collect_tuple3
+       ( promote_shape_field_label_map required ty_params ~dir
+       , promote_shape_field_label_map optional ty_params ~dir
        , promote_ty_opt variadic ty_params ~dir )
 
 and promote_ctor prov ctor ty_params ~dir =

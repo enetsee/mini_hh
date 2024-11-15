@@ -2,6 +2,214 @@ open Core
 open Reporting
 open Common
 
+let fields_empty (req, opt, var) =
+  Map.is_empty req && Map.is_empty opt && Option.is_none var
+;;
+
+let rec step_shape_field
+  ~prov_sub
+  ~fields_sub
+  ~prov_super
+  ~fields_super
+  ~errs
+  ~cstrs
+  =
+  match fields_sub, fields_super with
+  (* ~~ Error ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Fewer required fields in subtype than in supertype ~~ *)
+  | ([], opts_sub, var_sub), (Some reqs_super, opts_super, var_super) ->
+    let errs =
+      let lbls_super = Map.keys reqs_super in
+      List.fold_left lbls_super ~init:errs ~f:(fun errs lbl ->
+        let optional_in_sub =
+          List.exists opts_sub ~f:(fun (lbl_sub, _) ->
+            Ty.Shape_field_label.equal lbl_sub lbl)
+        in
+        Err.shape_field_required_super
+          ~prov_sub
+          ~prov_super
+          ~lbl
+          ~optional_in_sub
+        :: errs)
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(None, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Subtype is open supertype is closed ~~ *)
+  | (reqs_sub, opts_sub, Some _), (reqs_super, opts_super, None) ->
+    let errs =
+      let err = Err.shape_sub_open_super_closed ~prov_sub ~prov_super in
+      err :: errs
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, None)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, None)
+      ~errs
+      ~cstrs
+  (* ~~ Finish ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | ([], [], None), (None, _, _) ->
+    if List.is_empty errs
+    then Ok (Prop.conj cstrs)
+    else Error (Err.multiple errs)
+  (* ~~ Handle required fields in the subtype ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Match required field to required field ~~ *)
+  | ( ((lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
+    , (Some reqs_super, opts_super, var_super) )
+    when Map.mem reqs_super lbl ->
+    let ty_super = Map.find_exn reqs_super lbl in
+    let reqs_super =
+      let m = Map.remove reqs_super lbl in
+      if Map.is_empty m then None else Some m
+    in
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Match required field to optional field ~~ *)
+  | ( ((lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
+    , (reqs_super, Some opts_super, var_super) )
+    when Map.mem opts_super lbl ->
+    let ty_super = Map.find_exn opts_super lbl in
+    let opts_super =
+      let m = Map.remove opts_super lbl in
+      if Map.is_empty m then None else Some m
+    in
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Match required field to variadic ~~ *)
+  | ( ((_lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
+    , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Unmatched required field ~~ *)
+  | ((lbl, _) :: reqs_sub, opts_sub, var_sub), (reqs_super, opts_super, None) ->
+    let errs =
+      let err = Err.shape_field_required_sub ~prov_sub ~prov_super ~lbl in
+      err :: errs
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, None)
+      ~errs
+      ~cstrs
+  (* ~~ Handle optional fields in the subtype ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Match optional field to optional field ~~ *)
+  | ( ([], (lbl, ty_sub) :: opts_sub, var_sub)
+    , (reqs_super, Some opts_super, var_super) )
+    when Map.mem opts_super lbl ->
+    let ty_super = Map.find_exn opts_super lbl in
+    let opts_super =
+      let m = Map.remove opts_super lbl in
+      if Map.is_empty m then None else Some m
+    in
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Match optional field to variadic ~~ *)
+  | ( ([], (_lbl, ty_sub) :: opts_sub, var_sub)
+    , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Unmatched optional field ~~ *)
+  | ([], (lbl, _) :: opts_sub, var_sub), (reqs_super, opts_super, var_super) ->
+    let errs =
+      let required_in_super =
+        Option.value_map reqs_super ~default:false ~f:(fun m -> Map.mem m lbl)
+      in
+      let err =
+        Err.shape_field_optional_sub
+          ~prov_sub
+          ~prov_super
+          ~lbl
+          ~required_in_super
+      in
+      err :: errs
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Match variadic to variadic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | ([], [], Some ty_sub), (reqs_super, opts_super, Some ty_super) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], [], None)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, None)
+      ~errs
+      ~cstrs
+;;
+
+let step_shape ~prov_sub ~shape_sub ~prov_super ~shape_super =
+  let Ty.Shape.{ required = reqs_sub; optional = opts_sub; variadic = var_sub } =
+    shape_sub
+  and Ty.Shape.
+        { required = reqs_super; optional = opts_super; variadic = var_super }
+    =
+    shape_super
+  in
+  let fields_sub = Map.to_alist reqs_sub, Map.to_alist opts_sub, var_sub
+  and fields_super =
+    let reqs_super = if Map.is_empty reqs_super then None else Some reqs_super
+    and opts_super =
+      if Map.is_empty opts_super then None else Some opts_super
+    in
+    reqs_super, opts_super, var_super
+  in
+  step_shape_field
+    ~prov_sub
+    ~fields_sub
+    ~prov_super
+    ~fields_super
+    ~errs:[]
+    ~cstrs:[]
+;;
+
 let rec step_tuple_elem
   prov_sub
   params_sub
@@ -115,7 +323,7 @@ let rec step_tuple_elem
     let n_super = idx_super + List.length reqs in
     Error
       (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
-  (* -- More optional params in the supertype with no params in the subtype -- *)
+  (* -- More optional params in the subtype with no params in the supertype -- *)
   | ([], (_ :: _ as opts), _), ([], [], None) ->
     let n_super = idx_super + List.length opts in
     Error
@@ -231,6 +439,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         | Exists _
         | Fn _
         | Generic _
+        | Shape _
         | Tuple _
         | Ctor _
         | Nonnull
@@ -240,8 +449,14 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     , ( _prov_super
       , ( Union _
         | Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
-    ) -> Error (Err.not_a_subtype ~ty_sub ~ty_super)
+        | Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) ) ) -> Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Bot ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (_, Union [])
     , ( _
@@ -251,6 +466,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         | Fn _
         | Generic _
         | Tuple _
+        | Shape _
         | Ctor _
         | Nonnull
         | Base _ ) ) ) -> Ok Prop.true_
@@ -261,6 +477,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         | Fn _
         | Generic _
         | Tuple _
+        | Shape _
         | Ctor _
         | Nonnull
         | Base _ ) )
@@ -270,8 +487,14 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     , ( _
       , ( Union (_ :: _)
         | Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
-    ) ->
+        | Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) ) ) ->
     let props =
       List.map tys_sub ~f:(fun ty ->
         let ty_sub =
@@ -284,7 +507,14 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Inter-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
+        | Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) )
     , (prov_super, Inter tys_super) ) ->
     let props =
       List.map tys_super ~f:(fun ty ->
@@ -298,7 +528,14 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Union-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
-        | Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _ ) )
+        | Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) )
     , (prov_super, Union tys_super) ) ->
     let props =
       List.map tys_super ~f:(fun ty ->
@@ -311,8 +548,15 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     Ok (Prop.disj props)
   (* ~~ C-Inter-L ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (prov_sub, Inter tys_sub)
-    , (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _)) )
-    ->
+    , ( _
+      , ( Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) ) ) ->
     let props =
       List.map tys_sub ~f:(fun ty ->
         let ty_sub =
@@ -326,7 +570,15 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Generic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Generic name_sub), (_prov_super, Generic name_super)
     when Name.Ty_param.equal name_sub name_super -> Ok Prop.true_
-  | ( (_, (Exists _ | Fn _ | Generic _ | Tuple _ | Ctor _ | Nonnull | Base _))
+  | ( ( _
+      , ( Exists _
+        | Fn _
+        | Generic _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) )
     , (prov_super, Generic name_super) ) ->
     let ty_super =
       let Ty.Param_bounds.{ lower; _ } =
@@ -337,8 +589,8 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     in
     Ok (Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
   | ( (prov_sub, Generic name_sub)
-    , (_prov_super, (Exists _ | Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)) )
-    ->
+    , ( _prov_super
+      , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) ) ) ->
     let ty_sub =
       let Ty.Param_bounds.{ upper; _ } =
         Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt_cont name_sub
@@ -350,17 +602,26 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   (* ~~ C-Exists (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Exists _exists_sub), (_prov_super, Exists _exists_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
-  | ( (_prov_sub, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _))
+  | ( (_prov_sub, (Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _))
     , (_prov_super, Exists _exist_super) ) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | ( (_prov_sub, Exists _exists_sub)
-    , (_prov_super, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)) ) ->
+    , (_prov_super, (Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _)) ) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | (_, Nonnull), (_, (Fn _ | Tuple _ | Ctor _ | Base _)) ->
+  | (_, Nonnull), (_, (Fn _ | Shape _ | Tuple _ | Ctor _ | Base _)) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
-  | (_, (Fn _ | Tuple _ | Ctor _ | Nonnull | Base _)), (_, Nonnull) ->
+  | (_, (Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _)), (_, Nonnull) ->
     Ok Prop.true_
+  (* ~~ C-Shape ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (prov_sub, Shape shape_sub), (prov_super, Shape shape_super) ->
+    step_shape ~prov_sub ~shape_sub ~prov_super ~shape_super
+  | ( (_prov_sub, (Fn _ | Tuple _ | Ctor _ | Base _))
+    , (_prov_super, Shape _shape_super) ) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+  | ( (_prov_sub, Shape _shape_sub)
+    , (_prov_super, (Fn _ | Tuple _ | Ctor _ | Base _)) ) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Fn ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Fn fn_sub), (prov_super, Fn fn_super) ->
     step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super

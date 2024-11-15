@@ -35,6 +35,14 @@ function required_optional((optional arraykey) $tuple): void {
 function required_variadic((arraykey...) $tuple): void {
     if($tuple is (int)) {
        $x = 1;
+    } else if ($tuple is (int,int)) {
+       $x = 1;
+    } else if ($tuple is (string,string)) {
+       $x = 1;
+    } else if ($tuple is (int,string)) {
+       $x = 1;
+    } else if ($tuple is (string,int)) {
+       $x = 1;
     } else {
        $x = '1';
     }

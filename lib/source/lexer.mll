@@ -105,7 +105,7 @@ rule token = parse
   | "super"                 { SUPER (current_loc lexbuf) }
   | "const"                 { CONST (current_loc lexbuf) }
   | "type"                  { TYPE (current_loc lexbuf) }
-  (* | "shape"                 { SHAPE (current_loc lexbuf) } *)
+  | "shape"                 { SHAPE (current_loc lexbuf) }
   | "where"                 { WHERE (current_loc lexbuf) }
   | "optional"              { OPTIONAL (current_loc lexbuf) }
   | "some"                  { SOME (current_loc lexbuf) }
@@ -151,7 +151,7 @@ rule token = parse
   | '{'                     { LBRACE (current_loc lexbuf)}
   | '}'                     { RBRACE (current_loc lexbuf)}
   | ":"                     { COLON (current_loc lexbuf)}
-  (* | "=>"                    { DOUBLE_ARROW (current_loc lexbuf)} *)
+  | "=>"                    { DOUBLE_ARROW (current_loc lexbuf)}
   (* | "==>"                   { LONG_DOUBLE_ARROW (current_loc lexbuf)} *)
   (* | "->"                    { ARROW (current_loc lexbuf)} *)
   (* | "?->"                   { QUESTION_ARROW (current_loc lexbuf)} *)

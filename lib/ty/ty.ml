@@ -26,6 +26,7 @@ module rec Node : sig
     | Base of Common.Base.t
     | Generic of Name.Ty_param.t
     | Tuple of Tuple.t
+    | Shape of Shape.t
     | Fn of Fn.t
     | Ctor of Ctor.t
     | Exists of Exists.t
@@ -40,6 +41,7 @@ end = struct
       | Base of Common.Base.t
       | Generic of Name.Ty_param.t
       | Tuple of Tuple.t
+      | Shape of Shape.t
       | Fn of Fn.t
       | Ctor of Ctor.t
       | Exists of Exists.t
@@ -53,6 +55,7 @@ end = struct
       | Base base -> Fmt.(styled `Magenta Common.Base.pp) ppf base
       | Generic name -> Fmt.(styled `Green Name.Ty_param.pp) ppf name
       | Tuple tuple -> Tuple.pp ppf tuple
+      | Shape shape -> Shape.pp ppf shape
       | Fn fn -> Fn.pp ppf fn
       | Ctor ctor -> Ctor.pp ppf ctor
       | Exists exists -> Exists.pp ppf exists
@@ -84,6 +87,7 @@ and Annot : sig
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
+    ; on_shape : 'acc -> Prov.t -> Shape.t -> 'acc
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
@@ -126,6 +130,13 @@ and Annot : sig
     -> return:t
     -> t
 
+  val shape
+    :  Prov.t
+    -> required:(Shape_field_label.t * t) list
+    -> optional:(Shape_field_label.t * t) list
+    -> variadic:t option
+    -> t
+
   val ctor : Prov.t -> name:Name.Ctor.t -> args:t list -> t
   val exists : Prov.t -> quants:Param.t list -> body:t -> t
   val union : t list -> prov:Prov.t -> t
@@ -163,6 +174,7 @@ end = struct
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
+    ; on_shape : 'acc -> Prov.t -> Shape.t -> 'acc
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
@@ -176,6 +188,7 @@ end = struct
       ; on_generic = (fun acc _ _ -> acc)
       ; on_fn = (fun acc _ _ -> acc)
       ; on_tuple = (fun acc _ _ -> acc)
+      ; on_shape = (fun acc _ _ -> acc)
       ; on_ctor = (fun acc _ _ -> acc)
       ; on_exists = (fun acc _ _ -> acc)
       ; on_union = (fun acc _ _ -> acc)
@@ -200,6 +213,9 @@ end = struct
     | Tuple tuple ->
       let init = Tuple.bottom_up tuple ~ops ~init in
       ty_ops.on_tuple init prov tuple
+    | Shape shape ->
+      let init = Shape.bottom_up shape ~ops ~init in
+      ty_ops.on_shape init prov shape
     | Exists exists ->
       let init = Exists.bottom_up exists ~ops ~init in
       ty_ops.on_exists init prov exists
@@ -234,6 +250,9 @@ end = struct
     | Tuple tuple ->
       let node = Node.tuple (Tuple.apply_subst tuple ~subst ~combine_prov) in
       { prov; node }
+    | Shape shape ->
+      let node = Node.shape (Shape.apply_subst shape ~subst ~combine_prov) in
+      { prov; node }
     | Ctor ctor ->
       let node = Node.ctor (Ctor.apply_subst ctor ~subst ~combine_prov) in
       { prov; node }
@@ -262,6 +281,9 @@ end = struct
       { prov; node }
     | Tuple tuple ->
       let node = Node.tuple (Tuple.elab_to_generic tuple ~bound_ty_params) in
+      { prov; node }
+    | Shape shape ->
+      let node = Node.shape (Shape.elab_to_generic shape ~bound_ty_params) in
       { prov; node }
     | Ctor Ctor.{ name; args = [] } ->
       let ty_param_name = Name.Ty_param.from_ctor_name name in
@@ -306,6 +328,13 @@ end = struct
   let fn prov ~required ~optional ~variadic ~return =
     let params = Tuple.create ~required ~optional ?variadic () in
     let node = Node.fn @@ Fn.create ~params ~return () in
+    create ~prov ~node ()
+  ;;
+
+  let shape prov ~required ~optional ~variadic =
+    let required = Shape_field_label.Map.of_alist_exn required
+    and optional = Shape_field_label.Map.of_alist_exn optional in
+    let node = Node.shape @@ Shape.create ~required ~optional ?variadic () in
     create ~prov ~node ()
   ;;
 
@@ -460,6 +489,7 @@ end = struct
   ;;
 end
 
+(* ~~ Tuple types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Tuple : sig
   type t =
     { required : Annot.t list
@@ -577,6 +607,205 @@ end = struct
     in
     { required; optional; variadic }
   ;;
+end
+
+(* ~~ Shape types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Shape : sig
+  type t =
+    { required : Annot.t Shape_field_label.Map.t
+    ; optional : Annot.t Shape_field_label.Map.t
+    ; variadic : Annot.t option
+    }
+  [@@deriving compare, create, equal, create, sexp, show]
+
+  type 'acc ops =
+    { on_required : 'acc -> Annot.t Shape_field_label.Map.t -> 'acc
+    ; on_optional : 'acc -> Annot.t Shape_field_label.Map.t -> 'acc
+    ; on_variadic : 'acc -> Annot.t option -> 'acc
+    }
+
+  val id_ops : unit -> 'a ops
+  val bottom_up : t -> ops:'acc Ops.t -> init:'acc -> 'acc
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
+end = struct
+  module Minimal = struct
+    type t =
+      { required : Annot.t Shape_field_label.Map.t
+      ; optional : Annot.t Shape_field_label.Map.t
+      ; variadic : Annot.t option
+      }
+    [@@deriving compare, create, equal, create, sexp]
+
+    let pp_shape_field ppf (label, ty) =
+      Fmt.(hovbox @@ pair ~sep:(any " => ") Shape_field_label.pp Annot.pp)
+        ppf
+        (label, ty)
+    ;;
+
+    let pp_optional_shape_field ppf (label, ty) =
+      Fmt.(
+        hovbox
+        @@ pair ~sep:(any " => ") (any "?" ++ Shape_field_label.pp) Annot.pp)
+        ppf
+        (label, ty)
+    ;;
+
+    let pp ppf { required; optional; variadic } =
+      match Map.to_alist required, Map.to_alist optional, variadic with
+      | [], [], None -> Fmt.(any "shape ()") ppf ()
+      | reqs, [], None ->
+        Fmt.(
+          any "shape" ++ (hovbox @@ parens @@ list ~sep:comma pp_shape_field))
+          ppf
+          reqs
+      | [], opts, None ->
+        Fmt.(
+          any "shape"
+          ++ (hovbox @@ parens @@ list ~sep:comma pp_optional_shape_field))
+          ppf
+          opts
+      | [], [], Some ty ->
+        Fmt.(any "shape" ++ (hovbox @@ parens @@ (Annot.pp ++ any "...")))
+          ppf
+          ty
+      | reqs, opts, None ->
+        Fmt.(
+          any "shape"
+          ++ (hovbox
+              @@ parens
+              @@ pair
+                   ~sep:comma
+                   (list ~sep:comma pp_shape_field)
+                   (list ~sep:comma pp_optional_shape_field)))
+          ppf
+          (reqs, opts)
+      | reqs, [], Some ty ->
+        Fmt.(
+          any "shape"
+          ++ (hovbox
+              @@ parens
+              @@ pair
+                   ~sep:comma
+                   (list ~sep:comma pp_shape_field)
+                   (Annot.pp ++ any "...")))
+          ppf
+          (reqs, ty)
+      | [], opts, Some ty ->
+        Fmt.(
+          any "shape"
+          ++ (hovbox
+              @@ parens
+              @@ pair
+                   ~sep:comma
+                   (list ~sep:comma pp_optional_shape_field)
+                   (Annot.pp ++ any "...")))
+          ppf
+          (opts, ty)
+      | reqs, opts, Some ty ->
+        Fmt.(
+          any "shape"
+          ++ (hovbox
+              @@ parens
+              @@ pair
+                   ~sep:comma
+                   (pair
+                      ~sep:comma
+                      (list ~sep:comma pp_shape_field)
+                      (list ~sep:comma pp_optional_shape_field))
+                   (Annot.pp ++ any "...")))
+          ppf
+          ((reqs, opts), ty)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  type 'acc ops =
+    { on_required : 'acc -> Annot.t Shape_field_label.Map.t -> 'acc
+    ; on_optional : 'acc -> Annot.t Shape_field_label.Map.t -> 'acc
+    ; on_variadic : 'acc -> Annot.t option -> 'acc
+    }
+
+  let id_ops _ =
+    { on_required = (fun acc _ -> acc)
+    ; on_optional = (fun acc _ -> acc)
+    ; on_variadic = (fun acc _ -> acc)
+    }
+  ;;
+
+  let bottom_up { required; optional; variadic } ~ops ~init =
+    let shape_ops = ops.Ops.shape in
+    let init =
+      Map.fold required ~init ~f:(fun ~key:_ ~data:ty init ->
+        Annot.bottom_up ~ops ~init ty)
+    in
+    let init = shape_ops.on_required init required in
+    let init =
+      Map.fold optional ~init ~f:(fun ~key:_ ~data:ty init ->
+        Annot.bottom_up ~ops ~init ty)
+    in
+    let init = shape_ops.on_optional init optional in
+    let init =
+      Option.fold variadic ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
+    let init = shape_ops.on_variadic init variadic in
+    init
+  ;;
+
+  let apply_subst { required; optional; variadic } ~subst ~combine_prov =
+    let required =
+      Map.map required ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
+    let optional =
+      Map.map optional ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
+    let variadic =
+      Option.map variadic ~f:(Annot.apply_subst ~subst ~combine_prov)
+    in
+    { required; optional; variadic }
+  ;;
+
+  let elab_to_generic { required; optional; variadic } ~bound_ty_params =
+    let required =
+      Map.map required ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
+    let optional =
+      Map.map optional ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
+    let variadic =
+      Option.map variadic ~f:(Annot.elab_to_generic ~bound_ty_params)
+    in
+    { required; optional; variadic }
+  ;;
+end
+
+and Shape_field_label : sig
+  type t = Lit of Name.Shape_field_label.t
+  [@@deriving compare, equal, sexp, show, variants]
+
+  module Map : Map.S with type Key.t := t
+end = struct
+  module Minimal = struct
+    type t = Lit of Name.Shape_field_label.t
+    [@@deriving compare, equal, sexp, variants]
+
+    let pp ppf = function
+      | Lit name -> Name.Shape_field_label.pp ppf name
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+  module Map = Map.Make (Minimal)
 end
 
 (* ~~ Type constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -991,6 +1220,7 @@ and Ops : sig
     { ty : 'a Annot.ops
     ; fn : 'a Fn.ops
     ; tuple : 'a Tuple.ops
+    ; shape : 'a Shape.ops
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
     ; param : 'a Param.ops
@@ -1004,6 +1234,7 @@ end = struct
     { ty : 'a Annot.ops
     ; fn : 'a Fn.ops
     ; tuple : 'a Tuple.ops
+    ; shape : 'a Shape.ops
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
     ; param : 'a Param.ops
@@ -1014,6 +1245,7 @@ end = struct
     { ty = Annot.id_ops ()
     ; fn = Fn.id_ops ()
     ; tuple = Tuple.id_ops ()
+    ; shape = Shape.id_ops ()
     ; ctor = Ctor.id_ops ()
     ; exists = Exists.id_ops ()
     ; param = Param.id_ops ()

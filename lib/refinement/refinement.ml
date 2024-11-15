@@ -94,8 +94,11 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   (* ~~ Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_scrut, Ty.Node.Fn fn_scrut), (prov_test, Ty.Node.Fn fn_test) ->
     refine_fn ~prov_scrut ~fn_scrut ~prov_test ~fn_test ~ctxt
+  (* ~~ Shapes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | ( (prov_scrut, Ty.Node.Shape shape_scrut)
+    , (prov_test, Ty.Node.Shape shape_test) ) ->
+    refine_shape ~prov_scrut ~shape_scrut ~prov_test ~shape_test ~ctxt
   (* ~~ Base-types and nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
   | (prov_scrut, _), (prov_test, _) ->
     let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
     (match
@@ -636,6 +639,197 @@ and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
        ( Replace_with (Ty.inter tys ~prov)
        , Some (prov, Ctxt.Ty_param.Refinement.meet_many refns ~prov) )
      | Error _provs -> Ty.Refinement.disjoint prov, None)
+
+and refine_shape ~prov_scrut ~shape_scrut ~prov_test ~shape_test ~ctxt =
+  let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
+  let rec aux
+    ~fields_test
+    ~fields_scrut
+    (required, optional, variadic)
+    ty_param_rfmts
+    =
+    match fields_test, fields_scrut with
+    (* ~~ Fewer required fields in subtype than in supertype ~~ *)
+    | ([], _, _), (Some _, _, _)
+    (* ~~ Test type is an open shape, scrutinee is a closed shape ~~ *)
+    | (_, _, Some _), (_, _, None) -> Ty.Refinement.disjoint prov, None
+    (* ~~ Finish ~~ *)
+    | ([], [], None), (None, _, _) ->
+      let shape = Ty.Shape.create ~required ~optional ?variadic () in
+      let node = Ty.Node.Shape shape in
+      let ty = Ty.create ~prov ~node () in
+      let ty_rfmt = Ty.Refinement.Replace_with ty in
+      let ty_param_rfmt_opt =
+        match ty_param_rfmts with
+        | [] -> None
+        | xs -> Some (prov, Ctxt.Ty_param.Refinement.meet_many xs ~prov)
+      in
+      ty_rfmt, ty_param_rfmt_opt
+    (* ~~ Refine required field by required field ~~ *)
+    | ( ((lbl, ty_test) :: reqs_test, opts_test, var_test)
+      , (Some reqs_scrut, opts_scrut, var_scrut) )
+      when Map.mem reqs_scrut lbl ->
+      let ty_scrut = Map.find_exn reqs_scrut lbl in
+      let reqs_scrut =
+        let m = Map.remove reqs_scrut lbl in
+        if Map.is_empty m then None else Some m
+      in
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let ty = Ty.refine ty_scrut ~rfmt:ty_rfmt in
+         let required = Map.add_exn required ~key:lbl ~data:ty in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:(reqs_test, opts_test, var_test)
+           ~fields_scrut:(reqs_scrut, opts_scrut, var_scrut)
+           (required, optional, variadic)
+           ty_param_rfmts)
+    (* ~~ Refine optional field with required field ~~ *)
+    | ( ((lbl, ty_test) :: reqs_test, opts_test, var_test)
+      , (reqs_scrut, Some opts_scrut, var_scrut) )
+      when Map.mem opts_scrut lbl ->
+      let ty_scrut = Map.find_exn opts_scrut lbl in
+      let opts_scrut =
+        let m = Map.remove opts_scrut lbl in
+        if Map.is_empty m then None else Some m
+      in
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let ty = Ty.refine ty_scrut ~rfmt:ty_rfmt in
+         let required = Map.add_exn required ~key:lbl ~data:ty in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:(reqs_test, opts_test, var_test)
+           ~fields_scrut:(reqs_scrut, opts_scrut, var_scrut)
+           (required, optional, variadic)
+           ty_param_rfmts)
+    (* ~~ Refine variadic field with required field ~~ *)
+    | ( ((lbl, ty_test) :: reqs_test, opts_test, var_test)
+      , (reqs_scrut, opts_scrut, (Some ty_scrut as var_scrut)) ) ->
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let ty = Ty.refine ty_scrut ~rfmt:ty_rfmt in
+         let required = Map.add_exn required ~key:lbl ~data:ty in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:(reqs_test, opts_test, var_test)
+           ~fields_scrut:(reqs_scrut, opts_scrut, var_scrut)
+           (required, optional, variadic)
+           ty_param_rfmts)
+    (* ~~ Unmatched required field ~~ *)
+    | ((_, ty) :: _, _, _), (_, _, None) ->
+      Ty.Refinement.disjoint (Ty.prov_of ty), None
+    (* ~~ Refine optional field by optional field ~~ *)
+    | ( ([], (lbl, ty_test) :: opts_test, var_test)
+      , (reqs_scrut, Some opts_scrut, var_scrut) )
+      when Map.mem opts_scrut lbl ->
+      let ty_scrut = Map.find_exn opts_scrut lbl in
+      let opts_scrut =
+        let m = Map.remove opts_scrut lbl in
+        if Map.is_empty m then None else Some m
+      in
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let ty = Ty.refine ty_scrut ~rfmt:ty_rfmt in
+         let optional = Map.add_exn optional ~key:lbl ~data:ty in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:([], opts_test, var_test)
+           ~fields_scrut:(reqs_scrut, opts_scrut, var_scrut)
+           (required, optional, variadic)
+           ty_param_rfmts)
+    (* ~~ Refine variadic by optional field ~~ *)
+    | ( ([], (lbl, ty_test) :: opts_test, var_test)
+      , (reqs_scrut, opts_scrut, (Some ty_scrut as var_scrut)) ) ->
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let ty = Ty.refine ty_scrut ~rfmt:ty_rfmt in
+         let optional = Map.add_exn optional ~key:lbl ~data:ty in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:([], opts_test, var_test)
+           ~fields_scrut:(reqs_scrut, opts_scrut, var_scrut)
+           (required, optional, variadic)
+           ty_param_rfmts)
+    (* ~~ Unmatched optional field ~~ *)
+    | ([], (_, ty) :: _, _), (_, _, None) ->
+      Ty.Refinement.disjoint (Ty.prov_of ty), None
+      (* ~~ Refine variadic by variadic ~~ *)
+    | ([], [], Some ty_test), (reqs_scrut, opts_scrut, Some ty_scrut) ->
+      let ty_rfmt, ty_param_rfmt_opt = refine_ty ~ty_scrut ~ty_test ~ctxt in
+      (match ty_rfmt with
+       | Ty.Refinement.Disjoint _ -> ty_rfmt, None
+       | _ ->
+         let variadic = Some (Ty.refine ty_scrut ~rfmt:ty_rfmt) in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ~fields_test:([], [], None)
+           ~fields_scrut:(reqs_scrut, opts_scrut, None)
+           (required, optional, variadic)
+           ty_param_rfmts)
+  in
+  let Ty.Shape.
+        { required = reqs_test; optional = opts_test; variadic = var_test }
+    =
+    shape_test
+  and Ty.Shape.
+        { required = reqs_scrut; optional = opts_scrut; variadic = var_scrut }
+    =
+    shape_scrut
+  in
+  let fields_test = Map.to_alist reqs_test, Map.to_alist opts_test, var_test
+  and fields_scrut =
+    let reqs_scrut = if Map.is_empty reqs_scrut then None else Some reqs_scrut
+    and opts_scrut =
+      if Map.is_empty opts_scrut then None else Some opts_scrut
+    in
+    reqs_scrut, opts_scrut, var_scrut
+  in
+  aux
+    ~fields_test
+    ~fields_scrut
+    (Ty.Shape_field_label.Map.empty, Ty.Shape_field_label.Map.empty, None)
+    []
 
 (* ~~ Refine tuple types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and refine_tuple ~prov_scrut ~tuple_scrut ~prov_test ~tuple_test ~ctxt =

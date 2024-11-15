@@ -3,109 +3,7 @@
   open Reporting
   open Common
   open Lang
-
-
-  let build_tuple_like elems ~ctor = 
-    let rec aux elems ~k  = 
-      match elems with
-      | `Required elem :: rest -> 
-        aux rest ~k:(fun ~required ~optional ~variadic -> 
-        let required = elem::required in
-        k ~required ~optional ~variadic)
-      | `Optional elem :: rest -> 
-        aux rest ~k:(fun ~required ~optional ~variadic -> 
-        let optional = elem::optional in
-        k ~required ~optional ~variadic)
-      | `Variadic elem :: _ ->  
-         k ~required:[] ~optional:[] ~variadic:(Some elem)
-      | [] -> k ~required:[] ~optional:[] ~variadic:None 
-    in
-    aux elems ~k:ctor 
-
-  let build_tuple tys = 
-    build_tuple_like tys 
-    ~ctor:(fun ~required ~optional ~variadic -> Ty.Tuple.create ~required ~optional ?variadic ())
-
-  let build_fn_param_defs param_defs = 
-    build_tuple_like param_defs 
-    ~ctor:(fun ~required ~optional ~variadic -> Fn_param_defs.create ~required ~optional ?variadic ())
-
-  let build_class_kind mods = 
-    let rec aux mods is_abstract is_final span =
-      match mods , is_abstract, is_final , span with
-      | `Abstract span :: rest , None , None , None ->
-         aux rest (Some span) None (Some span) 
-      | `Abstract _ :: rest , Some _, None , _ -> 
-        aux rest is_abstract is_final span
-      | `Abstract _ :: rest , Some _, Some _ , _ -> 
-        (is_abstract,is_final,span)
-      | `Final span :: rest , None , None , None ->
-         aux rest None (Some span) (Some span) 
-      | `Final _ :: rest , Some _, None , _ -> 
-        aux rest is_abstract is_final span
-      | `Final _ :: rest , Some _, Some _ , _ -> 
-        (is_abstract,is_final,span)
-      | [] , _ , _ ,_ -> is_abstract, is_final , span 
-    in
-    aux mods None None None
-     
-
-  let ty_param_bounds_of_constraints (cstrs: Ty_param_bound_def.t Located.t list) =
-    let rec aux cstrs ~k = 
-      match cstrs with
-      | [] -> k ([],[]) ([],[])
-      | Located.{elem = Ty_param_bound_def.As upper;span} :: rest -> 
-        aux rest ~k:(fun (lowers,span_lower) (uppers,span_upper) -> 
-        k (lowers, span_lower) (upper::uppers, span::span_upper ))
-      | Located.{elem = Ty_param_bound_def.Super lower;span} :: rest -> 
-        aux rest ~k:(fun (lowers,span_lower) (uppers,span_upper) -> 
-        k (lower::lowers, span :: span_lower) (uppers, span_upper))
-    in
-    aux cstrs ~k:(fun (lowers,span_lowers) (uppers,span_uppers) -> 
-      let lower = Ty.union ~prov:(Prov.witnesses span_lowers) lowers
-      and upper = Ty.inter ~prov:(Prov.witnesses span_uppers) uppers in
-      Ty.Param_bounds.create ~lower ~upper ()
-    )
-
-  let ty_param_bounds_of_where_constraints (where_constraints: (Name.Ty_param.t Located.t * Ty_param_bound_def.t Located.t) list) = 
-    let rec aux acc = function
-     | [] -> Map.to_alist acc
-     | (Located.{elem;span},bound)::rest -> 
-       let acc = Map.add_multi acc ~key:elem ~data:(span,bound) in
-       aux acc rest
-    in
-    List.map ~f:(fun (elem, span_cstrs) -> 
-      let spans , cstrs = List.unzip span_cstrs in
-      let span = List.hd_exn spans in
-      let param_bounds =  ty_param_bounds_of_constraints cstrs in
-      let name = Located.create ~elem ~span () in
-      Ty.Param.create ~name ~param_bounds () 
-  ) 
-    @@ aux Name.Ty_param.Map.empty where_constraints
-
-  let unzip_class_elems elems = 
-    let rec aux elems ~k = 
-      match elems with
-      | [] -> k ([],[],[],[],[],[]) 
-      | next::rest  -> 
-        aux rest ~k:(fun (req_exts, req_impls, uses, methods,props, ty_consts)  ->
-        match next with
-       | `Require_extends elem -> 
-         k @@ (elem::req_exts, req_impls, uses, methods,props,ty_consts) 
-       | `Require_implements elem -> 
-         k @@ (req_exts, elem::req_impls, uses, methods,props,ty_consts) 
-       | `Use elem -> 
-         k @@ (req_exts, req_impls, elem::uses, methods,props,ty_consts) 
-       | `Method elem ->
-         k @@ (req_exts, req_impls, uses, elem::methods,props,ty_consts) 
-       | `Property elem -> 
-         k @@ (req_exts, req_impls, uses, methods,elem::props,ty_consts) 
-       | `Type_constant elem ->
-         k @@ (req_exts, req_impls, uses, methods,props,elem::ty_consts) 
-       )
-  in
-  aux elems ~k:(fun x -> x)
-      
+  open Helpers
 %}
 
 (* ~~ Keywords ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -116,7 +14,7 @@
   AS SUPER
   STATIC PUBLIC PRIVATE
   FUNCTION OPTIONAL RETURN WHERE
-  CONST CASE TYPE NEWTYPE
+  CONST CASE TYPE NEWTYPE SHAPE
   IF ELSE
   SOME 
   IS 
@@ -131,13 +29,13 @@
 
 %token<Reporting.Span.t> 
   LPAREN RPAREN LBRACE RBRACE LANGLE RANGLE COLON QUESTION ELLIPSIS PLUS MINUS
-  COMMA DOT AMPERSAND PIPE EQUAL LOGICAL_AND LOGICAL_OR SEMICOLON 
+  COMMA DOT AMPERSAND PIPE EQUAL LOGICAL_AND LOGICAL_OR SEMICOLON DOUBLE_ARROW
 
   // UNDERSCORE
   // MUL DIV IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL 
   // IS_NOT_IDENTICAL IS_LESS_THAN_OR_EQUAL IS_GREATER_THAN_OR_EQUAL 
   // BANG LBRACKET RBRACKET
-  // DOUBLE_ARROW LONG_DOUBLE_ARROW QUESTION_ARROW 
+  // LONG_DOUBLE_ARROW QUESTION_ARROW 
   // 
 
 (* ~~ Literals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
@@ -801,6 +699,12 @@ simple_ty_expr: (* Ty.t * Span.t *)
      let prov = Prov.witness span in 
      Ty.this prov , span
   } 
+  | located_shape=ty_shape {
+    let (shape,span) = located_shape in
+    let node = Ty.Node.shape shape in
+    let prov = Prov.witness span in 
+    Ty.create ~node ~prov (), span
+  }
   | located_ctor=ty_ctor { 
     let (ctor,span) = located_ctor in 
     let node = Ty.Node.ctor ctor in
@@ -836,6 +740,42 @@ simple_ty_expr: (* Ty.t * Span.t *)
     Ty.exists prov ~quants ~body, span
   }
 ;
+
+ty_shape: (* Ty.Shape.t * Span.t *)
+  | span_start=SHAPE LPAREN elems=nonempty_comma_list_trailing(ty_shape_field) span_end=RPAREN {
+    let elem = build_shape elems in  
+    let span = Span.join span_start span_end in 
+    elem , span
+  }
+;
+
+ty_shape_field: (* [`Required of Shape_field_label.t * Ty.t | `Optional of Shape_field_label.t * Ty.t | `Variadic of Ty.t] *)
+  | label_span=shape_field_label DOUBLE_ARROW ty_span=ty_expr {
+    let label,_label_span=label_span
+    and ty,_ty_span = ty_span in 
+    `Required(label,ty) 
+  }
+  | QUESTION label_span=shape_field_label DOUBLE_ARROW ty_span=ty_expr {
+    let label,_label_span=label_span
+    and ty,_ty_span = ty_span in 
+    `Optional(label,ty) 
+  }
+  | ty_span_opt=ty_expr? span=ELLIPSIS {
+    let ty = 
+      match ty_span_opt with
+      | Some (ty,_) -> ty
+      | _ -> Ty.mixed (Prov.witness span) 
+    in
+    `Variadic ty
+  }
+;
+
+shape_field_label: (* Shape_field_label.t * Span.t *)
+  | str_span=CONSTANT_ENCAPSED_STRING {
+    let str,span = str_span in
+    let lbl = Name.Shape_field_label.of_string str in
+    (Ty.Shape_field_label.lit lbl, span)
+  }
 
 ty_tuple: (* Ty.Tuple.t * Span.t *)
   | span_start=LPAREN elems=nonempty_comma_list_trailing(ty_tuple_elem) span_end=RPAREN {

@@ -20,6 +20,27 @@ module Minimal = struct
         ; prov_super : Prov.t
         ; n_super : int
         }
+    | Shape_field_required_super of
+        { prov_sub : Prov.t
+        ; prov_super : Prov.t
+        ; lbl : Ty.Shape_field_label.t
+        ; optional_in_sub : bool
+        }
+    | Shape_field_required_sub of
+        { prov_sub : Prov.t
+        ; prov_super : Prov.t
+        ; lbl : Ty.Shape_field_label.t
+        }
+    | Shape_field_optional_sub of
+        { prov_sub : Prov.t
+        ; prov_super : Prov.t
+        ; lbl : Ty.Shape_field_label.t
+        ; required_in_super : bool
+        }
+    | Shape_sub_open_super_closed of
+        { prov_sub : Prov.t
+        ; prov_super : Prov.t
+        }
     | Disj of t list
     | Conj of t list
     | Multiple of t list
@@ -63,6 +84,50 @@ module Minimal = struct
              (any "but the supertype had " ++ pp_num_or_none))
         ppf
         ((n_sub, param_kind), n_super)
+    | Shape_sub_open_super_closed _ ->
+      Fmt.(
+        any "The subtype is an open shape but the supertype is a closed shape")
+        ppf
+        ()
+    | Shape_field_optional_sub { lbl; required_in_super; _ } ->
+      if required_in_super
+      then
+        Fmt.(
+          any "The field "
+          ++ Ty.Shape_field_label.pp
+          ++ any " is optional in the subtype but required in the supertype")
+          ppf
+          lbl
+      else
+        Fmt.(
+          any "The field "
+          ++ Ty.Shape_field_label.pp
+          ++ any " is optional in the subtype but not defined in the supertype")
+          ppf
+          lbl
+    | Shape_field_required_super { lbl; optional_in_sub; _ } ->
+      if optional_in_sub
+      then
+        Fmt.(
+          any "The field "
+          ++ Ty.Shape_field_label.pp
+          ++ any " is optional in the subtype but required in the supertype")
+          ppf
+          lbl
+      else
+        Fmt.(
+          any "The field "
+          ++ Ty.Shape_field_label.pp
+          ++ any " is required in the supertype but not defined in the subtype")
+          ppf
+          lbl
+    | Shape_field_required_sub { lbl; _ } ->
+      Fmt.(
+        any "The field "
+        ++ Ty.Shape_field_label.pp
+        ++ any " is required in the subtype but not defined in the supertype")
+        ppf
+        lbl
     | Disj ts -> Fmt.(hovbox @@ list ~sep:(any " | ") pp) ppf ts
     | Conj ts -> Fmt.(hovbox @@ list ~sep:(any " & ") pp) ppf ts
     | Multiple ts -> Fmt.(vbox @@ list ~sep:cut pp) ppf ts
