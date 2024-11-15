@@ -57,7 +57,6 @@ let rec step_tuple_elem
   (* -- Match a required param in the subtype with optional param in the supertype -- *)
   | ( (ty_sub :: reqs_sub, opts_sub, var_sub)
     , ([], ty_super :: opts_super, var_super) ) ->
-    (* Contravariance *)
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
     step_tuple_elem
@@ -70,7 +69,6 @@ let rec step_tuple_elem
       ~cstrs
   (* -- Match a required param in the subtype with a variadic param in the supertype -- *)
   | (ty_sub :: reqs_sub, opts_sub, var_sub), ([], [], Some ty_super) ->
-    (* Contravariance *)
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
     step_tuple_elem

@@ -88,6 +88,9 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   | (prov_scrut, Ty.Node.Ctor ctor_scrut), (prov_test, Ty.Node.Ctor ctor_test)
     -> refine_ctor ~ctor_scrut ~ctor_test ~prov_scrut ~prov_test ~ctxt
   (* ~~ Tuples ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | ( (prov_scrut, Ty.Node.Tuple tuple_scrut)
+    , (prov_test, Ty.Node.Tuple tuple_test) ) ->
+    refine_tuple ~tuple_scrut ~tuple_test ~prov_scrut ~prov_test ~ctxt
   (* ~~ Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* ~~ Base-types and nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
@@ -631,4 +634,171 @@ and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
        ( Replace_with (Ty.inter tys ~prov)
        , Some (prov, Ctxt.Ty_param.Refinement.meet_many refns ~prov) )
      | Error _provs -> Ty.Refinement.disjoint prov, None)
+
+and refine_tuple ~prov_scrut ~tuple_scrut ~prov_test ~tuple_test ~ctxt =
+  let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
+  let rec aux elems_test elems_scrut (ty_reqs, ty_opts, ty_vrdc) ty_param_rfmts =
+    match elems_test, elems_scrut with
+    | ([], [], None), ([], _, _) ->
+      let ty =
+        Ty.tuple
+          prov
+          ~required:(List.rev ty_reqs)
+          ~optional:(List.rev ty_opts)
+          ~variadic:ty_vrdc
+      in
+      let ty_rfmt = Ty.Refinement.replace_with ty in
+      let ty_param_rfmt_opt =
+        match ty_param_rfmts with
+        | [] -> None
+        | xs -> Some (prov, Ctxt.Ty_param.Refinement.meet_many ~prov xs)
+      in
+      ty_rfmt, ty_param_rfmt_opt
+    (* ~~ required - required refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ( (ty_test :: reqs_test, opts_test, var_test)
+      , (ty_scrut :: reqs_scrut, opts_scrut, var_scrut) ) ->
+      (match refine_ty ~ty_scrut ~ty_test ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_reqs = Ty.refine ty_scrut ~rfmt :: ty_reqs in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           (reqs_test, opts_test, var_test)
+           (reqs_scrut, opts_scrut, var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ optional - optional refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ( ([], ty_test :: opts_test, var_test)
+      , ([], ty_scrut :: opts_scrut, var_scrut) ) ->
+      (match refine_ty ~ty_scrut ~ty_test ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_opts = Ty.refine ty_scrut ~rfmt :: ty_opts in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ([], opts_test, var_test)
+           ([], opts_scrut, var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ variadic - variadic refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ([], [], Some ty_test), ([], [], Some ty_scrut) ->
+      (match refine_ty ~ty_test ~ty_scrut ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_vrdc = Some (Ty.refine ty_scrut ~rfmt) in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ([], [], None)
+           ([], [], None)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ required - optional refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ( (ty_test :: reqs_test, opts_test, var_test)
+      , ([], ty_scrut :: opts_scrut, var_scrut) ) ->
+      (match refine_ty ~ty_scrut ~ty_test ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_reqs = Ty.refine ty_scrut ~rfmt :: ty_reqs in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           (reqs_test, opts_test, var_test)
+           ([], opts_scrut, var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ required - variadic refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ( (ty_test :: reqs_test, opts_test, var_test)
+      , ([], [], (Some ty_scrut as var_scrut)) ) ->
+      (match refine_ty ~ty_scrut ~ty_test ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_reqs = Ty.refine ty_scrut ~rfmt :: ty_reqs in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           (reqs_test, opts_test, var_test)
+           ([], [], var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ optional - variadic refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ( ([], ty_test :: opts_test, var_test)
+      , ([], [], (Some ty_scrut as var_scrut)) ) ->
+      (match refine_ty ~ty_scrut ~ty_test ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_opts = Ty.refine ty_scrut ~rfmt :: ty_opts in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ([], opts_test, var_test)
+           ([], [], var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ variadic - optional refinement ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ([], [], Some ty_test), ([], ty_scrut :: opts_scrut, var_scrut) ->
+      (match refine_ty ~ty_test ~ty_scrut ~ctxt with
+       | Ty.Refinement.Disjoint prov, _ -> Ty.Refinement.Disjoint prov, None
+       | rfmt, ty_param_rfmt_opt ->
+         let ty_vrdc = Some (Ty.refine ty_scrut ~rfmt) in
+         let ty_param_rfmts =
+           Option.value_map
+             ty_param_rfmt_opt
+             ~default:ty_param_rfmts
+             ~f:(fun (_, x) -> x :: ty_param_rfmts)
+         in
+         aux
+           ([], [], None)
+           ([], opts_scrut, var_scrut)
+           (ty_reqs, ty_opts, ty_vrdc)
+           ty_param_rfmts)
+    (* ~~ Not enough required args in test ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | ([], _, _), (_ :: _, _, _) -> Ty.Refinement.Disjoint prov, None
+    (* ~~ Too many required args in test ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | (_ :: _, _, _), ([], _, _) -> Ty.Refinement.Disjoint prov, None
+    (* ~~ Too many required args in test ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | (_, _ :: _, _), (_, [], _) -> Ty.Refinement.Disjoint prov, None
+    (* ~~ Variadic args in test, not in scrut ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+    | (_, _, Some _), (_, _, None) -> Ty.Refinement.Disjoint prov, None
+  in
+  let Ty.Tuple.
+        { required = reqs_scrut; optional = opts_scrut; variadic = var_scrut }
+    =
+    tuple_scrut
+  and Ty.Tuple.
+        { required = reqs_test; optional = opts_test; variadic = var_test }
+    =
+    tuple_test
+  in
+  aux
+    (reqs_test, opts_test, var_test)
+    (reqs_scrut, opts_scrut, var_scrut)
+    ([], [], None)
+    []
 ;;

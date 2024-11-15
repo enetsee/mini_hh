@@ -65,7 +65,7 @@ module Ty_view = struct
                     ])))
     and variadic =
       Option.value_map variadic ~default:W.empty_lwd ~f:(fun ty ->
-        W.hbox [ sep; Lwd.pure @@ W.string "..."; render ty ])
+        W.hbox [ sep; render ty; Lwd.pure @@ W.string "..." ])
     in
     let elems = W.hbox [ req; optional; variadic ] in
     W.hbox
