@@ -92,6 +92,8 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
     , (prov_test, Ty.Node.Tuple tuple_test) ) ->
     refine_tuple ~tuple_scrut ~tuple_test ~prov_scrut ~prov_test ~ctxt
   (* ~~ Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (prov_scrut, Ty.Node.Fn fn_scrut), (prov_test, Ty.Node.Fn fn_test) ->
+    refine_fn ~prov_scrut ~fn_scrut ~prov_test ~fn_test ~ctxt
   (* ~~ Base-types and nonnull ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* TODO(mjt) I'm fairly sure we can do better for tuples and functions here *)
   | (prov_scrut, _), (prov_test, _) ->
@@ -635,6 +637,7 @@ and refine_ctor_arg ~ty_scrut ~ty_test variance ~ctxt =
        , Some (prov, Ctxt.Ty_param.Refinement.meet_many refns ~prov) )
      | Error _provs -> Ty.Refinement.disjoint prov, None)
 
+(* ~~ Refine tuple types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and refine_tuple ~prov_scrut ~tuple_scrut ~prov_test ~tuple_test ~ctxt =
   let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
   let rec aux elems_test elems_scrut (ty_reqs, ty_opts, ty_vrdc) ty_param_rfmts =
@@ -801,4 +804,53 @@ and refine_tuple ~prov_scrut ~tuple_scrut ~prov_test ~tuple_test ~ctxt =
     (reqs_scrut, opts_scrut, var_scrut)
     ([], [], None)
     []
+
+(* ~~ Refine function types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and refine_fn ~prov_scrut ~fn_scrut ~prov_test ~fn_test ~ctxt =
+  let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
+  let Ty.Fn.{ params = params_scrut; return = return_scrut } = fn_scrut
+  and Ty.Fn.{ params = params_test; return = return_test } = fn_test in
+  (* Contravariance *)
+  let ty_rfmt_params, ty_param_rfmt_opt_params =
+    refine_tuple
+      ~prov_scrut:prov_test
+      ~tuple_scrut:params_test
+      ~prov_test:prov_scrut
+      ~tuple_test:params_scrut
+      ~ctxt
+  and ty_rfmt_return, ty_param_rfmt_opt_return =
+    refine_ty ~ty_scrut:return_scrut ~ty_test:return_test ~ctxt
+  in
+  match ty_rfmt_params, ty_rfmt_return with
+  | Ty.Refinement.Disjoint _, _ -> ty_rfmt_params, None
+  | _, Ty.Refinement.Disjoint _ -> ty_rfmt_return, None
+  | Ty.Refinement.Replace_with params, _ ->
+    let return = Ty.refine return_scrut ~rfmt:ty_rfmt_return in
+    let params =
+      match Ty.prj params with
+      | _, Ty.Node.Tuple tuple -> tuple
+      | _ ->
+        failwith
+          "Refinement.refine_fn: refine_tuple has returned a non-tuple \
+           refinement"
+    in
+    let fn = Ty.Fn.create ~params ~return () in
+    let node = Ty.Node.Fn fn in
+    let ty = Ty.create ~prov ~node () in
+    let ty_rfmt = Ty.Refinement.replace_with ty
+    and ty_param_rfmt_opt =
+      Option.merge
+        ty_param_rfmt_opt_params
+        ty_param_rfmt_opt_return
+        ~f:(fun (prov_params, params) (_, return) ->
+          prov_params, Ctxt.Ty_param.Refinement.meet ~prov params return)
+    in
+    ty_rfmt, ty_param_rfmt_opt
+  | _ ->
+    (* TODO(mjt) we can actually push intersection refinements into functions
+       but [refine_tuple] will always give us a replacement so we just raise
+       and exception for now *)
+    failwith
+      "Refinement.refine_fn: refine_tuple has returned an intersection \
+       refinemnnt"
 ;;
