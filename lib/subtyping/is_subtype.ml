@@ -15,50 +15,13 @@ let rec step_shape_field
   ~cstrs
   =
   match fields_sub, fields_super with
-  (* ~~ Error ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* ~~ Fewer required fields in subtype than in supertype ~~ *)
-  | ([], opts_sub, var_sub), (Some reqs_super, opts_super, var_super) ->
-    let errs =
-      let lbls_super = Map.keys reqs_super in
-      List.fold_left lbls_super ~init:errs ~f:(fun errs lbl ->
-        let optional_in_sub =
-          List.exists opts_sub ~f:(fun (lbl_sub, _) ->
-            Ty.Shape_field_label.equal lbl_sub lbl)
-        in
-        Err.shape_field_required_super
-          ~prov_sub
-          ~prov_super
-          ~lbl
-          ~optional_in_sub
-        :: errs)
-    in
-    step_shape_field
-      ~prov_sub
-      ~fields_sub:([], opts_sub, var_sub)
-      ~prov_super
-      ~fields_super:(None, opts_super, var_super)
-      ~errs
-      ~cstrs
-  (* ~~ Subtype is open supertype is closed ~~ *)
-  | (reqs_sub, opts_sub, Some _), (reqs_super, opts_super, None) ->
-    let errs =
-      let err = Err.shape_sub_open_super_closed ~prov_sub ~prov_super in
-      err :: errs
-    in
-    step_shape_field
-      ~prov_sub
-      ~fields_sub:(reqs_sub, opts_sub, None)
-      ~prov_super
-      ~fields_super:(reqs_super, opts_super, None)
-      ~errs
-      ~cstrs
-  (* ~~ Finish ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Success~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ([], [], None), (None, _, _) ->
     if List.is_empty errs
     then Ok (Prop.conj cstrs)
     else Error (Err.multiple errs)
-  (* ~~ Handle required fields in the subtype ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* ~~ Match required field to required field ~~ *)
+  (* ~~ Required fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Required <: Required ~~ *)
   | ( ((lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
     , (Some reqs_super, opts_super, var_super) )
     when Map.mem reqs_super lbl ->
@@ -76,7 +39,7 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Match required field to optional field ~~ *)
+  (* ~~ Required <: Optional field ~~ *)
   | ( ((lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
     , (reqs_super, Some opts_super, var_super) )
     when Map.mem opts_super lbl ->
@@ -94,7 +57,7 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Match required field to variadic ~~ *)
+  (* ~~ Required <: Variadic ~~ *)
   | ( ((_lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
     , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
@@ -106,7 +69,7 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Unmatched required field ~~ *)
+  (* ~~ Error: required field present subtype but not in supertype ~~ *)
   | ((lbl, _) :: reqs_sub, opts_sub, var_sub), (reqs_super, opts_super, None) ->
     let errs =
       let err = Err.shape_field_required_sub ~prov_sub ~prov_super ~lbl in
@@ -119,8 +82,51 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, None)
       ~errs
       ~cstrs
-  (* ~~ Handle optional fields in the subtype ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* ~~ Match optional field to optional field ~~ *)
+  (* ~~ Error: required fields in supertype not present in subtype ~~ *)
+  | ([], [], var_sub), (Some reqs_super, opts_super, var_super) ->
+    let errs =
+      let lbls_super = Map.keys reqs_super in
+      List.fold_left lbls_super ~init:errs ~f:(fun errs lbl ->
+        Err.shape_field_required_super
+          ~prov_sub
+          ~prov_super
+          ~lbl
+          ~optional_in_sub:false
+        :: errs)
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], [], var_sub)
+      ~prov_super
+      ~fields_super:(None, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Optional fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Error: Field optional in subtype but required in supertype ~~ *)
+  | ([], (lbl, _) :: opts_sub, var_sub), (Some reqs_super, opts_super, var_super)
+    when Map.mem reqs_super lbl ->
+    let reqs_super =
+      let m = Map.remove reqs_super lbl in
+      if Map.is_empty m then None else Some m
+    in
+    let errs =
+      let err =
+        Err.shape_field_optional_sub
+          ~prov_sub
+          ~prov_super
+          ~lbl
+          ~required_in_super:true
+      in
+      err :: errs
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:([], opts_sub, var_sub)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, var_super)
+      ~errs
+      ~cstrs
+  (* ~~ Optional <: Optional ~~ *)
   | ( ([], (lbl, ty_sub) :: opts_sub, var_sub)
     , (reqs_super, Some opts_super, var_super) )
     when Map.mem opts_super lbl ->
@@ -138,7 +144,7 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Match optional field to variadic ~~ *)
+  (* ~~ Optional <: Variadic ~~ *)
   | ( ([], (_lbl, ty_sub) :: opts_sub, var_sub)
     , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
@@ -150,7 +156,7 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Unmatched optional field ~~ *)
+  (* ~~ Error - unmatched optional field in subtype ~~ *)
   | ([], (lbl, _) :: opts_sub, var_sub), (reqs_super, opts_super, var_super) ->
     let errs =
       let required_in_super =
@@ -172,13 +178,27 @@ let rec step_shape_field
       ~fields_super:(reqs_super, opts_super, var_super)
       ~errs
       ~cstrs
-  (* ~~ Match variadic to variadic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Variadic fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Variadic <: Variadic ~~ *)
   | ([], [], Some ty_sub), (reqs_super, opts_super, Some ty_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
     step_shape_field
       ~prov_sub
       ~fields_sub:([], [], None)
+      ~prov_super
+      ~fields_super:(reqs_super, opts_super, None)
+      ~errs
+      ~cstrs
+  (* ~~ Error: subtype is open supertype is closed ~~ *)
+  | (reqs_sub, opts_sub, Some _), (reqs_super, opts_super, None) ->
+    let errs =
+      let err = Err.shape_sub_open_super_closed ~prov_sub ~prov_super in
+      err :: errs
+    in
+    step_shape_field
+      ~prov_sub
+      ~fields_sub:(reqs_sub, opts_sub, None)
       ~prov_super
       ~fields_super:(reqs_super, opts_super, None)
       ~errs
@@ -221,20 +241,13 @@ let rec step_tuple_elem
   =
   (* TODO(mjt) PROV!!!! *)
   match params_sub, params_super with
-  (* ~~ Success conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- No (remaining) params -- *)
-  | ([], [], None), ([], [], None) -> Ok cstrs
-  (* -- Fewer optional and/or variadic params in the subtype than the supertype -- *)
-  | ([], [], None), ([], _ :: _, _) -> Ok cstrs
-  (* -- No variadic param in the supertype with variadic param in subtype -- *)
-  | ([], [], None), ([], [], Some _) -> Ok cstrs
-  (* -- Variadic params in both subtype and supertyep -- *)
-  | ([], [], Some ty_sub), ([], [], Some ty_super) ->
-    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
-    Ok (cstr :: cstrs)
-  (* ~~ Continuation conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* ~~ Match up required-required, optional-optional and variadic-variadic params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Match up required args -- *)
+  (* ~~ Success conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* 1) No (remaining) params
+     2) Fewer optional and/or variadic params in the subtype than the supertype
+     3) No variadic param in the supertype with variadic param in subtype *)
+  | ([], [], None), ([], _, _) -> Ok cstrs
+  (* ~~ Required elements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Required <: Required ~~ *)
   | ( (ty_sub :: reqs_sub, opts_sub, var_sub)
     , (ty_super :: reqs_sup, opts_sup, var_sup) ) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
@@ -249,20 +262,7 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* -- Match up optional arguments -- *)
-  | ([], ty_sub :: opts_sub, var_sub), ([], ty_super :: opts_sup, var_sup) ->
-    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
-    let cstrs = cstr :: cstrs in
-    step_tuple_elem
-      prov_sub
-      ([], opts_sub, var_sub)
-      prov_super
-      ([], opts_sup, var_sup)
-      ~idx_sub
-      ~idx_super
-      ~cstrs
-  (* ~~ Match up optional-required and variadic-required params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Match a required param in the subtype with optional param in the supertype -- *)
+  (* ~~ Required <: Optional ~~ *)
   | ( (ty_sub :: reqs_sub, opts_sub, var_sub)
     , ([], ty_super :: opts_super, var_super) ) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
@@ -275,7 +275,7 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* -- Match a required param in the subtype with a variadic param in the supertype -- *)
+  (* ~~ Required <: Variadic ~~ *)
   | (ty_sub :: reqs_sub, opts_sub, var_sub), ([], [], Some ty_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
@@ -287,8 +287,34 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* ~~ Match up variadic-optional and optional-variadic params ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Match an optional param in the subtype with a variadic param in the supertype -- *)
+  (* ~~ Error: Fewer required elements in subtype than in supertype ~~ *)
+  | ([], _, _), ((_ :: _ as reqs), _, _) ->
+    let n_sub = idx_sub + List.length reqs in
+    Error
+      (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub ~n_super:idx_super)
+  (* ~~ Error: More required elements in subtype than in supertype ~~ *)
+  | ((_ :: _ as reqs), _, _), ([], [], None) ->
+    let n_super = idx_super + List.length reqs in
+    Error
+      (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
+  (* ~~ Optional elements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Optional <: Required
+     NB unlike shape subtyping, we can't have any required elements left at this
+     point so this case is impossible:
+     ([] , ty_sub :: _ ,_) , (ty_super::_,_,_) ->  . *)
+  (* ~~ Optional <: Optional ~~ *)
+  | ([], ty_sub :: opts_sub, var_sub), ([], ty_super :: opts_sup, var_sup) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    let cstrs = cstr :: cstrs in
+    step_tuple_elem
+      prov_sub
+      ([], opts_sub, var_sub)
+      prov_super
+      ([], opts_sup, var_sup)
+      ~idx_sub
+      ~idx_super
+      ~cstrs
+  (* ~~ Optional <: Variadic ~~ *)
   | ([], ty_sub :: opts_sub, var_sub), ([], [], Some ty_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
@@ -300,7 +326,14 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* -- Match a variadic param in the subtype with an optional param in the supertype -- *)
+  (* ~~ Error: unmatched optional elements in subtype ~~ *)
+  | ([], (_ :: _ as opts), _), ([], [], None) ->
+    let n_super = idx_super + List.length opts in
+    Error
+      (Err.tuple_arity_optional ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
+  (* ~~ Variadic elements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  (* ~~ Variadic <: Required: impossible ~~ *)
+  (* ~~ Variadic <: Optional ~~ *)
   | ([], [], Some ty_sub), ([], ty_super :: opts_super, var_super) ->
     let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
     let cstrs = cstr :: cstrs in
@@ -312,23 +345,11 @@ let rec step_tuple_elem
       ~idx_sub
       ~idx_super
       ~cstrs
-  (* ~~ Error conditions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  (* -- Fewer required params in subtype than in supertype -- *)
-  | ([], _, _), ((_ :: _ as reqs), _, _) ->
-    let n_sub = idx_sub + List.length reqs in
-    Error
-      (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub ~n_super:idx_super)
-  (* -- Required params in subtype but no params in subtype -- *)
-  | ((_ :: _ as reqs), _, _), ([], [], None) ->
-    let n_super = idx_super + List.length reqs in
-    Error
-      (Err.tuple_arity_required ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
-  (* -- More optional params in the subtype with no params in the supertype -- *)
-  | ([], (_ :: _ as opts), _), ([], [], None) ->
-    let n_super = idx_super + List.length opts in
-    Error
-      (Err.tuple_arity_optional ~prov_sub ~prov_super ~n_sub:idx_sub ~n_super)
-  (* -- Variadic param in the supertype with no params in the subtype -- *)
+  (* ~~ Variadic <: Variadic ~~ *)
+  | ([], [], Some ty_sub), ([], [], Some ty_super) ->
+    let cstr = Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super in
+    Ok (cstr :: cstrs)
+  (* ~~ Error: subtype is open supertype is closed ~~ *)
   | ([], [], Some _), ([], [], None) ->
     Error (Err.tuple_arity_variadic ~prov_sub ~prov_super)
 ;;
