@@ -5,6 +5,7 @@ module Err = Err
 module Prop = Prop
 module Answer = Answer
 module Eff = Eff
+module State = State
 
 module Eager_leftmost_dfs = struct
   let rec tell_prop prop ~ctxt =

@@ -7,6 +7,15 @@ type tell =
   | All
   | Any
 
+type upper_or_lower =
+  | Upper
+  | Lower
+
+let show_upper_or_lower = function
+  | Upper -> "upper"
+  | Lower -> "lower"
+;;
+
 let show_tell = function
   | Prop -> "prop"
   | Cstr -> "cstr"
@@ -46,6 +55,17 @@ type ask_up =
   ; at : Name.Ctor.t
   }
 
+type add_bound =
+  { var : Ty.Var.t
+  ; bound : Ty.t
+  ; upper_or_lower : upper_or_lower
+  }
+
+type get_bounds =
+  { var : Ty.Var.t
+  ; upper_or_lower : upper_or_lower
+  }
+
 type _ Effect.t +=
   | Ask_up : ask_up -> Oracle.Classish.instantiation Effect.t
   | Ask_ty_param_variances :
@@ -60,6 +80,24 @@ type _ Effect.t +=
       enter_tell_any
       -> (Prop.t list * Err.t list * Ctxt.Cont.t) Effect.t
   | Log_exit_tell : exit_tell -> Err.t option Effect.t
+  | Add_bound : add_bound -> unit Effect.t
+  | Get_bounds : get_bounds -> Ty.t list Effect.t
+
+let add_upper_bound var ~bound =
+  Effect.perform (Add_bound { var; bound; upper_or_lower = Upper })
+;;
+
+let add_lower_bound var ~bound =
+  Effect.perform (Add_bound { var; bound; upper_or_lower = Lower })
+;;
+
+let get_upper_bounds var =
+  Effect.perform (Get_bounds { var; upper_or_lower = Upper })
+;;
+
+let get_lower_bounds var =
+  Effect.perform (Get_bounds { var; upper_or_lower = Lower })
+;;
 
 let ask_up ~of_ ~at = Effect.perform (Ask_up { of_; at })
 let ask_ty_param_variances ctor = Effect.perform (Ask_ty_param_variances ctor)
@@ -89,13 +127,36 @@ let log_exit_tell_cstr = log_exit_tell Cstr
 let log_exit_tell_all = log_exit_tell All
 let log_exit_tell_any = log_exit_tell Any
 
-let run comp oracle =
+let run comp ~st ~oracle =
+  let st_ref = ref st in
   Effect.Deep.match_with
     comp
     ()
     { effc =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
+          | Add_bound { var; bound; upper_or_lower = Upper } ->
+            let st = State.add_upper_bound !st_ref ~var ~bound in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ())
+          | Add_bound { var; bound; upper_or_lower = Lower } ->
+            let st = State.add_lower_bound !st_ref ~var ~bound in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ())
+          | Get_bounds { var; upper_or_lower = Upper } ->
+            let bounds = State.get_upper_bounds_exn !st_ref ~var in
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k bounds)
+          | Get_bounds { var; upper_or_lower = Lower } ->
+            let bounds = State.get_lower_bounds_exn !st_ref ~var in
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k bounds)
           | Ask_up { of_; at } ->
             let inst = Oracle.up oracle ~of_ ~at in
             Some
@@ -127,7 +188,7 @@ let run comp oracle =
               (fun (k : (a, _) Effect.Deep.continuation) ->
                 Effect.Deep.continue k err_opt)
           | _ -> None)
-    ; retc = (fun res -> res)
+    ; retc = (fun res -> res, !st_ref)
     ; exnc = (fun exn -> raise exn)
     }
 ;;

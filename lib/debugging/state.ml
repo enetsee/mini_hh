@@ -6,11 +6,19 @@ module Minimal = struct
     { tys : (Span.t * Ty.t) list
     ; errs : Typing.Err.t list
     ; warns : Typing.Warn.t list
+    ; subtyping : Subtyping.State.t
     ; ty_param_name_source : int
     }
   [@@deriving create]
 
-  let empty = { tys = []; errs = []; warns = []; ty_param_name_source = 0 }
+  let empty =
+    { tys = []
+    ; errs = []
+    ; warns = []
+    ; ty_param_name_source = 0
+    ; subtyping = Subtyping.State.empty
+    }
+  ;;
 
   let pp ppf t =
     Fmt.(
@@ -53,4 +61,22 @@ let fresh_ty_params t n =
       Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset))
   in
   { t with ty_param_name_source }, names
+;;
+
+let add_upper_bound ({ subtyping; _ } as t) ~var ~bound =
+  let subtyping = Subtyping.State.add_upper_bound subtyping ~var ~bound in
+  { t with subtyping }
+;;
+
+let add_lower_bound ({ subtyping; _ } as t) ~var ~bound =
+  let subtyping = Subtyping.State.add_lower_bound subtyping ~var ~bound in
+  { t with subtyping }
+;;
+
+let get_upper_bounds { subtyping; _ } ~var =
+  Subtyping.State.get_upper_bounds_exn subtyping ~var
+;;
+
+let get_lower_bounds { subtyping; _ } ~var =
+  Subtyping.State.get_lower_bounds_exn subtyping ~var
 ;;

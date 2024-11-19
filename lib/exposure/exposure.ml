@@ -65,7 +65,7 @@ let rec promote_ty ty ty_params ~dir =
   @@
   let open Ty.Node in
   match node with
-  | Base _ | Nonnull -> Ok ty
+  | Var _ | Base _ | Nonnull -> Ok ty
   | Generic generic ->
     (* TODO(mjt) is this right? *)
     promote_generic prov generic ty_params ~dir

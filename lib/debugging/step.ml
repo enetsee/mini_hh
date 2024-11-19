@@ -229,6 +229,22 @@ let next_exposure status t ~oracle =
 let next_subtyping status t ~oracle =
   let open Status.Subtyping_status in
   match status with
+  | Added_bound { data = { var; bound; upper_or_lower = Upper }; k } ->
+    let state = State.add_upper_bound t.state ~var ~bound in
+    let status = Effect.Deep.continue k () in
+    { t with status; state }
+  | Added_bound { data = { var; bound; upper_or_lower = Lower }; k } ->
+    let state = State.add_lower_bound t.state ~var ~bound in
+    let status = Effect.Deep.continue k () in
+    { t with status; state }
+  | Got_bounds { data = { var; upper_or_lower = Lower }; k } ->
+    let data = State.get_lower_bounds t.state ~var in
+    let status = Effect.Deep.continue k data in
+    { t with status }
+  | Got_bounds { data = { var; upper_or_lower = Upper }; k } ->
+    let data = State.get_upper_bounds t.state ~var in
+    let status = Effect.Deep.continue k data in
+    { t with status }
   | Asked_up { data = { of_; at }; k } ->
     let data = Oracle.up oracle ~of_ ~at in
     let status = Status.Subtyping (Answered_up { data; k }) in

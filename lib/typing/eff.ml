@@ -162,15 +162,24 @@ let run_typing comp (tys_ref, errs_ref, warns_ref) =
 let run comp oracle =
   let tys = ref []
   and errs = ref []
-  and warns = ref [] in
+  and warns = ref []
+  and st_ref = ref Subtyping.State.empty in
   let _ : unit =
     run_typing
       (fun () ->
-        Subtyping.Eff.run
-          (fun () ->
-            Refinement.Eff.run (fun () -> Exposure.Eff.run comp oracle) 0 oracle)
-          oracle)
+        let res, st =
+          Subtyping.Eff.run
+            (fun () ->
+              Refinement.Eff.run
+                (fun () -> Exposure.Eff.run comp oracle)
+                0
+                oracle)
+            ~st:!st_ref
+            ~oracle
+        in
+        st_ref := st;
+        res)
       (tys, errs, warns)
   in
-  !tys, !errs, !warns
+  !tys, !errs, !warns, !st_ref
 ;;

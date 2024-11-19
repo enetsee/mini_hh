@@ -213,6 +213,14 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Subtyping (Logged_exit_tell { data; k })))
+            | Subtyping.Eff.Add_bound data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Added_bound { data; k })))
+            | Subtyping.Eff.Get_bounds data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Got_bounds { data; k })))
             | _ -> None)
       ; retc = (fun _res -> Status.Completed)
       ; exnc = (fun exn -> Status.Failed exn)

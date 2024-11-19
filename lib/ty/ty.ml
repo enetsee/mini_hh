@@ -6,6 +6,9 @@ module Var : sig
   type t [@@deriving compare, equal, sexp, show]
 
   val of_int : int -> t
+  val to_string : t -> string
+
+  module Map : Map.S with type Key.t := t
 end = struct
   module Minimal = struct
     type t = Var of int [@@ocaml.unboxed] [@@deriving compare, equal, sexp]
@@ -15,6 +18,7 @@ end = struct
 
   include Minimal
   include Pretty.Make (Minimal)
+  module Map = Map.Make (Minimal)
 
   let of_int n = Var n
 end
@@ -22,7 +26,7 @@ end
 (* ~~ Types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 module rec Node : sig
   type t =
-    (* | Var of Var.t *)
+    | Var of Var.t
     | Base of Common.Base.t
     | Generic of Name.Ty_param.t
     | Tuple of Tuple.t
@@ -37,7 +41,7 @@ module rec Node : sig
 end = struct
   module Minimal = struct
     type t =
-      (* | Var of Var.t *)
+      | Var of Var.t
       | Base of Common.Base.t
       | Generic of Name.Ty_param.t
       | Tuple of Tuple.t
@@ -52,6 +56,7 @@ end = struct
 
     let pp ppf t =
       match t with
+      | Var var -> Var.pp ppf var
       | Base base -> Fmt.(styled `Magenta Common.Base.pp) ppf base
       | Generic name -> Fmt.(styled `Green Name.Ty_param.pp) ppf name
       | Tuple tuple -> Tuple.pp ppf tuple
@@ -83,7 +88,8 @@ and Annot : sig
   val prj : t -> Prov.t * Node.t
 
   type 'acc ops =
-    { on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
+    { on_var : 'acc -> Prov.t -> Var.t -> 'acc
+    ; on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
@@ -170,7 +176,8 @@ end = struct
   (* ~~ Traversals ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
   type 'acc ops =
-    { on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
+    { on_var : 'acc -> Prov.t -> Var.t -> 'acc
+    ; on_base : 'acc -> Prov.t -> Common.Base.t -> 'acc
     ; on_generic : 'acc -> Prov.t -> Name.Ty_param.t -> 'acc
     ; on_fn : 'acc -> Prov.t -> Fn.t -> 'acc
     ; on_tuple : 'acc -> Prov.t -> Tuple.t -> 'acc
@@ -184,7 +191,8 @@ end = struct
 
   let id_ops =
     let ops =
-      { on_base = (fun acc _ _ -> acc)
+      { on_var = (fun acc _ _ -> acc)
+      ; on_base = (fun acc _ _ -> acc)
       ; on_generic = (fun acc _ _ -> acc)
       ; on_fn = (fun acc _ _ -> acc)
       ; on_tuple = (fun acc _ _ -> acc)
@@ -202,6 +210,7 @@ end = struct
   let rec bottom_up { prov; node } ~ops ~init =
     let ty_ops = ops.Ops.ty in
     match node with
+    | Var var -> ty_ops.on_var init prov var
     | Base base -> ty_ops.on_base init prov base
     | Generic generic -> ty_ops.on_generic init prov generic
     | Fn fn ->
@@ -239,7 +248,7 @@ end = struct
   (* ~~ Generic substitution ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   let rec apply_subst ({ prov; node } as t) ~subst ~combine_prov =
     match node with
-    | Base _ | Nonnull -> t
+    | Var _ | Base _ | Nonnull -> t
     | Generic name ->
       (match Map.find subst name with
        | Some t -> map_prov t ~f:(combine_prov prov)
@@ -275,7 +284,7 @@ end = struct
       TODO(mjt) Ideally we will do this when we elaborate from CST to AST *)
   let rec elab_to_generic ({ prov; node } as t) ~bound_ty_params =
     match node with
-    | Base _ | Generic _ | Nonnull -> t
+    | Var _ | Base _ | Generic _ | Nonnull -> t
     | Fn fn ->
       let node = Node.fn (Fn.elab_to_generic fn ~bound_ty_params) in
       { prov; node }

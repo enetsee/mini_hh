@@ -10,9 +10,14 @@ module Ty_view = struct
     Lwd.pure @@ W.string ~attr:Attr.(fg blue) @@ Common.Base.to_string base
   ;;
 
+  let render_var var =
+    Lwd.pure @@ W.string ~attr:Attr.(fg yellow) @@ Ty.Var.show var
+  ;;
+
   let rec render t =
     let open Ty.Node in
     match t.Ty.node with
+    | Var var -> render_var var
     | Base base -> render_base base
     | Nonnull -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "nonnull"
     | Generic name ->
@@ -923,6 +928,30 @@ module Status = struct
         W.vbox
           [ render_status_desc "Answered up"
           ; Lwd.pure @@ W.string "(unknown ctor)"
+          ]
+      | Added_bound { data = { var; bound; upper_or_lower }; _ } ->
+        W.vbox
+          [ render_status_desc
+            @@ Format.sprintf {|Added %s bound|}
+            @@ Subtyping.Eff.show_upper_or_lower upper_or_lower
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "var:"
+              ; Lwd.pure @@ W.string @@ Ty.Var.to_string var
+              ]
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "bound:"
+              ; Ty_view.render bound
+              ]
+          ]
+      | Got_bounds { data = { var; upper_or_lower }; _ } ->
+        W.vbox
+          [ render_status_desc
+            @@ Format.sprintf {|Got %s bounds|}
+            @@ Subtyping.Eff.show_upper_or_lower upper_or_lower
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "var:"
+              ; Lwd.pure @@ W.string @@ Ty.Var.to_string var
+              ]
           ]
     in
     W.vbox [ render_comp "Subtyping"; status_ui ]

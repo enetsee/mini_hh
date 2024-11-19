@@ -211,6 +211,8 @@ and Subtyping_status : sig
           Suspension.t
     | Logged_exit_tell of
         (Subtyping.Eff.exit_tell, Subtyping.Err.t option) Suspension.t
+    | Added_bound of (Subtyping.Eff.add_bound, unit) Suspension.t
+    | Got_bounds of (Subtyping.Eff.get_bounds, Ty.t list) Suspension.t
 end =
   Subtyping_status
 
@@ -270,6 +272,12 @@ module Event = struct
     | Refinement_elem of refinement_elem
     | Exposure_elem of exposure_elem
 
+  type subtyping_state =
+    | Lower_bounds
+    | Upper_bounds
+
+  type state = Subtyping_state of subtyping_state
+
   type comp =
     | Typing
     | Subtyping
@@ -290,6 +298,8 @@ module Event = struct
     | Received of comp * asset
     | Enter of comp * elem
     | Exit of comp * elem
+    | Put of comp * state
+    | Got of comp * state
 
   let typing_event status =
     let open Typing_status in
@@ -336,6 +346,14 @@ module Event = struct
     | Logged_enter_tell_any _ -> Enter (Subtyping, Subtyping_elem Any)
     | Logged_exit_tell { data = { tell = Subtyping.Eff.Any; _ }; _ } ->
       Exit (Subtyping, Subtyping_elem Any)
+    | Added_bound { data = { upper_or_lower = Upper; _ }; _ } ->
+      Put (Subtyping, Subtyping_state Upper_bounds)
+    | Added_bound { data = { upper_or_lower = Lower; _ }; _ } ->
+      Put (Subtyping, Subtyping_state Lower_bounds)
+    | Got_bounds { data = { upper_or_lower = Upper; _ }; _ } ->
+      Got (Subtyping, Subtyping_state Upper_bounds)
+    | Got_bounds { data = { upper_or_lower = Lower; _ }; _ } ->
+      Got (Subtyping, Subtyping_state Lower_bounds)
   ;;
 
   let exposure_event status =
@@ -447,7 +465,9 @@ module Event = struct
     | Ask _
     | Answer _
     | Requested _
-    | Received _ -> None
+    | Received _
+    | Got _
+    | Put _ -> None
   ;;
 end
 

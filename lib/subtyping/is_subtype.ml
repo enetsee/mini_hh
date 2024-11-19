@@ -588,6 +588,35 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     in
     Ok (Prop.disj props)
   (* ~~ C-Var ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (_prov_sub, Var var_sub), (_prov_super, Var var_super) ->
+    let (_ : unit) = Eff.add_upper_bound var_sub ~bound:ty_super in
+    let (_ : unit) = Eff.add_lower_bound var_super ~bound:ty_sub in
+    let lbs = Eff.get_lower_bounds var_sub in
+    let ubs = Eff.get_upper_bounds var_super in
+    let lower =
+      List.map lbs ~f:(fun ty_sub ->
+        Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
+    and upper =
+      List.map ubs ~f:(fun ty_super ->
+        Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
+    in
+    Ok (Prop.conj (lower @ upper))
+  | (_prov_sub, Var var_sub), (_prov_super, _) ->
+    let (_ : unit) = Eff.add_upper_bound var_sub ~bound:ty_super in
+    let lbs = Eff.get_lower_bounds var_sub in
+    let props =
+      List.map lbs ~f:(fun ty_sub ->
+        Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
+    in
+    Ok (Prop.conj props)
+  | (_prov_sub, _), (_prov_super, Var var_super) ->
+    let (_ : unit) = Eff.add_lower_bound var_super ~bound:ty_sub in
+    let ubs = Eff.get_upper_bounds var_super in
+    let props =
+      List.map ubs ~f:(fun ty_super ->
+        Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
+    in
+    Ok (Prop.conj props)
   (* ~~ C-Generic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Generic name_sub), (_prov_super, Generic name_super)
     when Name.Ty_param.equal name_sub name_super -> Ok Prop.true_
