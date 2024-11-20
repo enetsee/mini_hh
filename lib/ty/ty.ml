@@ -34,6 +34,7 @@ module rec Node : sig
     | Fn of Fn.t
     | Ctor of Ctor.t
     | Exists of Exists.t
+    | Forall of Forall.t
     | Union of Annot.t list
     | Inter of Annot.t list
     | Nonnull
@@ -49,6 +50,7 @@ end = struct
       | Fn of Fn.t
       | Ctor of Ctor.t
       | Exists of Exists.t
+      | Forall of Forall.t
       | Union of Annot.t list
       | Inter of Annot.t list
       | Nonnull
@@ -64,6 +66,7 @@ end = struct
       | Fn fn -> Fn.pp ppf fn
       | Ctor ctor -> Ctor.pp ppf ctor
       | Exists exists -> Exists.pp ppf exists
+      | Forall forall -> Forall.pp ppf forall
       | Union [] -> Fmt.any "nothing" ppf ()
       | Union tys ->
         Fmt.(hovbox @@ parens @@ list ~sep:(any " | ") Annot.pp) ppf tys
@@ -96,6 +99,7 @@ and Annot : sig
     ; on_shape : 'acc -> Prov.t -> Shape.t -> 'acc
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
+    ; on_forall : 'acc -> Prov.t -> Forall.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
     ; on_nonnull : 'acc -> Prov.t -> 'acc
@@ -145,6 +149,7 @@ and Annot : sig
 
   val ctor : Prov.t -> name:Name.Ctor.t -> args:t list -> t
   val exists : Prov.t -> quants:Param.t list -> body:t -> t
+  val forall : Prov.t -> quants:Param.t list -> body:t -> t
   val union : t list -> prov:Prov.t -> t
   val inter : t list -> prov:Prov.t -> t
   val arraykey : Prov.t -> t
@@ -184,6 +189,7 @@ end = struct
     ; on_shape : 'acc -> Prov.t -> Shape.t -> 'acc
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
+    ; on_forall : 'acc -> Prov.t -> Forall.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
     ; on_nonnull : 'acc -> Prov.t -> 'acc
@@ -199,6 +205,7 @@ end = struct
       ; on_shape = (fun acc _ _ -> acc)
       ; on_ctor = (fun acc _ _ -> acc)
       ; on_exists = (fun acc _ _ -> acc)
+      ; on_forall = (fun acc _ _ -> acc)
       ; on_union = (fun acc _ _ -> acc)
       ; on_inter = (fun acc _ _ -> acc)
       ; on_nonnull = (fun acc _ -> acc)
@@ -228,6 +235,9 @@ end = struct
     | Exists exists ->
       let init = Exists.bottom_up exists ~ops ~init in
       ty_ops.on_exists init prov exists
+    | Forall forall ->
+      let init = Forall.bottom_up forall ~ops ~init in
+      ty_ops.on_forall init prov forall
     | Union ts ->
       let init =
         List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init)
@@ -268,6 +278,9 @@ end = struct
     | Exists exists ->
       let node = Node.exists (Exists.apply_subst exists ~subst ~combine_prov) in
       { prov; node }
+    | Forall forall ->
+      let node = Node.forall (Forall.apply_subst forall ~subst ~combine_prov) in
+      { prov; node }
     | Union union ->
       let node =
         Node.union (List.map ~f:(apply_subst ~subst ~combine_prov) union)
@@ -306,6 +319,9 @@ end = struct
       { prov; node }
     | Exists exists ->
       let node = Node.exists (Exists.elab_to_generic exists ~bound_ty_params) in
+      { prov; node }
+    | Forall forall ->
+      let node = Node.forall (Forall.elab_to_generic forall ~bound_ty_params) in
       { prov; node }
     | Union union ->
       let node =
@@ -354,6 +370,11 @@ end = struct
 
   let exists prov ~quants ~body =
     let node = Node.exists @@ Exists.create ~quants ~body () in
+    create ~prov ~node ()
+  ;;
+
+  let forall prov ~quants ~body =
+    let node = Node.forall @@ Forall.create ~quants ~body () in
     create ~prov ~node ()
   ;;
 
@@ -998,6 +1019,98 @@ end = struct
   ;;
 end
 
+(* ~~ Universally quantified types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Forall : sig
+  type t =
+    { quants : Param.t list
+    ; body : Annot.t
+    }
+  [@@deriving eq, compare, create, sexp, show]
+
+  type 'a ops =
+    { on_quants : 'a -> Param.t list -> 'a
+    ; on_body : 'a -> Annot.t -> 'a
+    }
+
+  val id_ops : unit -> 'a ops
+  val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
+end = struct
+  module Minimal = struct
+    type t =
+      { quants : Param.t list
+      ; body : Annot.t
+      }
+    [@@deriving eq, compare, create, sexp, show]
+
+    let pp ppf { quants; body } =
+      if List.is_empty quants
+      then Annot.pp ppf body
+      else
+        Fmt.(
+          hovbox
+          @@ pair ~sep:(any ". ") (any "∀ " ++ list ~sep:sp Param.pp) Annot.pp)
+          ppf
+          (quants, body)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  type 'a ops =
+    { on_quants : 'a -> Param.t list -> 'a
+    ; on_body : 'a -> Annot.t -> 'a
+    }
+
+  let id_ops =
+    let ops =
+      { on_quants = (fun acc _ -> acc); on_body = (fun acc _ -> acc) }
+    in
+    fun _ -> ops
+  ;;
+
+  let bottom_up { quants; body } ~ops ~init =
+    let forall_ops = ops.Ops.forall in
+    let init =
+      List.fold_left quants ~init ~f:(fun init param ->
+        Param.bottom_up ~ops ~init param)
+    in
+    let init = forall_ops.on_quants init quants in
+    let init = Annot.bottom_up ~ops ~init body in
+    let init = forall_ops.on_body init body in
+    init
+  ;;
+
+  let apply_subst { quants; body } ~subst ~combine_prov =
+    let body = Annot.apply_subst body ~subst ~combine_prov
+    and quants = List.map quants ~f:(Param.apply_subst ~subst ~combine_prov) in
+    { body; quants }
+  ;;
+
+  let elab_to_generic { quants; body } ~bound_ty_params =
+    (* bind all the quantifiers - do this before elaborating quantifiers as they
+       may contain other quantifiers in their bounds *)
+    let bound_ty_params =
+      let declared_ty_params =
+        Name.Ty_param.Set.of_list
+        @@ List.map ~f:(fun Param.{ name; _ } -> Located.elem name) quants
+      in
+      Set.union bound_ty_params declared_ty_params
+    in
+    let quants = List.map quants ~f:(Param.elab_to_generic ~bound_ty_params)
+    and body = Annot.elab_to_generic body ~bound_ty_params in
+    { body; quants }
+  ;;
+end
+
 and Param : sig
   type t =
     { name : Name.Ty_param.t Located.t
@@ -1232,6 +1345,7 @@ and Ops : sig
     ; shape : 'a Shape.ops
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
+    ; forall : 'a Forall.ops
     ; param : 'a Param.ops
     ; param_bounds : 'a Param_bounds.ops
     }
@@ -1246,6 +1360,7 @@ end = struct
     ; shape : 'a Shape.ops
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
+    ; forall : 'a Forall.ops
     ; param : 'a Param.ops
     ; param_bounds : 'a Param_bounds.ops
     }
@@ -1257,6 +1372,7 @@ end = struct
     ; shape = Shape.id_ops ()
     ; ctor = Ctor.id_ops ()
     ; exists = Exists.id_ops ()
+    ; forall = Forall.id_ops ()
     ; param = Param.id_ops ()
     ; param_bounds = Param_bounds.id_ops ()
     }

@@ -458,6 +458,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
       , ( Union _
         | Inter _
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -471,6 +472,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
       , ( Union _
         | Inter (_ :: _)
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -484,6 +486,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
       , ( Union _
         | Inter _
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Tuple _
@@ -495,6 +498,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
       , ( Union (_ :: _)
         | Inter _
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Tuple _
@@ -509,6 +513,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
       , ( Union (_ :: _)
         | Inter (_ :: _)
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -529,6 +534,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   | ( ( _
       , ( Inter (_ :: _)
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -550,6 +556,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   | ( ( _
       , ( Inter (_ :: _)
         | Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -571,6 +578,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
   | ( (prov_sub, Inter tys_sub)
     , ( _
       , ( Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -622,6 +630,7 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     when Name.Ty_param.equal name_sub name_super -> Ok Prop.true_
   | ( ( _
       , ( Exists _
+        | Forall _
         | Fn _
         | Generic _
         | Shape _
@@ -640,7 +649,14 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
     Ok (Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
   | ( (prov_sub, Generic name_sub)
     , ( _prov_super
-      , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) ) ) ->
+      , ( Exists _
+        | Forall _
+        | Fn _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _ ) ) ) ->
     let ty_sub =
       let Ty.Param_bounds.{ upper; _ } =
         Option.value_exn @@ Ctxt.Cont.ty_param_bounds ctxt_cont name_sub
@@ -649,6 +665,17 @@ let step ~ty_sub ~ty_super ~ctxt_cont =
         Prov.axiom_upper_bound ~bound ~of_:prov_sub)
     in
     Ok (Prop.atom @@ Cstr.is_subtype ~ty_sub ~ty_super)
+  (* ~~ C-Forall (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+  | (_prov_sub, Forall _forall_sub), (_prov_super, Forall _forall_super) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+  | ( ( _prov_sub
+      , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) )
+    , (_prov_super, Forall _forall_super) ) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+  | ( (_prov_sub, Forall _forall_sub)
+    , ( _prov_super
+      , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) ) ) ->
+    Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Exists (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Exists _exists_sub), (_prov_super, Exists _exists_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)

@@ -74,6 +74,7 @@ let rec promote_ty ty ty_params ~dir =
   | Shape shape -> promote_shape prov shape ty_params ~dir
   | Ctor ctor -> promote_ctor prov ctor ty_params ~dir
   | Exists exists -> promote_exists prov exists ty_params ~dir
+  | Forall forall -> promote_forall prov forall ty_params ~dir
   | Union union -> promote_union prov union ty_params ~dir
   | Inter inter -> promote_inter prov inter ty_params ~dir
 
@@ -195,6 +196,18 @@ and promote_exists prov exists ty_params ~dir =
   @@ Result.map ~f:(fun body ->
     let exists = Ty.Exists.create ~quants ~body () in
     let node = Ty.Node.Exists exists in
+    Ty.{ prov; node })
+  @@ promote_ty body ty_params ~dir
+
+and promote_forall prov forall ty_params ~dir =
+  (* As above , we don't need to worry about the quantifiers here since we won't be promoting them in the body
+     TODO(mjt) -does this make sense? *)
+  let prov, Ty.Forall.{ body; quants }, ty_params, dir =
+    prov, forall, ty_params, dir
+  in
+  Result.map ~f:(fun body ->
+    let forall = Ty.Forall.create ~quants ~body () in
+    let node = Ty.Node.Forall forall in
     Ty.{ prov; node })
   @@ promote_ty body ty_params ~dir
 ;;

@@ -29,6 +29,7 @@ module Ty_view = struct
     | Fn fn -> render_fn fn
     | Ctor ctor -> render_ctor ctor
     | Exists exists -> render_exists exists
+    | Forall forall -> render_forall forall
     | Union [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "nothing"
     | Union tys -> render_union tys
     | Inter [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "mixed"
@@ -149,6 +150,16 @@ module Ty_view = struct
   and render_exists Ty.Exists.{ quants; body } =
     W.hbox
       [ pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "∃"
+      ; W.hbox
+        @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",")
+        @@ List.map quants ~f:render_quant
+      ; pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "."
+      ; render body
+      ]
+
+  and render_forall Ty.Forall.{ quants; body } =
+    W.hbox
+      [ pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "∀"
       ; W.hbox
         @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",")
         @@ List.map quants ~f:render_quant
