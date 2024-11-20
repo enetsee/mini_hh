@@ -49,6 +49,7 @@ and Typing_status : sig
           , Lang.Fn_def.t Located.t * Ctxt.Def.t * Ctxt.Cont.t )
           Suspension.t
     | Logged_exit_fn_def of (Span.t, unit) Suspension.t
+    | Got_fresh_tyvar of (Prov.t, Ty.t) Suspension.t
 end =
   Typing_status
 
@@ -275,6 +276,7 @@ module Event = struct
   type subtyping_state =
     | Lower_bounds
     | Upper_bounds
+    | Tyvar
 
   type state = Subtyping_state of subtyping_state
 
@@ -325,6 +327,7 @@ module Event = struct
       Exit (Typing, Typing_elem (Classish_def span))
     | Logged_exit_fn_def { data = span; _ } ->
       Exit (Typing, Typing_elem (Fn_def span))
+    | Got_fresh_tyvar _ -> Got (Typing, Subtyping_state Tyvar)
   ;;
 
   let subtyping_event status =

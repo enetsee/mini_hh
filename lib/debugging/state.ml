@@ -80,3 +80,8 @@ let get_upper_bounds { subtyping; _ } ~var =
 let get_lower_bounds { subtyping; _ } ~var =
   Subtyping.State.get_lower_bounds_exn subtyping ~var
 ;;
+
+let get_fresh_tyvar ({ subtyping; _ } as t) ~prov =
+  let ty, subtyping = Subtyping.State.fresh_tyvar subtyping ~prov in
+  ty, { t with subtyping }
+;;

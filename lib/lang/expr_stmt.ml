@@ -12,6 +12,9 @@ module rec Expr_node : sig
     | Binary of Binary.t
     | Unary of Unary.t
     | Lambda of Lambda.t
+    | Ident of Name.Fn.t
+    | Apply of Apply.t
+    | Call of Call.t
   [@@deriving eq, compare, sexp, show]
 
   val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
@@ -25,16 +28,21 @@ end = struct
     | Binary of Binary.t
     | Unary of Unary.t
     | Lambda of Lambda.t
+    | Ident of Name.Fn.t
+    | Apply of Apply.t
+    | Call of Call.t
   [@@deriving eq, compare, sexp, show]
 
   let elab_to_generic t ~bound_ty_params =
     match t with
-    | Lit _ | Local _ | This -> t
+    | Lit _ | Local _ | This | Ident _ -> t
     | Is is_ -> Is (Is.elab_to_generic is_ ~bound_ty_params)
     | As as_ -> As (As.elab_to_generic as_ ~bound_ty_params)
     | Binary binary -> Binary (Binary.elab_to_generic binary ~bound_ty_params)
     | Unary unary -> Unary (Unary.elab_to_generic unary ~bound_ty_params)
     | Lambda lambda -> Lambda (Lambda.elab_to_generic lambda ~bound_ty_params)
+    | Apply call -> Apply (Apply.elab_to_generic call ~bound_ty_params)
+    | Call call -> Call (Call.elab_to_generic call ~bound_ty_params)
   ;;
 end
 
@@ -47,6 +55,57 @@ end = struct
 
   let elab_to_generic t ~bound_ty_params =
     Located.map (Expr_node.elab_to_generic ~bound_ty_params) t
+  ;;
+end
+
+(* ~~ Type application ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Apply : sig
+  type t =
+    { ctor : Expr.t
+    ; ty_args : Ty.t list
+    }
+  [@@deriving compare, create, eq, sexp, show]
+
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
+end = struct
+  type t =
+    { ctor : Expr.t
+    ; ty_args : Ty.t list
+    }
+  [@@deriving compare, create, eq, sexp, show]
+
+  let elab_to_generic { ctor; ty_args } ~bound_ty_params =
+    let ctor = Expr.elab_to_generic ctor ~bound_ty_params
+    and ty_args = List.map ty_args ~f:(Ty.elab_to_generic ~bound_ty_params) in
+    { ctor; ty_args }
+  ;;
+end
+
+(* ~~ Calls ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Call : sig
+  type t =
+    { func : Expr.t
+    ; args : Expr.t list
+    ; unpacked_arg : Expr.t option
+    }
+  [@@deriving compare, create, eq, sexp, show]
+
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
+end = struct
+  type t =
+    { func : Expr.t
+    ; args : Expr.t list
+    ; unpacked_arg : Expr.t option
+    }
+  [@@deriving compare, create, eq, sexp, show]
+
+  let elab_to_generic { func; args; unpacked_arg } ~bound_ty_params =
+    let func = Expr.elab_to_generic func ~bound_ty_params
+    and args = List.map args ~f:(Expr.elab_to_generic ~bound_ty_params)
+    and unpacked_arg =
+      Option.map unpacked_arg ~f:(Expr.elab_to_generic ~bound_ty_params)
+    in
+    { func; args; unpacked_arg }
   ;;
 end
 

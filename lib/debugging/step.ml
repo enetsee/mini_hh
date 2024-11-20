@@ -12,6 +12,9 @@ type t =
 let next_typing status t =
   let open Status.Typing_status in
   match status with
+  | Got_fresh_tyvar { data; k } ->
+    let ty, state = State.get_fresh_tyvar t.state ~prov:data in
+    { t with status = Effect.Deep.continue k ty; state }
   | Logged_error { data; k } ->
     let state = State.add_error t.state data in
     { t with status = Effect.Deep.continue k (); state }

@@ -23,9 +23,13 @@ let get_upper_bounds_exn { store; _ } ~var =
   Cstr.Store.get_upper_bounds_exn store ~var
 ;;
 
-let fresh_tyvar { supply; store } =
+let fresh_tyvar { supply; store } ~prov =
   let var = Ty.Var.of_int supply in
+  let ty =
+    let node = Ty.Node.Var var in
+    Ty.create ~prov ~node ()
+  in
   let store = Cstr.Store.add store ~var in
   let supply = supply + 1 in
-  { store; supply }
+  ty, { store; supply }
 ;;

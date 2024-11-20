@@ -56,6 +56,10 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Typing (Logged_exit_fn_def { data; k })))
+            | Typing.Eff.Get_fresh_tyvar data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Typing (Got_fresh_tyvar { data; k })))
             | Refinement.Eff.Request_fresh_ty_params data ->
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->

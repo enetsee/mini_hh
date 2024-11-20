@@ -17,7 +17,7 @@ module File_ok = struct
     ; current_file : string
     ; source : string list
     ; oracle : Oracle.t
-    ; oracle_errs : Oracle.Classish.Err.t list
+    ; oracle_errs : Oracle.Err.t list
     ; defs : Lang.Def.t list
     ; breakpoints : Int.Set.t
     }

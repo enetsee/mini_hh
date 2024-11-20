@@ -65,7 +65,9 @@ type _ Effect.t +=
       enter_fn_def
       -> (Lang.Fn_def.t Located.t * Ctxt.Def.t * Ctxt.Cont.t) Effect.t
   | Log_exit_fn_def : Span.t -> unit Effect.t
+  | Get_fresh_tyvar : Prov.t -> Ty.t Effect.t
 
+let get_fresh_tyvar prov = Effect.perform (Get_fresh_tyvar prov)
 let log_error err = Effect.perform (Log_error err)
 let log_warning warn = Effect.perform (Log_warning warn)
 
@@ -99,13 +101,19 @@ let log_enter_fn_def fn_def ctxt_def ctxt_cont =
 
 let log_exit_fn_def span = Effect.perform (Log_exit_fn_def span)
 
-let run_typing comp (tys_ref, errs_ref, warns_ref) =
+let run_typing comp (tys_ref, errs_ref, warns_ref, st_ref) =
   Effect.Deep.match_with
     comp
     ()
     { effc =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
+          | Get_fresh_tyvar prov ->
+            let ty, st = Subtyping.State.fresh_tyvar !st_ref ~prov in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ty)
           | Log_error err ->
             errs_ref := err :: !errs_ref;
             Some
@@ -179,7 +187,7 @@ let run comp oracle =
         in
         st_ref := st;
         res)
-      (tys, errs, warns)
+      (tys, errs, warns, st_ref)
   in
   !tys, !errs, !warns, !st_ref
 ;;

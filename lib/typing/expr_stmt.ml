@@ -48,7 +48,7 @@ end = struct
     | Is is_expr -> Is.synth (is_expr, span) ~def_ctxt ~cont_ctxt
     | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~cont_ctxt
     | Binary binary -> Binary.synth (binary, span) ~def_ctxt ~cont_ctxt
-    | _ -> failwith "TODO"
+    | Unary _ | Lambda _ | Call _ | Apply _ | Ident _ -> failwith "TODO"
   ;;
 
   let check expr ~against ~def_ctxt ~cont_ctxt =

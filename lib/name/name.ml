@@ -35,6 +35,15 @@ module Fn = struct
   include Minimal
   include Pretty.Make (Minimal)
 
+  module Map = struct
+    include Map.Make (Minimal)
+
+    let pp pp_a ppf t =
+      Fmt.(vbox @@ list ~sep:cut @@ pair ~sep:(any " => ") Minimal.pp pp_a) ppf
+      @@ Map.to_alist t
+    ;;
+  end
+
   let of_string nm = Fn nm
 end
 

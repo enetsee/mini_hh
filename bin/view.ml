@@ -825,6 +825,7 @@ module Status = struct
           ; Lwd.pure @@ W.string "delta:"
           ; Delta.render data.delta
           ]
+      | Got_fresh_tyvar _ -> W.vbox [ render_status_desc "Got fresh tyvar" ]
     in
     W.vbox [ render_comp "Typing"; status_ui ]
   ;;
