@@ -369,13 +369,19 @@ end = struct
   ;;
 
   let exists prov ~quants ~body =
-    let node = Node.exists @@ Exists.create ~quants ~body () in
-    create ~prov ~node ()
+    if List.is_empty quants
+    then body
+    else (
+      let node = Node.exists @@ Exists.create ~quants ~body () in
+      create ~prov ~node ())
   ;;
 
   let forall prov ~quants ~body =
-    let node = Node.forall @@ Forall.create ~quants ~body () in
-    create ~prov ~node ()
+    if List.is_empty quants
+    then body
+    else (
+      let node = Node.forall @@ Forall.create ~quants ~body () in
+      create ~prov ~node ())
   ;;
 
   let nonnull prov =

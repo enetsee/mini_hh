@@ -14,7 +14,6 @@ end
 module Entry = struct
   type t =
     { span : Span.t
-    ; ty_params : Ty.Param.t list
     ; ty : Ty.t
     }
   [@@deriving show]
@@ -49,7 +48,7 @@ let add
       Prov.witness span_sig
     in
     (* Build the function type from the declaration *)
-    let ty =
+    let body =
       let Lang.Fn_param_defs.{ required; optional; variadic } = params in
       let required =
         List.map
@@ -66,8 +65,11 @@ let add
       in
       Ty.fn prov ~required ~optional ~variadic ~return
     in
-    (* Merge where constraints with the type parameter definitions *)
-    let ty_params =
+    (* Merge where constraints with the type parameter definitions
+       TODO(mjt) this is buggy and will drop constraints only appearing in
+       where constraints
+    *)
+    let quants =
       let m =
         Name.Ty_param.Map.of_alist_exn
           (List.map where_constraints ~f:(fun Ty.Param.{ name; param_bounds } ->
@@ -82,11 +84,9 @@ let add
         in
         Ty.Param.create ~name ~param_bounds ())
     in
-    let entry = Entry.{ span; ty_params; ty } in
+    let ty = Ty.forall prov ~body ~quants in
+    let entry = Entry.{ span; ty } in
     Ok (Map.add_exn t ~key:name ~data:entry))
 ;;
 
-let find (t : t) id =
-  Option.map ~f:(fun Entry.{ ty_params; ty; _ } -> ty_params, ty)
-  @@ Map.find t id
-;;
+let find (t : t) id = Option.map ~f:(fun Entry.{ ty; _ } -> ty) @@ Map.find t id
