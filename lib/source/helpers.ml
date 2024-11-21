@@ -121,3 +121,15 @@ let unzip_class_elems elems =
   in
   aux elems ~k:(fun x -> x)
 ;;
+
+let build_call_args
+  (args : [ `Normal of Lang.Expr.t | `Unpacked of Lang.Expr.t ] list)
+  =
+  let rec aux elems args =
+    match elems with
+    | [] -> List.rev args, None
+    | `Unpacked arg :: _ -> List.rev args, Some arg
+    | `Normal arg :: rest -> aux rest (arg :: args)
+  in
+  aux args []
+;;

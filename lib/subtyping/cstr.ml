@@ -4,10 +4,11 @@ module Is_subtype = struct
   type t =
     { ty_sub : Ty.t
     ; ty_super : Ty.t
+    ; polarity : bool
     }
   [@@deriving compare, create, eq, sexp]
 
-  let pp ppf { ty_sub; ty_super } =
+  let pp ppf { ty_sub; ty_super; _ } =
     Fmt.(hovbox @@ pair ~sep:(any " <: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)
   ;;
 
@@ -22,8 +23,12 @@ let pp ppf = function
 
 let show t = Fmt.to_to_string pp t
 
+let is_subtype_with_polarity ~ty_sub ~ty_super ~polarity =
+  is_subtype @@ Is_subtype.create ~ty_sub ~ty_super ~polarity ()
+;;
+
 let is_subtype ~ty_sub ~ty_super =
-  is_subtype @@ Is_subtype.create ~ty_sub ~ty_super ()
+  is_subtype @@ Is_subtype.create ~ty_sub ~ty_super ~polarity:true ()
 ;;
 
 module Store = struct
@@ -91,6 +96,15 @@ module Store = struct
       { t with status }
     ;;
 
+    let observe_variance ({ variance = var_opt; _ } as t) ~variance =
+      let variance =
+        Some
+          (Option.value_map var_opt ~default:variance ~f:(fun v ->
+             Common.Variance.meet v variance))
+      in
+      { t with variance }
+    ;;
+
     let empty = { status = Status.empty; variance = None }
     let get_lower_bounds { status; _ } = Status.get_lower_bounds status
     let get_upper_bounds { status; _ } = Status.get_upper_bounds status
@@ -99,6 +113,7 @@ module Store = struct
   type t = Entry.t Ty.Var.Map.t
 
   let empty = Ty.Var.Map.empty
+  let entries (t : t) = Map.to_alist t
 
   let add_upper_bound t ~var ~bound =
     Map.update t var ~f:(function
@@ -109,6 +124,12 @@ module Store = struct
   let add_lower_bound t ~var ~bound =
     Map.update t var ~f:(function
       | Some entry -> Entry.add_lower_bound entry ~bound
+      | _ -> failwith "Unbound type variable")
+  ;;
+
+  let observe_variance_exn t ~var ~variance =
+    Map.update t var ~f:(function
+      | Some entry -> Entry.observe_variance entry ~variance
       | _ -> failwith "Unbound type variable")
   ;;
 

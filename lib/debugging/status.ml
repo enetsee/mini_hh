@@ -22,6 +22,7 @@ end =
 
 and Typing_status : sig
   type t =
+    | Asked_id of (Name.Fn.t, Ty.t option) Suspension.t
     | Logged_error of (Typing.Err.t, unit) Suspension.t
     | Logged_warning of (Typing.Warn.t, unit) Suspension.t
     | Logged_enter_synth_expr of
@@ -214,6 +215,8 @@ and Subtyping_status : sig
         (Subtyping.Eff.exit_tell, Subtyping.Err.t option) Suspension.t
     | Added_bound of (Subtyping.Eff.add_bound, unit) Suspension.t
     | Got_bounds of (Subtyping.Eff.get_bounds, Ty.t list) Suspension.t
+    | Got_fresh_tyvar of (Prov.t, Ty.t) Suspension.t
+    | Observed_variance of (Subtyping.Eff.observe_variance, unit) Suspension.t
 end =
   Subtyping_status
 
@@ -228,6 +231,7 @@ module Event = struct
     | Up
     | Ctor
     | Variance
+    | Fn_name
 
   type exposure_elem =
     | Delta
@@ -277,6 +281,7 @@ module Event = struct
     | Lower_bounds
     | Upper_bounds
     | Tyvar
+    | Variance
 
   type state = Subtyping_state of subtyping_state
 
@@ -306,6 +311,7 @@ module Event = struct
   let typing_event status =
     let open Typing_status in
     match status with
+    | Asked_id _ -> Ask (Typing, Fn_name)
     | Logged_error _ -> Raise (Typing, Error)
     | Logged_warning _ -> Raise (Typing, Warning)
     | Logged_enter_synth_expr { data = { expr = Located.{ span; _ }; _ }; _ } ->
@@ -357,6 +363,8 @@ module Event = struct
       Got (Subtyping, Subtyping_state Upper_bounds)
     | Got_bounds { data = { upper_or_lower = Lower; _ }; _ } ->
       Got (Subtyping, Subtyping_state Lower_bounds)
+    | Got_fresh_tyvar _ -> Got (Subtyping, Subtyping_state Tyvar)
+    | Observed_variance _ -> Put (Subtyping, Subtyping_state Variance)
   ;;
 
   let exposure_event status =

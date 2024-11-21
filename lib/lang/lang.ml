@@ -12,6 +12,8 @@ module Binary = Binary
 module Binop = Binop
 module Unary = Unary
 module Unop = Unop
+module Apply = Apply
+module Call = Call
 
 (* ~~ Statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 

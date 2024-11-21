@@ -66,6 +66,11 @@ type get_bounds =
   ; upper_or_lower : upper_or_lower
   }
 
+type observe_variance =
+  { var : Ty.Var.t
+  ; variance : Common.Variance.t
+  }
+
 type _ Effect.t +=
   | Ask_up : ask_up -> Oracle.Classish.instantiation Effect.t
   | Ask_ty_param_variances :
@@ -82,6 +87,14 @@ type _ Effect.t +=
   | Log_exit_tell : exit_tell -> Err.t option Effect.t
   | Add_bound : add_bound -> unit Effect.t
   | Get_bounds : get_bounds -> Ty.t list Effect.t
+  | Get_fresh_tyvar : Prov.t -> Ty.t Effect.t
+  | Observe_variance : observe_variance -> unit Effect.t
+
+let observe_variance var ~variance =
+  Effect.perform (Observe_variance { var; variance })
+;;
+
+let get_fresh_tyvar prov = Effect.perform (Get_fresh_tyvar prov)
 
 let add_upper_bound var ~bound =
   Effect.perform (Add_bound { var; bound; upper_or_lower = Upper })
@@ -147,6 +160,12 @@ let run comp ~st ~oracle =
             Some
               (fun (k : (a, _) Effect.Deep.continuation) ->
                 Effect.Deep.continue k ())
+          | Observe_variance { var; variance } ->
+            let st = State.observe_variance_exn !st_ref ~var ~variance in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ())
           | Get_bounds { var; upper_or_lower = Upper } ->
             let bounds = State.get_upper_bounds_exn !st_ref ~var in
             Some
@@ -157,6 +176,12 @@ let run comp ~st ~oracle =
             Some
               (fun (k : (a, _) Effect.Deep.continuation) ->
                 Effect.Deep.continue k bounds)
+          | Get_fresh_tyvar prov ->
+            let ty, st = State.fresh_tyvar !st_ref ~prov in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ty)
           | Ask_up { of_; at } ->
             let inst = Oracle.up oracle ~of_ ~at in
             Some

@@ -43,6 +43,11 @@ type enter_fn_def =
   ; ctxt_cont : Ctxt.Cont.t
   }
 
+type tell_is_subtype =
+  { ty_sub : Ty.t
+  ; ty_super : Ty.t
+  }
+
 type _ Effect.t +=
   | Log_error : Err.t -> unit Effect.t
   | Log_warning : Warn.t -> unit Effect.t
@@ -66,7 +71,9 @@ type _ Effect.t +=
       -> (Lang.Fn_def.t Located.t * Ctxt.Def.t * Ctxt.Cont.t) Effect.t
   | Log_exit_fn_def : Span.t -> unit Effect.t
   | Get_fresh_tyvar : Prov.t -> Ty.t Effect.t
+  | Ask_id : Name.Fn.t -> Ty.t option Effect.t
 
+let ask_id id = Effect.perform (Ask_id id)
 let get_fresh_tyvar prov = Effect.perform (Get_fresh_tyvar prov)
 let log_error err = Effect.perform (Log_error err)
 let log_warning warn = Effect.perform (Log_warning warn)
@@ -101,13 +108,18 @@ let log_enter_fn_def fn_def ctxt_def ctxt_cont =
 
 let log_exit_fn_def span = Effect.perform (Log_exit_fn_def span)
 
-let run_typing comp (tys_ref, errs_ref, warns_ref, st_ref) =
+let run_typing comp (tys_ref, errs_ref, warns_ref, st_ref) ~oracle =
   Effect.Deep.match_with
     comp
     ()
     { effc =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
+          | Ask_id id ->
+            let ty_opt = Oracle.find_fn oracle id in
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ty_opt)
           | Get_fresh_tyvar prov ->
             let ty, st = Subtyping.State.fresh_tyvar !st_ref ~prov in
             st_ref := st;
@@ -188,6 +200,7 @@ let run comp oracle =
         st_ref := st;
         res)
       (tys, errs, warns, st_ref)
+      ~oracle
   in
   !tys, !errs, !warns, !st_ref
 ;;

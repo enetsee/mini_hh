@@ -22,8 +22,8 @@ module Eager_leftmost_dfs = struct
     Eff.log_exit_tell_cstr
     @@
     match cstr with
-    | Cstr.Is_subtype { ty_sub; ty_super } ->
-      (match Is_subtype.step ~ty_sub ~ty_super ~ctxt_cont:ctxt with
+    | Cstr.Is_subtype { ty_sub; ty_super; polarity } ->
+      (match Is_subtype.step ~ty_sub ~ty_super ~polarity ~ctxt_cont:ctxt with
        | Ok prop -> tell_prop prop ~ctxt
        | Error err -> Some err)
 

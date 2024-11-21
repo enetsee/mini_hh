@@ -33,6 +33,7 @@ let any_char = (_ | ['\n'] )
 let name0= ['a'-'z''A'-'Z''_']
 let name = name0 ['a'-'z''A'-'Z''0'-'9''_']*
 
+
 let lnum = ['0'-'9']+
 let dnum = (['0'-'9']*['.']['0'-'9']+) | (['0'-'9']+['.']['0'-'9']* )
 let exponent_dnum = ((lnum|dnum)['e''E']['+''-']?lnum)
@@ -109,6 +110,7 @@ rule token = parse
   | "where"                 { WHERE (current_loc lexbuf) }
   | "optional"              { OPTIONAL (current_loc lexbuf) }
   | "some"                  { SOME (current_loc lexbuf) }
+  | "all"                   { ALL (current_loc lexbuf) }
   | "let"                   { LET (current_loc lexbuf) } 
   | "bool"                  { BOOL (current_loc lexbuf) }
   | "int"                   { INT (current_loc lexbuf) }
@@ -140,6 +142,8 @@ rule token = parse
   (* | ">="                    { IS_GREATER_THAN_OR_EQUAL (current_loc lexbuf) } *)
   | "<"                     { LANGLE (current_loc lexbuf) }
   | ">"                     { RANGLE (current_loc lexbuf) }
+  | "<<"                     { LLANGLE (current_loc lexbuf) }
+  | ">>"                     { RRANGLE (current_loc lexbuf) }
   | "&&"                    { LOGICAL_AND (current_loc lexbuf) }
   | "||"                    { LOGICAL_OR (current_loc lexbuf) }
   | ";"                     { SEMICOLON (current_loc lexbuf)}

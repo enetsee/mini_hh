@@ -97,7 +97,7 @@ module Ty_view = struct
       @@ Name.Shape_field_label.to_string lit
 
   and render_tuple Ty.Tuple.{ required; optional; variadic } =
-    let sep = pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "," in
+    let sep = pad ~right:1 @@ Lwd.pure @@ W.string "," in
     let req = W.hbox @@ List.intersperse ~sep @@ List.map required ~f:render
     and optional =
       match optional with
@@ -116,15 +116,11 @@ module Ty_view = struct
         W.hbox [ sep; render ty; Lwd.pure @@ W.string "..." ])
     in
     let elems = W.hbox [ req; optional; variadic ] in
-    W.hbox
-      [ pad ~right:1 @@ Lwd.pure @@ W.string "("
-      ; elems
-      ; pad ~left:1 @@ Lwd.pure @@ W.string ")"
-      ]
+    W.hbox [ Lwd.pure @@ W.string "("; elems; Lwd.pure @@ W.string ")" ]
 
   and render_fn Ty.Fn.{ params; return } =
     W.hbox
-      [ Lwd.pure @@ W.string "("
+      [ Lwd.pure @@ W.string "function ("
       ; render_tuple params
       ; pad ~right:1 @@ Lwd.pure @@ W.string ":"
       ; render return
@@ -330,13 +326,61 @@ module State_view = struct
         ])
   ;;
 
+  let render_status status =
+    match status with
+    | Subtyping.Cstr.Store.Status.Err -> Lwd.pure @@ W.string "error"
+    | Solved ty ->
+      W.hbox
+        [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "solved:"
+        ; Ty_view.render ty
+        ]
+    | Cstrs { upper_bounds; lower_bounds } ->
+      W.vbox
+        [ W.hbox
+            [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "lower bounds:"
+            ; W.flex_box
+              @@ List.map lower_bounds ~f:(fun ty ->
+                Helpers.pad ~right:1 @@ Ty_view.render ty)
+            ]
+        ; W.hbox
+            [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "upper bounds:"
+            ; W.flex_box
+              @@ List.map upper_bounds ~f:(fun ty ->
+                Helpers.pad ~right:1 @@ Ty_view.render ty)
+            ]
+        ]
+  ;;
+
+  let render_entry Subtyping.Cstr.Store.Entry.{ status; variance } =
+    W.hbox
+      [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "variance:"
+      ; Helpers.pad ~right:1
+        @@ Lwd.pure
+        @@ W.string
+        @@ Option.value_map ~default:"(none)" ~f:Common.Variance.show variance
+      ; render_status status
+      ]
+  ;;
+
+  let render_subtyping Subtyping.State.{ store; _ } =
+    let entries = Subtyping.Cstr.Store.entries store in
+    W.scrollbox
+    @@ W.vlist
+    @@ List.map entries ~f:(fun (var, entry) ->
+      W.hbox
+        [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string @@ Ty.Var.to_string var
+        ; render_entry entry
+        ])
+  ;;
+
   let render state_opt =
     match state_opt with
-    | Some Debugging.State.{ tys; errs; warns; _ } ->
+    | Some Debugging.State.{ tys; errs; warns; subtyping; _ } ->
       Tabs.view
         [ ("types", fun _ -> render_types tys)
         ; ("errors", fun _ -> render_errors errs)
         ; ("warnings", fun _ -> render_warnings warns)
+        ; ("subtyping", fun _ -> render_subtyping subtyping)
         ]
     | _ -> W.empty_lwd
   ;;
@@ -687,7 +731,7 @@ end
 module Cstr = struct
   let render t =
     match t with
-    | Subtyping.Cstr.Is_subtype { ty_sub; ty_super } ->
+    | Subtyping.Cstr.Is_subtype { ty_sub; ty_super; _ } ->
       W.hbox
         [ Ty_view.render ty_sub
         ; pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "<:"
@@ -700,21 +744,21 @@ module Prop = struct
   let rec render t =
     match t with
     | Subtyping.Prop.Atom cstr -> Cstr.render cstr
-    | Subtyping.Prop.Conj [] -> Lwd.pure @@ W.string "T"
+    | Subtyping.Prop.Conj [] -> Lwd.pure @@ W.string "true"
     | Subtyping.Prop.Conj props ->
       W.flex_box
         [ Lwd.pure @@ W.string "("
         ; W.flex_box
-          @@ List.intersperse ~sep:(Lwd.pure @@ W.string " & ")
+          @@ List.intersperse ~sep:(Lwd.pure @@ W.string " /\\ ")
           @@ List.map ~f:render props
-        ; Lwd.pure @@ W.string "("
+        ; Lwd.pure @@ W.string ")"
         ]
     | Subtyping.Prop.Disj [] -> Lwd.pure @@ W.string "F"
     | Subtyping.Prop.Disj props ->
       W.flex_box
         [ Lwd.pure @@ W.string "("
         ; W.flex_box
-          @@ List.intersperse ~sep:(Lwd.pure @@ W.string " | ")
+          @@ List.intersperse ~sep:(Lwd.pure @@ W.string " \\/ ")
           @@ List.map ~f:render props
         ; Lwd.pure @@ W.string ")"
         ]
@@ -837,6 +881,14 @@ module Status = struct
           ; Delta.render data.delta
           ]
       | Got_fresh_tyvar _ -> W.vbox [ render_status_desc "Got fresh tyvar" ]
+      | Asked_id { data; _ } ->
+        W.vbox
+          [ render_status_desc "Asked for type of function"
+          ; W.hbox
+              [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "name:"
+              ; Lwd.pure @@ W.string @@ Name.Fn.to_string data
+              ]
+          ]
     in
     W.vbox [ render_comp "Typing"; status_ui ]
   ;;
@@ -963,6 +1015,19 @@ module Status = struct
           ; W.hbox
               [ pad ~right:1 @@ Lwd.pure @@ W.string "var:"
               ; Lwd.pure @@ W.string @@ Ty.Var.to_string var
+              ]
+          ]
+      | Got_fresh_tyvar _ -> W.vbox [ render_status_desc "Got fresh tyvar" ]
+      | Observed_variance { data = { var; variance }; _ } ->
+        W.vbox
+          [ render_status_desc "Observed variance"
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "var:"
+              ; Lwd.pure @@ W.string @@ Ty.Var.to_string var
+              ]
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "variance:"
+              ; Lwd.pure @@ W.string @@ Common.Variance.show variance
               ]
           ]
     in

@@ -16,7 +16,7 @@
   FUNCTION OPTIONAL RETURN WHERE
   CONST CASE TYPE NEWTYPE SHAPE
   IF ELSE
-  SOME 
+  SOME ALL
   IS 
   LET
   BOOL INT FLOAT STRING THIS ARRAYKEY NUM NONNULL MIXED NOTHING
@@ -30,6 +30,7 @@
 %token<Reporting.Span.t> 
   LPAREN RPAREN LBRACE RBRACE LANGLE RANGLE COLON QUESTION ELLIPSIS PLUS MINUS
   COMMA DOT AMPERSAND PIPE EQUAL LOGICAL_AND LOGICAL_OR SEMICOLON DOUBLE_ARROW
+  LLANGLE RRANGLE 
 
   // UNDERSCORE
   // MUL DIV IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL 
@@ -59,7 +60,7 @@
 (* ~~ Precedence & associativity ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 
-// %nonassoc LPAREN 
+%nonassoc LPAREN 
 // %left QUESTION
 // %left PIPE
 // %left AMPERSAND
@@ -71,9 +72,9 @@
 %left LOGICAL_OR
 %left LOGICAL_AND
 %left IS AS 
+%right LLANGLE
 // %nonassoc IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL
 // %right IS_NOT_IDENTICAL
-// %right LANGLE
 // %right RANGLE
 // %nonassoc IS_LESS_THAN_OR_EQUAL IS_GREATER_THAN_OR_EQUAL
 // %left PLUS MINUS DOT 
@@ -340,7 +341,7 @@ fn_param_def: (* Fn_param_def.t Located.t *)
   }
 ;
 
-(* ~~ statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+(* ~~ statements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 statement:
   | span=SEMICOLON { 
@@ -426,7 +427,7 @@ if_without_else:
 
 
 
-(* ~~ expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+(* ~~ expressions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 
 expr: (* Expr.t  *)
   | open_expr(expr) { $1 }
@@ -437,13 +438,22 @@ expr: (* Expr.t  *)
 ;
 
 open_expr(left):
+  | ctor=left LLANGLE ty_arg_spans=nonempty_comma_list(ty_expr) span_end=RRANGLE {
+    let ty_args = List.map ~f:fst ty_arg_spans in
+    let span = 
+      let span_start = Located.span_of ctor in 
+      Span.join span_start span_end
+    in
+    let apply = Lang.Apply.create ~ctor ~ty_args () in
+    let elem = Expr_node.Apply apply in
+    Located.create ~elem ~span ()
+  }
   | lit_span=lit {
     let (lit,span) = lit_span in
     let elem = Expr_node.Lit lit in 
     Located.create ~elem ~span ()
   }
   // | span_start=NEW ty_ctor_name fn_args {}
-
   | span=IDENT_THIS {
     Located.create ~elem:Expr_node.This ~span ()
   }
@@ -485,7 +495,32 @@ open_expr(left):
     let elem = Expr_node.Binary node in 
     Located.create ~elem ~span ()
   }
+  | IDENT { 
+    let (str,span) = $1 in
+    let elem = Expr_node.Ident  (Name.Fn.of_string str) in
+    Located.create ~elem ~span ()
+  }
+  | func=left LPAREN call_args=comma_list_trailing(call_arg) span_end=RPAREN { 
+    let span = 
+      let span_start = Located.span_of func in 
+      Span.join span_start span_end
+    in
+    let args , unpacked_arg = build_call_args call_args in
+    let call = Call.create ~func  ~args ?unpacked_arg () in
+    let elem = Expr_node.Call call in
+    Located.create ~elem ~span ()
+  }
+;  
 
+call_arg: 
+  | expr { `Normal $1 } 
+  | span_start=ELLIPSIS expr=expr { 
+    let Located.{elem;span} = expr in
+    let span = Span.join span span_start in
+    let expr = Located.create ~elem ~span () in
+    `Unpacked expr 
+  }
+;
 
 
 lit: (* Lit.t * Span.t *) 
@@ -739,6 +774,13 @@ simple_ty_expr: (* Ty.t * Span.t *)
     let prov = Prov.witness span in
     Ty.exists prov ~quants ~body, span
   }
+  | quants_span=ty_forall_quants ty_span=ty_expr {
+    let body, span_end = ty_span in
+    let quants, span_start = quants_span in
+    let span = Span.join span_start span_end in
+    let prov = Prov.witness span in
+    Ty.forall prov ~quants ~body, span
+  }
 ;
 
 ty_shape: (* Ty.Shape.t * Span.t *)
@@ -802,6 +844,12 @@ return_ty: (* Ty.t * Span.t *)
   | COLON ty_expr { $2 }
 ;
 
+ty_forall_quants: 
+ | span_start=ALL quants=nonempty_comma_list(ty_quantifier) span_end=DOT {
+  let span = Span.join span_start span_end in
+  quants, span
+ }
+
 ty_exists_quants: 
  | span_start=SOME quants=nonempty_comma_list(ty_quantifier) span_end=DOT {
   let span = Span.join span_start span_end in
@@ -823,10 +871,16 @@ ty_quantifier:  (* Ty.Param.t *)
   }
 
 ty_ctor: (* Ty.Ctor.t * Span.t *)
- | name=ty_ctor_name args_span_opt=ty_args {
+ | name=ty_ctor_name {
+    let (name,span) = name in 
+    let elem = Ty.Ctor.create ~name ~args:[] () in 
+   elem , span 
+
+ }
+ | name=ty_ctor_name LANGLE args=nonempty_comma_list_trailing(ty_expr) span_end=RANGLE  {
     let (name,span_start) = name in 
-    let args,span_end_opt = args_span_opt in
-    let span = Option.value_map ~default:span_start ~f:(Span.join span_start) span_end_opt in 
+    let span = Span.join span_start span_end in
+    let args = List.map ~f:fst args in
     let elem = Ty.Ctor.create ~name ~args () in
     elem , span 
   }
@@ -840,12 +894,6 @@ ty_ctor_name: (* Name.Ctor.t * Span.t *)
   }
 ;
 
-ty_args: (* Ty.t list, Span.t option *)
-  | (* empty *) { [], None }
-  | span_start=LANGLE elems=nonempty_comma_list_trailing(ty_expr) span_end=RANGLE { 
-    (List.map ~f:fst elems , Some(Span.join span_start span_end))
-  }
-;
 
 
 (* ~~ Type definitions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)

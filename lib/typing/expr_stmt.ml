@@ -41,6 +41,16 @@ end = struct
           Ty.nothing (Prov.lvalue_tm_var span)
       in
       ty, Ctxt.Cont.Expr_delta.empty
+    | Ident id ->
+      let ty =
+        match Eff.ask_id id with
+        | Some ty -> ty
+        | None ->
+          let _ : unit = Eff.log_error (Err.Unbound_name id) in
+          let prov = Prov.witness span in
+          Ty.nothing prov
+      in
+      ty, Ctxt.Cont.Expr_delta.empty
     | This ->
       (* TODO(mjt) add this literal witness *)
       let ty = Ty.this @@ Prov.witness span in
@@ -48,7 +58,8 @@ end = struct
     | Is is_expr -> Is.synth (is_expr, span) ~def_ctxt ~cont_ctxt
     | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~cont_ctxt
     | Binary binary -> Binary.synth (binary, span) ~def_ctxt ~cont_ctxt
-    | Unary _ | Lambda _ | Call _ | Apply _ | Ident _ -> failwith "TODO"
+    | Call call -> Call.synth (call, span) ~def_ctxt ~cont_ctxt
+    | Unary _ | Lambda _ | Apply _ -> failwith "TODO"
   ;;
 
   let check expr ~against ~def_ctxt ~cont_ctxt =
@@ -323,6 +334,37 @@ end = struct
       synth_logical_and (lhs, rhs, span) ~def_ctxt ~cont_ctxt
     | Lang.Binop.Logical Or ->
       synth_logical_or (lhs, rhs, span) ~def_ctxt ~cont_ctxt
+  ;;
+end
+
+and Call : sig
+  val synth
+    :  Lang.Call.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> cont_ctxt:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
+end = struct
+  let synth
+    (Lang.Call.{ func; args; unpacked_arg = _ }, span)
+    ~def_ctxt
+    ~cont_ctxt
+    =
+    let ty_sub, _ = Expr.synth func ~def_ctxt ~cont_ctxt in
+    let prov = Prov.witness span in
+    let return = Eff.get_fresh_tyvar prov in
+    let ty_super =
+      (* TODO(mjt) hh would sequence [as] refinements through arguments here *)
+      let required, _ =
+        List.unzip @@ List.map args ~f:(Expr.synth ~def_ctxt ~cont_ctxt)
+      in
+      (* TODO(mjt) use unpacked arg - this will need a 'can unpack' constraint *)
+      Ty.fn prov ~required ~optional:[] ~variadic:None ~return
+    in
+    let _ : unit =
+      Option.iter ~f:(fun err -> Eff.log_error (Err.subtyping err))
+      @@ Subtyping.Tell.is_subtype ~ty_sub ~ty_super ~ctxt:cont_ctxt
+    in
+    return, Ctxt.Cont.Expr_delta.empty
   ;;
 end
 

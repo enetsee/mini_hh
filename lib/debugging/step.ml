@@ -9,9 +9,12 @@ type t =
   }
 [@@deriving create, fields]
 
-let next_typing status t =
+let next_typing status t ~oracle =
   let open Status.Typing_status in
   match status with
+  | Asked_id { data; k } ->
+    let ty_opt = Oracle.find_fn oracle data in
+    { t with status = Effect.Deep.continue k ty_opt }
   | Got_fresh_tyvar { data; k } ->
     let ty, state = State.get_fresh_tyvar t.state ~prov:data in
     { t with status = Effect.Deep.continue k ty; state }
@@ -232,6 +235,10 @@ let next_exposure status t ~oracle =
 let next_subtyping status t ~oracle =
   let open Status.Subtyping_status in
   match status with
+  | Observed_variance { data = { var; variance }; k } ->
+    let state = State.observe_variance t.state ~var ~variance in
+    let status = Effect.Deep.continue k () in
+    { t with status; state }
   | Added_bound { data = { var; bound; upper_or_lower = Upper }; k } ->
     let state = State.add_upper_bound t.state ~var ~bound in
     let status = Effect.Deep.continue k () in
@@ -248,6 +255,9 @@ let next_subtyping status t ~oracle =
     let data = State.get_upper_bounds t.state ~var in
     let status = Effect.Deep.continue k data in
     { t with status }
+  | Got_fresh_tyvar { data; k } ->
+    let ty, state = State.get_fresh_tyvar t.state ~prov:data in
+    { t with status = Effect.Deep.continue k ty; state }
   | Asked_up { data = { of_; at }; k } ->
     let data = Oracle.up oracle ~of_ ~at in
     let status = Status.Subtyping (Answered_up { data; k }) in
@@ -283,7 +293,7 @@ let next t ~oracle =
   let open Status in
   match t.status with
   | Completed | Failed _ -> None
-  | Typing status -> Some (next_typing status t)
+  | Typing status -> Some (next_typing status t ~oracle)
   | Refinement status -> Some (next_refinement status t ~oracle)
   | Exposure status -> Some (next_exposure status t ~oracle)
   | Subtyping status -> Some (next_subtyping status t ~oracle)

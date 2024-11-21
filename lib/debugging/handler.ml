@@ -60,6 +60,10 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Typing (Got_fresh_tyvar { data; k })))
+            | Typing.Eff.Ask_id data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Typing (Asked_id { data; k })))
             | Refinement.Eff.Request_fresh_ty_params data ->
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
@@ -225,6 +229,14 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Subtyping (Got_bounds { data; k })))
+            | Subtyping.Eff.Get_fresh_tyvar data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Got_fresh_tyvar { data; k })))
+            | Subtyping.Eff.Observe_variance data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Observed_variance { data; k })))
             | _ -> None)
       ; retc = (fun _res -> Status.Completed)
       ; exnc = (fun exn -> Status.Failed exn)

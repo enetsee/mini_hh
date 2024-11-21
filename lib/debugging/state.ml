@@ -85,3 +85,10 @@ let get_fresh_tyvar ({ subtyping; _ } as t) ~prov =
   let ty, subtyping = Subtyping.State.fresh_tyvar subtyping ~prov in
   ty, { t with subtyping }
 ;;
+
+let observe_variance ({ subtyping; _ } as t) ~var ~variance =
+  let subtyping =
+    Subtyping.State.observe_variance_exn subtyping ~var ~variance
+  in
+  { t with subtyping }
+;;

@@ -5,6 +5,7 @@ module Minimal = struct
   type t =
     | Subtyping of Subtyping.Err.t
     | Alread_bound of Name.Tm_var.t
+    | Unbound_name of Name.Fn.t
     | Unbound_local of Name.Tm_var.t Located.t
     | Unbound_at_join of
         { name : Name.Tm_var.t
@@ -24,6 +25,8 @@ module Minimal = struct
       Fmt.(hovbox @@ (any "subtyping: " ++ Subtyping.Err.pp)) ppf err
     | Alread_bound nm ->
       Fmt.(hovbox @@ (any "already bound: " ++ Name.Tm_var.pp)) ppf nm
+    | Unbound_name nm ->
+      Fmt.(hovbox @@ (any "unbound name: " ++ Name.Fn.pp)) ppf nm
     | Unbound_local nm ->
       Fmt.(hovbox @@ (any "unbound local: " ++ Located.pp Name.Tm_var.pp))
         ppf

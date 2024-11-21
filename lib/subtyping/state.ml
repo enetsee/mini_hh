@@ -23,6 +23,11 @@ let get_upper_bounds_exn { store; _ } ~var =
   Cstr.Store.get_upper_bounds_exn store ~var
 ;;
 
+let observe_variance_exn ({ store; _ } as t) ~var ~variance =
+  let store = Cstr.Store.observe_variance_exn store ~var ~variance in
+  { t with store }
+;;
+
 let fresh_tyvar { supply; store } ~prov =
   let var = Ty.Var.of_int supply in
   let ty =
