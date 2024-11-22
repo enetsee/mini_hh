@@ -2,10 +2,6 @@ open Core
 open Reporting
 open Common
 
-let fields_empty (req, opt, var) =
-  Map.is_empty req && Map.is_empty opt && Option.is_none var
-;;
-
 let rec step_shape_field
   ~prov_sub
   ~fields_sub
