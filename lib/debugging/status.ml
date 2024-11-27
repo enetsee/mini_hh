@@ -217,6 +217,7 @@ and Subtyping_status : sig
     | Got_bounds of (Subtyping.Eff.get_bounds, Ty.t list) Suspension.t
     | Got_fresh_tyvar of (Prov.t, Ty.t) Suspension.t
     | Observed_variance of (Subtyping.Eff.observe_variance, unit) Suspension.t
+    | Requested_fresh_ty_params of (int, Name.Ty_param.t list) Suspension.t
 end =
   Subtyping_status
 
@@ -365,6 +366,7 @@ module Event = struct
       Got (Subtyping, Subtyping_state Lower_bounds)
     | Got_fresh_tyvar _ -> Got (Subtyping, Subtyping_state Tyvar)
     | Observed_variance _ -> Put (Subtyping, Subtyping_state Variance)
+    | Requested_fresh_ty_params _ -> Requested (Subtyping, Ty_param)
   ;;
 
   let exposure_event status =

@@ -237,6 +237,10 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Subtyping (Observed_variance { data; k })))
+            | Subtyping.Eff.Request_fresh_ty_params data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Requested_fresh_ty_params { data; k })))
             | _ -> None)
       ; retc = (fun _res -> Status.Completed)
       ; exnc = (fun exn -> Status.Failed exn)

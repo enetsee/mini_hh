@@ -1,7 +1,7 @@
 open Core
 open Reporting
 
-let synth fn_def ~def_ctxt ~cont_ctxt =
+let synth fn_def ~def_ctxt ~ctxt_cont =
   let ( Located.
           { elem =
               Lang.Fn_def.
@@ -12,9 +12,9 @@ let synth fn_def ~def_ctxt ~cont_ctxt =
           ; span
           }
       , def_ctxt
-      , cont_ctxt )
+      , ctxt_cont )
     =
-    Eff.log_enter_fn_def fn_def def_ctxt cont_ctxt
+    Eff.log_enter_fn_def fn_def def_ctxt ctxt_cont
   in
   let Lang.Lambda_sig.{ ty_params; params; return } = Located.elem lambda_sig in
   (* Enter the function context so we have access to the return type when typing the body *)
@@ -49,8 +49,8 @@ let synth fn_def ~def_ctxt ~cont_ctxt =
     let bindings = Ctxt.Cont.Bindings.create ~local ~ty_param () in
     Ctxt.Cont.Delta.create ~bindings ()
   in
-  let cont_ctxt = Ctxt.Cont.update cont_ctxt ~delta in
+  let ctxt_cont = Ctxt.Cont.update ctxt_cont ~delta in
   (* Type the body *)
-  let _body_delta = Expr_stmt.Seq.synth (body, span) ~def_ctxt ~cont_ctxt in
+  let _body_delta = Expr_stmt.Seq.synth (body, span) ~def_ctxt ~ctxt_cont in
   Eff.log_exit_fn_def span
 ;;

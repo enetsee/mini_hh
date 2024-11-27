@@ -6,7 +6,7 @@ module Is_subtype = struct
     ; ty_super : Ty.t
     ; polarity : bool
     }
-  [@@deriving compare, create, eq, sexp]
+  [@@deriving equal, create, compare, sexp]
 
   let pp ppf { ty_sub; ty_super; _ } =
     Fmt.(hovbox @@ pair ~sep:(any " <: ") Ty.pp Ty.pp) ppf (ty_sub, ty_super)

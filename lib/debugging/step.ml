@@ -235,6 +235,10 @@ let next_exposure status t ~oracle =
 let next_subtyping status t ~oracle =
   let open Status.Subtyping_status in
   match status with
+  | Requested_fresh_ty_params { data; k } ->
+    let state, data = State.fresh_ty_params t.state data in
+    let status = Effect.Deep.continue k data in
+    { t with status; state }
   | Observed_variance { data = { var; variance }; k } ->
     let state = State.observe_variance t.state ~var ~variance in
     let status = Effect.Deep.continue k () in

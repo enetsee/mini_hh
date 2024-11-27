@@ -102,7 +102,10 @@ and refine_ty ~ty_scrut ~ty_test ~ctxt =
   | (prov_scrut, _), (prov_test, _) ->
     let prov = Reporting.Prov.refine ~prov_scrut ~prov_test in
     (match
-       Subtyping.Ask.is_subtype ~ty_sub:ty_test ~ty_super:ty_scrut ~ctxt
+       Subtyping.Ask.is_subtype
+         ~ty_sub:ty_test
+         ~ty_super:ty_scrut
+         ~ctxt_cont:ctxt
      with
      | Subtyping.Answer.No _err ->
        (* The test type is not a subtype of the scrutinee so the refinement is to 
@@ -152,8 +155,8 @@ and refine_top_level_generic_test ty_scrut prov_test name_test ~ctxt =
   @@
   match
     Subtyping.Ask.(
-      ( is_subtype ~ty_sub:lower ~ty_super:ty_scrut ~ctxt
-      , is_subtype ~ty_sub:ty_scrut ~ty_super:upper ~ctxt ))
+      ( is_subtype ~ty_sub:lower ~ty_super:ty_scrut ~ctxt_cont:ctxt
+      , is_subtype ~ty_sub:ty_scrut ~ty_super:upper ~ctxt_cont:ctxt ))
   with
   | Subtyping.Answer.No _, _ | _, Subtyping.Answer.No _ ->
     Ty.Refinement.disjoint prov, None

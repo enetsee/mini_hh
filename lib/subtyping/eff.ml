@@ -1,3 +1,4 @@
+open Core
 open Common
 open Reporting
 
@@ -89,6 +90,9 @@ type _ Effect.t +=
   | Get_bounds : get_bounds -> Ty.t list Effect.t
   | Get_fresh_tyvar : Prov.t -> Ty.t Effect.t
   | Observe_variance : observe_variance -> unit Effect.t
+  | Request_fresh_ty_params : int -> Name.Ty_param.t list Effect.t
+
+let request_fresh_ty_params n = Effect.perform (Request_fresh_ty_params n)
 
 let observe_variance var ~variance =
   Effect.perform (Observe_variance { var; variance })
@@ -140,8 +144,9 @@ let log_exit_tell_cstr = log_exit_tell Cstr
 let log_exit_tell_all = log_exit_tell All
 let log_exit_tell_any = log_exit_tell Any
 
-let run comp ~st ~oracle =
+let run comp ~st ~src ~oracle =
   let st_ref = ref st in
+  let src_ref = ref src in
   Effect.Deep.match_with
     comp
     ()
@@ -212,8 +217,18 @@ let run comp ~st ~oracle =
             Some
               (fun (k : (a, _) Effect.Deep.continuation) ->
                 Effect.Deep.continue k err_opt)
+          | Request_fresh_ty_params n ->
+            let offset = !src_ref in
+            src_ref := offset + n;
+            let names =
+              List.init n ~f:(fun i ->
+                Name.Ty_param.of_string @@ Format.sprintf {|T#%n|} (i + offset))
+            in
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k names)
           | _ -> None)
-    ; retc = (fun res -> res, !st_ref)
+    ; retc = (fun res -> res, !st_ref, !src_ref)
     ; exnc = (fun exn -> raise exn)
     }
 ;;

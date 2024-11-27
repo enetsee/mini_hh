@@ -75,17 +75,17 @@ let this_bounds classish_def =
     Ty.Param_bounds.create ~upper ~lower ()
 ;;
 
-let synth classish_def ~def_ctxt ~cont_ctxt =
+let synth classish_def ~def_ctxt ~ctxt_cont =
   (* TODO(mjt) Type parameter bounds checks, type const checks, method override checks property typing *)
   let ( Located.
           { elem = Lang.Classish_def.{ name; ty_params; methods; _ }; span }
       , def_ctxt
-      , cont_ctxt )
+      , ctxt_cont )
     =
-    Eff.log_enter_classish_def classish_def def_ctxt cont_ctxt
+    Eff.log_enter_classish_def classish_def def_ctxt ctxt_cont
   in
   let def_ctxt = Ctxt.Def.enter_classish def_ctxt name in
-  let cont_ctxt =
+  let ctxt_cont =
     let ty_param =
       let this_ty_param =
         let param_bounds = this_bounds classish_def.elem in
@@ -104,13 +104,13 @@ let synth classish_def ~def_ctxt ~cont_ctxt =
       Ctxt.Cont.Bindings.create ~ty_param ~local:Ctxt.Local.empty ()
     in
     let delta = Ctxt.Cont.Delta.create ~bindings () in
-    Ctxt.Cont.update cont_ctxt ~delta
+    Ctxt.Cont.update ctxt_cont ~delta
   in
   let _ : unit =
     List.iter methods ~f:(fun Located.{ elem; span } ->
       let Lang.Method_def.{ fn_def; _ } = elem in
       let fn_def = Located.create ~elem:fn_def ~span () in
-      Fn_def.synth fn_def ~def_ctxt ~cont_ctxt)
+      Fn_def.synth fn_def ~def_ctxt ~ctxt_cont)
   in
   Eff.log_exit_classish_def span
 ;;

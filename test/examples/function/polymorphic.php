@@ -1,6 +1,6 @@
 <?hh
 
-function rcvr(all T. (function(T): T) $id, T $x): T {
+function rcvr<TIn>(all T. (function(T): T) $id, TIn $x): TIn {
    return ($id)($x);
 }
 

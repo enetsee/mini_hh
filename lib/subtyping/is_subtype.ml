@@ -10,12 +10,13 @@ let rec step_shape_field
   ~polarity
   ~errs
   ~cstrs
+  ~ctxt_cont
   =
   match fields_sub, fields_super with
   (* ~~ Success~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ([], [], None), (None, _, _) ->
     if List.is_empty errs
-    then Ok (Prop.conj cstrs)
+    then Ok (Prop.conj cstrs, ctxt_cont)
     else Error (Err.multiple errs)
   (* ~~ Required fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* ~~ Required <: Required ~~ *)
@@ -39,6 +40,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Required <: Optional field ~~ *)
   | ( ((lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
     , (reqs_super, Some opts_super, var_super) )
@@ -60,6 +62,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Required <: Variadic ~~ *)
   | ( ((_lbl, ty_sub) :: reqs_sub, opts_sub, var_sub)
     , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
@@ -75,6 +78,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Error: required field present subtype but not in supertype ~~ *)
   | ((lbl, _) :: reqs_sub, opts_sub, var_sub), (reqs_super, opts_super, None) ->
     let errs =
@@ -89,6 +93,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Error: required fields in supertype not present in subtype ~~ *)
   | ([], [], var_sub), (Some reqs_super, opts_super, var_super) ->
     let errs =
@@ -109,6 +114,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Optional fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* ~~ Error: Field optional in subtype but required in supertype ~~ *)
   | ([], (lbl, _) :: opts_sub, var_sub), (Some reqs_super, opts_super, var_super)
@@ -135,6 +141,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Optional <: Optional ~~ *)
   | ( ([], (lbl, ty_sub) :: opts_sub, var_sub)
     , (reqs_super, Some opts_super, var_super) )
@@ -156,6 +163,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Optional <: Variadic ~~ *)
   | ( ([], (_lbl, ty_sub) :: opts_sub, var_sub)
     , (reqs_super, opts_super, (Some ty_super as var_super)) ) ->
@@ -171,6 +179,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Error - unmatched optional field in subtype ~~ *)
   | ([], (lbl, _) :: opts_sub, var_sub), (reqs_super, opts_super, var_super) ->
     let errs =
@@ -194,6 +203,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Variadic fields ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   (* ~~ Variadic <: Variadic ~~ *)
   | ([], [], Some ty_sub), (reqs_super, opts_super, Some ty_super) ->
@@ -209,6 +219,7 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
   (* ~~ Error: subtype is open supertype is closed ~~ *)
   | (reqs_sub, opts_sub, Some _), (reqs_super, opts_super, None) ->
     let errs =
@@ -223,9 +234,17 @@ let rec step_shape_field
       ~polarity
       ~errs
       ~cstrs
+      ~ctxt_cont
 ;;
 
-let step_shape ~prov_sub ~shape_sub ~prov_super ~shape_super ~polarity =
+let step_shape
+  ~prov_sub
+  ~shape_sub
+  ~prov_super
+  ~shape_super
+  ~polarity
+  ~ctxt_cont
+  =
   let Ty.Shape.{ required = reqs_sub; optional = opts_sub; variadic = var_sub } =
     shape_sub
   and Ty.Shape.
@@ -249,6 +268,7 @@ let step_shape ~prov_sub ~shape_sub ~prov_super ~shape_super ~polarity =
     ~polarity
     ~errs:[]
     ~cstrs:[]
+    ~ctxt_cont
 ;;
 
 let rec step_tuple_elem
@@ -405,10 +425,11 @@ let step_tuple
     Ty.Tuple.
       { required = reqs_super; optional = opts_super; variadic = var_super }
   ~polarity
+  ~ctxt_cont
   =
   let params_sub = reqs_sub, opts_sub, var_sub
   and params_super = reqs_super, opts_super, var_super in
-  Result.map ~f:(fun props -> Prop.conj @@ List.rev props)
+  Result.map ~f:(fun props -> Prop.conj @@ List.rev props, ctxt_cont)
   @@ step_tuple_elem
        prov_sub
        params_sub
@@ -420,7 +441,7 @@ let step_tuple
        ~cstrs:[]
 ;;
 
-let step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super ~polarity =
+let step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super ~polarity ~ctxt_cont =
   (* TODO(mjt) PROV!!!! In general, this is cute but we'd have to post-process the provenance and remember we were
      inside function params *)
   let Ty.Fn.{ params = params_sub; return = return_sub } = fn_sub
@@ -433,25 +454,34 @@ let step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super ~polarity =
     Ty.create ~node ~prov:prov_super ()
   in
   Ok
-    Prop.(
-      conj
-        [ atom
-          @@ Cstr.is_subtype_with_polarity
-               ~ty_sub:tuple_super
-               ~ty_super:tuple_sub
-               ~polarity:(not polarity)
-        ; atom
-          @@ Cstr.is_subtype_with_polarity
-               ~ty_sub:return_sub
-               ~ty_super:return_super
-               ~polarity
-        ])
+    ( Prop.(
+        conj
+          [ atom
+            @@ Cstr.is_subtype_with_polarity
+                 ~ty_sub:tuple_super
+                 ~ty_super:tuple_sub
+                 ~polarity:(not polarity)
+          ; atom
+            @@ Cstr.is_subtype_with_polarity
+                 ~ty_sub:return_sub
+                 ~ty_super:return_super
+                 ~polarity
+          ])
+    , ctxt_cont )
 ;;
 
-let step_ctor_args ~prov_sub:_ ~args_sub ~prov_super:_ ~args_super ~polarity vs =
+let step_ctor_args
+  ~prov_sub:_
+  ~args_sub
+  ~prov_super:_
+  ~args_super
+  ~polarity
+  ~ctxt_cont
+  vs
+  =
   let rec aux ~idx ~args_sub ~args_super ~vs ~props =
     match args_sub, args_super, vs with
-    | [], [], [] -> Ok (Prop.conj @@ List.rev props)
+    | [], [], [] -> Ok (Prop.conj @@ List.rev props, ctxt_cont)
     | arg_sub :: args_sub, arg_super :: args_super, variance :: vs ->
       (* TODO(mjt) PROV!!!! *)
       let props =
@@ -496,12 +526,20 @@ let step_ctor_args ~prov_sub:_ ~args_sub ~prov_super:_ ~args_super ~polarity vs 
   aux ~idx:0 ~args_sub ~args_super ~vs ~props:[]
 ;;
 
-let step_ctor ~prov_sub ~ctor_sub ~prov_super ~ctor_super ~polarity =
+let step_ctor ~prov_sub ~ctor_sub ~prov_super ~ctor_super ~polarity ~ctxt_cont =
   let Ty.Ctor.{ name = name_sub; args = args_sub } = ctor_sub
   and Ty.Ctor.{ name = name_super; args = args_super } = ctor_super in
   let vs = Option.value_exn @@ Eff.ask_ty_param_variances ctor_sub.name in
   if Name.Ctor.equal name_sub name_super
-  then step_ctor_args ~prov_sub ~args_sub ~prov_super ~args_super ~polarity vs
+  then
+    step_ctor_args
+      ~prov_sub
+      ~args_sub
+      ~prov_super
+      ~args_super
+      ~polarity
+      ~ctxt_cont
+      vs
   else (
     match Eff.ask_up ~of_:ctor_sub ~at:ctor_super.name with
     | Not_a_subclass ->
@@ -521,6 +559,7 @@ let step_ctor ~prov_sub ~ctor_sub ~prov_super ~ctor_super ~polarity =
         ~prov_super
         ~args_super
         ~polarity
+        ~ctxt_cont
         vs)
 ;;
 
@@ -569,7 +608,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         | Ctor _
         | Nonnull
         | Base _ ) )
-    , (_prov_super, Inter []) ) -> Ok Prop.true_
+    , (_prov_super, Inter []) ) -> Ok (Prop.true_, ctxt_cont)
   | ( (_prov_sub, Inter [])
     , ( _prov_super
       , ( Union _
@@ -596,7 +635,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         | Shape _
         | Ctor _
         | Nonnull
-        | Base _ ) ) ) -> Ok Prop.true_
+        | Base _ ) ) ) -> Ok (Prop.true_, ctxt_cont)
   | ( ( _
       , ( Union (_ :: _)
         | Inter _
@@ -632,7 +671,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         in
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.conj props)
+    Ok (Prop.conj props, ctxt_cont)
   (* ~~ C-Inter-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
@@ -654,7 +693,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         in
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.conj props)
+    Ok (Prop.conj props, ctxt_cont)
   (* ~~ C-Union-R ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _
       , ( Inter (_ :: _)
@@ -676,7 +715,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         in
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.disj props)
+    Ok (Prop.disj props, ctxt_cont)
   (* ~~ C-Inter-L ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (prov_sub, Inter tys_sub)
     , ( _
@@ -697,7 +736,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
         in
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.disj props)
+    Ok (Prop.disj props, ctxt_cont)
   (* ~~ C-Var ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Var var_sub), (_prov_super, Var var_super) ->
     let variance = if polarity then Variance.Cov else Variance.Contrav in
@@ -714,7 +753,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
       List.map ubs ~f:(fun ty_super ->
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.conj (lower @ upper))
+    Ok (Prop.conj (lower @ upper), ctxt_cont)
   | (_prov_sub, Var var_sub), (_prov_super, _) ->
     let variance = if polarity then Variance.Cov else Variance.Contrav in
     let (_ : unit) = Eff.observe_variance var_sub ~variance in
@@ -724,7 +763,7 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
       List.map lbs ~f:(fun ty_sub ->
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.conj props)
+    Ok (Prop.conj props, ctxt_cont)
   | (_prov_sub, _), (_prov_super, Var var_super) ->
     let variance = if polarity then Variance.Cov else Variance.Contrav in
     let (_ : unit) = Eff.observe_variance var_super ~variance in
@@ -734,10 +773,10 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
       List.map ubs ~f:(fun ty_super ->
         Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
     in
-    Ok (Prop.conj props)
+    Ok (Prop.conj props, ctxt_cont)
   (* ~~ C-Generic ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Generic name_sub), (_prov_super, Generic name_super)
-    when Name.Ty_param.equal name_sub name_super -> Ok Prop.true_
+    when Name.Ty_param.equal name_sub name_super -> Ok (Prop.true_, ctxt_cont)
   | ( ( _
       , ( Exists _
         | Forall _
@@ -756,7 +795,9 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
       Ty.map_prov lower ~f:(fun bound ->
         Prov.axiom_lower_bound ~bound ~of_:prov_super)
     in
-    Ok (Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
+    Ok
+      ( Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity
+      , ctxt_cont )
   | ( (prov_sub, Generic name_sub)
     , ( _prov_super
       , ( Exists _
@@ -774,41 +815,52 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
       Ty.map_prov upper ~f:(fun bound ->
         Prov.axiom_upper_bound ~bound ~of_:prov_sub)
     in
-    Ok (Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
-  (* ~~ C-Forall (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-  | (_prov_sub, Forall _forall_sub), (_prov_super, Forall _forall_super) ->
-    (* let ty_sub, _ = instantiate_forall prov_sub forall_sub in
-    (* NO! We should bind the type parameters , not freshen 
-      Consider:
-
-      all T. (int -> string) <: all (T as arrakey). (T -> string)
-      #1 <: arraykey
-      (int -> string) <: (#1 -> string) 
-      (* Project on function arg *)
-      #1 <: (int & arraykey)
-      #1 <: int
-
-      if instead we have bound T, we end up with
-      T as arraykey,
-      (int -> string) <: (T -> string)  
-      (* Project on function arg *)
-      T <: int
-      (* Axiom: Upper bound of T *)
-      arraykey <: int 
-      false
-    *)
-    let ty_super, _ = instantiate_forall prov_super forall_super in
-    Ok (Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity) *)
-    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+    Ok
+      ( Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity
+      , ctxt_cont )
+    (* ~~ C-Forall (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( (prov_sub, Forall forall_sub)
     , ( _prov_super
-      , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) ) ) ->
+      , ( Exists _
+        | Fn _
+        | Shape _
+        | Tuple _
+        | Ctor _
+        | Nonnull
+        | Base _
+        | Forall _ ) ) ) ->
     let ty_sub, _ = instantiate_forall prov_sub forall_sub in
-    Ok (Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity)
+    Ok
+      ( Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity
+      , ctxt_cont )
   | ( ( _prov_sub
       , (Exists _ | Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _) )
-    , (_prov_super, Forall _forall_super) ) ->
-    Error (Err.not_a_subtype ~ty_sub ~ty_super)
+    , (_prov_super, Forall { quants; body }) ) ->
+    let generics = Eff.request_fresh_ty_params (List.length quants) in
+    let subst, quants =
+      let subst, quants =
+        List.unzip
+        @@ List.map2_exn
+             quants
+             generics
+             ~f:
+               (fun
+                 Ty.Param.{ name = Located.{ elem; span }; param_bounds }
+                 fresh_name
+               ->
+               ( (elem, Ty.generic Prov.empty fresh_name)
+               , Ty.Param.
+                   { name = Located.{ elem = fresh_name; span }; param_bounds }
+               ))
+      in
+      let subst = Name.Ty_param.Map.of_alist_exn subst in
+      subst, quants
+    in
+    let ty_super = Ty.apply_subst body ~subst ~combine_prov:(fun p _ -> p) in
+    let ctxt_cont = Ctxt.Cont.bind_ty_params ctxt_cont quants in
+    Ok
+      ( Prop.atom @@ Cstr.is_subtype_with_polarity ~ty_sub ~ty_super ~polarity
+      , ctxt_cont )
   (* ~~ C-Exists (TODO) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Exists _exists_sub), (_prov_super, Exists _exists_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
@@ -822,10 +874,16 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
   | (_, Nonnull), (_, (Fn _ | Shape _ | Tuple _ | Ctor _ | Base _)) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | (_, (Fn _ | Shape _ | Tuple _ | Ctor _ | Nonnull | Base _)), (_, Nonnull) ->
-    Ok Prop.true_
+    Ok (Prop.true_, ctxt_cont)
   (* ~~ C-Shape ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Shape shape_sub), (prov_super, Shape shape_super) ->
-    step_shape ~prov_sub ~shape_sub ~prov_super ~shape_super ~polarity
+    step_shape
+      ~prov_sub
+      ~shape_sub
+      ~prov_super
+      ~shape_super
+      ~polarity
+      ~ctxt_cont
   | ( (_prov_sub, (Fn _ | Tuple _ | Ctor _ | Base _))
     , (_prov_super, Shape _shape_super) ) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
@@ -834,21 +892,27 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Fn ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Fn fn_sub), (prov_super, Fn fn_super) ->
-    step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super ~polarity
+    step_fn ~prov_sub ~fn_sub ~prov_super ~fn_super ~polarity ~ctxt_cont
   | (_prov_sub, (Tuple _ | Ctor _ | Base _)), (_prov_super, Fn _fn_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | (_prov_sub, Fn _fn_sub), (_prov_super, (Tuple _ | Ctor _ | Base _)) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Ctor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Ctor ctor_sub), (prov_super, Ctor ctor_super) ->
-    step_ctor ~prov_sub ~ctor_sub ~prov_super ~ctor_super ~polarity
+    step_ctor ~prov_sub ~ctor_sub ~prov_super ~ctor_super ~polarity ~ctxt_cont
   | (_prov_sub, Ctor _ctor_sub), (_prov_super, (Tuple _ | Base _)) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | (_prov_sub, (Tuple _ | Base _)), (_prov_super, Ctor _ctor_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   (* ~~ C-Tuple ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (prov_sub, Tuple tuple_sub), (prov_super, Tuple tuple_super) ->
-    step_tuple ~prov_sub ~tuple_sub ~prov_super ~tuple_super ~polarity
+    step_tuple
+      ~prov_sub
+      ~tuple_sub
+      ~prov_super
+      ~tuple_super
+      ~polarity
+      ~ctxt_cont
   | (_prov_sub, Base _), (_prov_super, Tuple _tuple_super) ->
     Error (Err.not_a_subtype ~ty_sub ~ty_super)
   | (_prov_sub, Tuple _tuple_sub), (_prov_super, Base _) ->
@@ -856,20 +920,6 @@ let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
   (* ~~ C-Base ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | (_prov_sub, Base base_sub), (_prov_super, Base base_super) ->
     if Common.Base.equal base_sub base_super
-    then Ok Prop.true_
+    then Ok (Prop.true_, ctxt_cont)
     else Error (Err.not_a_subtype ~ty_sub ~ty_super)
 ;;
-
-(* ~~ Ask / tell API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
-
-(* let tell Cstr.Is_subtype.{ ty_sub; ty_super } ~ctxt_cont =
-  match simplify ~ty_sub ~ty_super ~cont_ctxt with
-  | _ -> failwith ""
-;;
-
-let ask Cstr.Is_subtype.{ ty_sub; ty_super } ~ctxt_cont =
-  match simplify ~ty_sub ~ty_super ~cont_ctxt with
-  | Ok (Prop.Conj []) -> Answer.Yes
-  | Ok _ -> Answer.Maybe
-  | Error err -> Answer.No err
-;; *)

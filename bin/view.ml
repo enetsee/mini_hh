@@ -1030,6 +1030,14 @@ module Status = struct
               ; Lwd.pure @@ W.string @@ Common.Variance.show variance
               ]
           ]
+      | Requested_fresh_ty_params { data; _ } ->
+        W.vbox
+          [ render_status_desc "Requested fresh ty params"
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "number:"
+              ; Lwd.pure @@ W.string @@ Int.to_string data
+              ]
+          ]
     in
     W.vbox [ render_comp "Subtyping"; status_ui ]
   ;;
