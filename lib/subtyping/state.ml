@@ -5,6 +5,11 @@ type t =
 
 let empty = { store = Cstr.Store.empty; supply = 0 }
 
+let add_instantiation ({ store; _ } as t) ~var ~args =
+  let store = Cstr.Store.add_instantiation store ~var ~args in
+  { t with store }
+;;
+
 let add_upper_bound ({ store; _ } as t) ~var ~bound =
   let store = Cstr.Store.add_upper_bound store ~var ~bound in
   { t with store }

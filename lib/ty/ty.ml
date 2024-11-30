@@ -35,6 +35,7 @@ module rec Node : sig
     | Ctor of Ctor.t
     | Exists of Exists.t
     | Forall of Forall.t
+    | Apply of Apply.t
     | Union of Annot.t list
     | Inter of Annot.t list
     | Nonnull
@@ -51,6 +52,7 @@ end = struct
       | Ctor of Ctor.t
       | Exists of Exists.t
       | Forall of Forall.t
+      | Apply of Apply.t
       | Union of Annot.t list
       | Inter of Annot.t list
       | Nonnull
@@ -67,6 +69,7 @@ end = struct
       | Ctor ctor -> Ctor.pp ppf ctor
       | Exists exists -> Exists.pp ppf exists
       | Forall forall -> Forall.pp ppf forall
+      | Apply apply -> Apply.pp ppf apply
       | Union [] -> Fmt.any "nothing" ppf ()
       | Union tys ->
         Fmt.(hovbox @@ parens @@ list ~sep:(any " | ") Annot.pp) ppf tys
@@ -100,6 +103,7 @@ and Annot : sig
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_forall : 'acc -> Prov.t -> Forall.t -> 'acc
+    ; on_apply : 'acc -> Prov.t -> Apply.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
     ; on_nonnull : 'acc -> Prov.t -> 'acc
@@ -150,6 +154,7 @@ and Annot : sig
   val ctor : Prov.t -> name:Name.Ctor.t -> args:t list -> t
   val exists : Prov.t -> quants:Param.t list -> body:t -> t
   val forall : Prov.t -> quants:Param.t list -> body:t -> t
+  val apply : Prov.t -> ty:t -> args:t list -> t
   val union : t list -> prov:Prov.t -> t
   val inter : t list -> prov:Prov.t -> t
   val arraykey : Prov.t -> t
@@ -190,6 +195,7 @@ end = struct
     ; on_ctor : 'acc -> Prov.t -> Ctor.t -> 'acc
     ; on_exists : 'acc -> Prov.t -> Exists.t -> 'acc
     ; on_forall : 'acc -> Prov.t -> Forall.t -> 'acc
+    ; on_apply : 'acc -> Prov.t -> Apply.t -> 'acc
     ; on_union : 'acc -> Prov.t -> t list -> 'acc
     ; on_inter : 'acc -> Prov.t -> t list -> 'acc
     ; on_nonnull : 'acc -> Prov.t -> 'acc
@@ -206,6 +212,7 @@ end = struct
       ; on_ctor = (fun acc _ _ -> acc)
       ; on_exists = (fun acc _ _ -> acc)
       ; on_forall = (fun acc _ _ -> acc)
+      ; on_apply = (fun acc _ _ -> acc)
       ; on_union = (fun acc _ _ -> acc)
       ; on_inter = (fun acc _ _ -> acc)
       ; on_nonnull = (fun acc _ -> acc)
@@ -238,6 +245,9 @@ end = struct
     | Forall forall ->
       let init = Forall.bottom_up forall ~ops ~init in
       ty_ops.on_forall init prov forall
+    | Apply apply ->
+      let init = Apply.bottom_up apply ~ops ~init in
+      ty_ops.on_apply init prov apply
     | Union ts ->
       let init =
         List.fold_left ts ~init ~f:(fun init t -> bottom_up t ~ops ~init)
@@ -281,6 +291,9 @@ end = struct
     | Forall forall ->
       let node = Node.forall (Forall.apply_subst forall ~subst ~combine_prov) in
       { prov; node }
+    | Apply apply ->
+      let node = Node.apply (Apply.apply_subst apply ~subst ~combine_prov) in
+      { prov; node }
     | Union union ->
       let node =
         Node.union (List.map ~f:(apply_subst ~subst ~combine_prov) union)
@@ -322,6 +335,9 @@ end = struct
       { prov; node }
     | Forall forall ->
       let node = Node.forall (Forall.elab_to_generic forall ~bound_ty_params) in
+      { prov; node }
+    | Apply apply ->
+      let node = Node.apply (Apply.elab_to_generic apply ~bound_ty_params) in
       { prov; node }
     | Union union ->
       let node =
@@ -382,6 +398,11 @@ end = struct
     else (
       let node = Node.forall @@ Forall.create ~quants ~body () in
       create ~prov ~node ())
+  ;;
+
+  let apply prov ~ty ~args =
+    let node = Node.apply @@ Apply.create ~ty ~args () in
+    create ~prov ~node ()
   ;;
 
   let nonnull prov =
@@ -933,6 +954,91 @@ end = struct
   ;;
 end
 
+(* ~~ Type application ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
+and Apply : sig
+  type t =
+    { ty : Annot.t
+    ; args : Annot.t list
+    }
+  [@@deriving compare, create, equal, sexp, show]
+
+  type 'a ops =
+    { on_ty : 'a -> Annot.t -> 'a
+    ; on_args : 'a -> Annot.t list -> 'a
+    }
+
+  val id_ops : unit -> 'a ops
+  val bottom_up : t -> ops:'a Ops.t -> init:'a -> 'a
+
+  val apply_subst
+    :  t
+    -> subst:Annot.t Name.Ty_param.Map.t
+    -> combine_prov:(Prov.t -> Prov.t -> Prov.t)
+    -> t
+
+  val elab_to_generic : t -> bound_ty_params:Name.Ty_param.Set.t -> t
+end = struct
+  module Minimal = struct
+    type t =
+      { ty : Annot.t
+      ; args : Annot.t list
+      }
+    [@@deriving compare, create, equal, sexp]
+
+    let surround s1 s2 pp_v ppf v =
+      Format.(
+        pp_print_string ppf s1;
+        pp_v ppf v;
+        pp_print_string ppf s2)
+    ;;
+
+    let angles pp_v = Fmt.(hovbox ~indent:1 (surround "<" ">" pp_v))
+
+    let pp ppf { ty; args } =
+      Fmt.(
+        hovbox @@ pair ~sep:nop Annot.pp @@ angles @@ list ~sep:comma Annot.pp)
+        ppf
+        (ty, args)
+    ;;
+  end
+
+  include Minimal
+  include Pretty.Make (Minimal)
+
+  type 'a ops =
+    { on_ty : 'a -> Annot.t -> 'a
+    ; on_args : 'a -> Annot.t list -> 'a
+    }
+
+  let id_ops =
+    let ops = { on_ty = (fun acc _ -> acc); on_args = (fun acc _ -> acc) } in
+    fun _ -> ops
+  ;;
+
+  let bottom_up { ty; args } ~ops ~init =
+    let apply_ops = ops.Ops.apply in
+    let init = apply_ops.on_ty init ty in
+    let init =
+      List.fold_left args ~init ~f:(fun init ty ->
+        Annot.bottom_up ~ops ~init ty)
+    in
+    let init = apply_ops.on_args init args in
+    init
+  ;;
+
+  let apply_subst { ty; args } ~subst ~combine_prov =
+    let ty = Annot.apply_subst ty ~subst ~combine_prov
+    and args = List.map args ~f:(Annot.apply_subst ~subst ~combine_prov) in
+    { ty; args }
+  ;;
+
+  let elab_to_generic { ty; args } ~bound_ty_params =
+    let ty = Annot.elab_to_generic ty ~bound_ty_params
+    and args = List.map args ~f:(Annot.elab_to_generic ~bound_ty_params) in
+    { ty; args }
+  ;;
+end
+
 (* ~~ Existentially quantified types ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
 and Exists : sig
   type t =
@@ -1352,6 +1458,7 @@ and Ops : sig
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
     ; forall : 'a Forall.ops
+    ; apply : 'a Apply.ops
     ; param : 'a Param.ops
     ; param_bounds : 'a Param_bounds.ops
     }
@@ -1367,6 +1474,7 @@ end = struct
     ; ctor : 'a Ctor.ops
     ; exists : 'a Exists.ops
     ; forall : 'a Forall.ops
+    ; apply : 'a Apply.ops
     ; param : 'a Param.ops
     ; param_bounds : 'a Param_bounds.ops
     }
@@ -1379,6 +1487,7 @@ end = struct
     ; ctor = Ctor.id_ops ()
     ; exists = Exists.id_ops ()
     ; forall = Forall.id_ops ()
+    ; apply = Apply.id_ops ()
     ; param = Param.id_ops ()
     ; param_bounds = Param_bounds.id_ops ()
     }

@@ -30,6 +30,7 @@ module Ty_view = struct
     | Ctor ctor -> render_ctor ctor
     | Exists exists -> render_exists exists
     | Forall forall -> render_forall forall
+    | Apply apply -> render_apply apply
     | Union [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "nothing"
     | Union tys -> render_union tys
     | Inter [] -> Lwd.pure @@ W.string ~attr:Attr.(fg cyan) "mixed"
@@ -183,6 +184,17 @@ module Ty_view = struct
       ; pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st italic) "super"
       ; render lower
       ]
+
+  and render_apply Ty.Apply.{ ty; args } =
+    W.hbox
+      [ pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "∀"
+      ; render ty
+      ; Lwd.pure @@ W.string ~attr:Attr.(st bold) "@["
+      ; W.hbox
+        @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",")
+        @@ List.map args ~f:render
+      ; Lwd.pure @@ W.string ~attr:Attr.(st bold) "]"
+      ]
   ;;
 
   let render_refinement ty_rfmt =
@@ -326,6 +338,16 @@ module State_view = struct
         ])
   ;;
 
+  let render_instantiation args =
+    W.hbox
+      [ Lwd.pure @@ W.string "("
+      ; W.hbox
+        @@ List.intersperse ~sep:(Lwd.pure @@ W.string ", ")
+        @@ List.map args ~f:Ty_view.render
+      ; Lwd.pure @@ W.string ")"
+      ]
+  ;;
+
   let render_status status =
     match status with
     | Subtyping.Cstr.Store.Status.Err -> Lwd.pure @@ W.string "error"
@@ -334,7 +356,7 @@ module State_view = struct
         [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "solved:"
         ; Ty_view.render ty
         ]
-    | Cstrs { upper_bounds; lower_bounds } ->
+    | Cstrs { upper_bounds; lower_bounds; instantiations } ->
       W.vbox
         [ W.hbox
             [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "lower bounds:"
@@ -347,6 +369,12 @@ module State_view = struct
             ; W.flex_box
               @@ List.map upper_bounds ~f:(fun ty ->
                 Helpers.pad ~right:1 @@ Ty_view.render ty)
+            ]
+        ; W.hbox
+            [ Helpers.pad ~right:1 @@ Lwd.pure @@ W.string "instantiations:"
+            ; W.flex_box
+              @@ List.map instantiations ~f:(fun args ->
+                Helpers.pad ~right:1 @@ render_instantiation args)
             ]
         ]
   ;;
@@ -729,6 +757,16 @@ module Ty_param_refinement = struct
 end
 
 module Cstr = struct
+  let render_instantiation args =
+    W.hbox
+      [ Lwd.pure @@ W.string "("
+      ; W.hbox
+        @@ List.intersperse ~sep:(Lwd.pure @@ W.string ", ")
+        @@ List.map args ~f:Ty_view.render
+      ; Lwd.pure @@ W.string ")"
+      ]
+  ;;
+
   let render t =
     match t with
     | Subtyping.Cstr.Is_subtype { ty_sub; ty_super; _ } ->
@@ -736,6 +774,12 @@ module Cstr = struct
         [ Ty_view.render ty_sub
         ; pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "<:"
         ; Ty_view.render ty_super
+        ]
+    | Subtyping.Cstr.Can_instantiate_with { ty; args } ->
+      W.hbox
+        [ Ty_view.render ty
+        ; pad ~left:1 ~right:1 @@ Lwd.pure @@ W.string "@"
+        ; render_instantiation args
         ]
   ;;
 end
@@ -897,6 +941,16 @@ module Status = struct
     Lwd.pure @@ W.string @@ Subtyping.Err.to_string err
   ;;
 
+  let render_instantiation args =
+    W.hbox
+      [ Lwd.pure @@ W.string "("
+      ; W.hbox
+        @@ List.intersperse ~sep:(Lwd.pure @@ W.string ", ")
+        @@ List.map args ~f:Ty_view.render
+      ; Lwd.pure @@ W.string ")"
+      ]
+  ;;
+
   let render_subtyping status =
     let open Debugging.Status.Subtyping_status in
     let status_ui =
@@ -992,6 +1046,18 @@ module Status = struct
         W.vbox
           [ render_status_desc "Answered up"
           ; Lwd.pure @@ W.string "(unknown ctor)"
+          ]
+      | Added_instantiation { data = { var; args }; _ } ->
+        W.vbox
+          [ render_status_desc "Added instantiation"
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "var:"
+              ; Lwd.pure @@ W.string @@ Ty.Var.to_string var
+              ]
+          ; W.hbox
+              [ pad ~right:1 @@ Lwd.pure @@ W.string "args:"
+              ; render_instantiation args
+              ]
           ]
       | Added_bound { data = { var; bound; upper_or_lower }; _ } ->
         W.vbox

@@ -63,6 +63,11 @@ let fresh_ty_params t n =
   { t with ty_param_name_source }, names
 ;;
 
+let add_instantiation ({ subtyping; _ } as t) ~var ~args =
+  let subtyping = Subtyping.State.add_instantiation subtyping ~var ~args in
+  { t with subtyping }
+;;
+
 let add_upper_bound ({ subtyping; _ } as t) ~var ~bound =
   let subtyping = Subtyping.State.add_upper_bound subtyping ~var ~bound in
   { t with subtyping }

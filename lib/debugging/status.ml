@@ -213,6 +213,8 @@ and Subtyping_status : sig
           Suspension.t
     | Logged_exit_tell of
         (Subtyping.Eff.exit_tell, Subtyping.Err.t option) Suspension.t
+    | Added_instantiation of
+        (Subtyping.Eff.add_instantiation, unit) Suspension.t
     | Added_bound of (Subtyping.Eff.add_bound, unit) Suspension.t
     | Got_bounds of (Subtyping.Eff.get_bounds, Ty.t list) Suspension.t
     | Got_fresh_tyvar of (Prov.t, Ty.t) Suspension.t
@@ -272,6 +274,8 @@ module Event = struct
     | Ctor
     | Ctor_arg
 
+  let f _x y = _x, y
+
   type elem =
     | Typing_elem of typing_elem
     | Subtyping_elem of subtyping_elem
@@ -283,6 +287,7 @@ module Event = struct
     | Upper_bounds
     | Tyvar
     | Variance
+    | Instantiation
 
   type state = Subtyping_state of subtyping_state
 
@@ -308,6 +313,7 @@ module Event = struct
     | Exit of comp * elem
     | Put of comp * state
     | Got of comp * state
+  [@@deriving variants]
 
   let typing_event status =
     let open Typing_status in
@@ -356,6 +362,7 @@ module Event = struct
     | Logged_enter_tell_any _ -> Enter (Subtyping, Subtyping_elem Any)
     | Logged_exit_tell { data = { tell = Subtyping.Eff.Any; _ }; _ } ->
       Exit (Subtyping, Subtyping_elem Any)
+    | Added_instantiation _ -> Put (Subtyping, Subtyping_state Instantiation)
     | Added_bound { data = { upper_or_lower = Upper; _ }; _ } ->
       Put (Subtyping, Subtyping_state Upper_bounds)
     | Added_bound { data = { upper_or_lower = Lower; _ }; _ } ->

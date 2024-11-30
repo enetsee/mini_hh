@@ -41,6 +41,12 @@ module Minimal = struct
         { prov_sub : Prov.t
         ; prov_super : Prov.t
         }
+    | Instantiation_arity of
+        { prov : Prov.t
+        ; n_quants : int
+        ; n_args : int
+        }
+    | Cannot_instantiate of Prov.t
     | Disj of t list
     | Conj of t list
     | Multiple of t list
@@ -128,6 +134,17 @@ module Minimal = struct
         ++ any " is required in the subtype but not defined in the supertype")
         ppf
         lbl
+    | Cannot_instantiate _ ->
+      Fmt.(any "Only universally quantified types can be applied") ppf ()
+    | Instantiation_arity { n_quants; n_args; _ } ->
+      Fmt.(
+        any "Arity mismatch when apply this type. It has "
+        ++ pair
+             ~sep:sp
+             (int ++ any " quantifiers but is applied to")
+             (int ++ any " types"))
+        ppf
+        (n_quants, n_args)
     | Disj ts -> Fmt.(hovbox @@ list ~sep:(any " | ") pp) ppf ts
     | Conj ts -> Fmt.(hovbox @@ list ~sep:(any " & ") pp) ppf ts
     | Multiple ts -> Fmt.(vbox @@ list ~sep:cut pp) ppf ts

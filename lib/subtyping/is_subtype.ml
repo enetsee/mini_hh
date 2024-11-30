@@ -595,6 +595,8 @@ let instantiate_forall prov Ty.Forall.{ quants; body } =
 let step ~ty_sub ~ty_super ~polarity ~ctxt_cont =
   let open Ty.Node in
   match Ty.(prj ty_sub, prj ty_super) with
+  | (_prov_sub, Apply _apply_sub), _ty_super -> failwith ""
+  | _ty_sub, (_prov_super, Apply _apply_super) -> failwith ""
   (* ~~ C-Top ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
   | ( ( _prov_sub
       , ( Union _

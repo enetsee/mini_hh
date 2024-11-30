@@ -1,5 +1,46 @@
 open Core
 
+module Alt = struct
+  type tree =
+    | Enter of Step.t
+    | Step of Step.t
+    | Exit of Step.t
+    | Branch of tree list
+
+  type path =
+    | Empty
+    | Path of
+        { left : tree list
+        ; up : path
+        ; right : tree list
+        }
+
+  type zipper =
+    { cursor : tree
+    ; path : path
+    }
+
+  let init def =
+    let step = Handler.run (fun _ -> Typing.Def.synth def) () in
+    let event = Step.event step in
+    let _ : unit = assert (Status.Event.is_enter event) in
+    { cursor = Step step; path = Path { left = []; up = Empty; right = [] } }
+  ;;
+
+  (* let next t ~oracle = 
+    match t with 
+    | { cursor = Leaf step ; path = None } ->
+      (* This is either the end of the computation or we haven't yet run the 
+         continuation *)
+      begin
+        match Step.next step ~oracle with
+        | Some next_step  ->
+            
+           
+        | None -> None 
+      end *)
+end
+
 type t =
   { prev : Step.t list
   ; current : Step.t

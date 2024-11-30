@@ -221,6 +221,10 @@ let run comp =
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->
                   Status.(Subtyping (Logged_exit_tell { data; k })))
+            | Subtyping.Eff.Add_instantiation data ->
+              Some
+                (fun (k : (a, _) Effect.Deep.continuation) ->
+                  Status.(Subtyping (Added_instantiation { data; k })))
             | Subtyping.Eff.Add_bound data ->
               Some
                 (fun (k : (a, _) Effect.Deep.continuation) ->

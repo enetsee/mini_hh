@@ -243,6 +243,10 @@ let next_subtyping status t ~oracle =
     let state = State.observe_variance t.state ~var ~variance in
     let status = Effect.Deep.continue k () in
     { t with status; state }
+  | Added_instantiation { data = { var; args }; k } ->
+    let state = State.add_instantiation t.state ~var ~args in
+    let status = Effect.Deep.continue k () in
+    { t with status; state }
   | Added_bound { data = { var; bound; upper_or_lower = Upper }; k } ->
     let state = State.add_upper_bound t.state ~var ~bound in
     let status = Effect.Deep.continue k () in

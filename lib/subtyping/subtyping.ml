@@ -26,6 +26,10 @@ module Eager_leftmost_dfs = struct
       (match Is_subtype.step ~ty_sub ~ty_super ~polarity ~ctxt_cont with
        | Ok (prop, ctxt_cont) -> tell_prop prop ~ctxt_cont
        | Error err -> Some err)
+    | Cstr.Can_instantiate_with { ty; args } ->
+      (match Can_instantiate_with.step ~ty ~args ~ctxt_cont with
+       | Ok (prop, ctxt_cont) -> tell_prop prop ~ctxt_cont
+       | Error err -> Some err)
 
   and tell_all props ~errs ~ctxt_cont =
     let props, errs, ctxt_cont = Eff.log_enter_tell_all props errs ctxt_cont in
@@ -68,6 +72,10 @@ module Tell = struct
 
   let is_subtype ~ty_sub ~ty_super ~ctxt_cont =
     one (Cstr.is_subtype ~ty_sub ~ty_super) ~ctxt_cont
+  ;;
+
+  let can_instantiate_with ~ty ~args ~ctxt_cont =
+    one (Cstr.can_instantiate_with ~ty ~args) ~ctxt_cont
   ;;
 end
 

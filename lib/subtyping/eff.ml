@@ -62,6 +62,11 @@ type add_bound =
   ; upper_or_lower : upper_or_lower
   }
 
+type add_instantiation =
+  { var : Ty.Var.t
+  ; args : Ty.t list
+  }
+
 type get_bounds =
   { var : Ty.Var.t
   ; upper_or_lower : upper_or_lower
@@ -86,11 +91,16 @@ type _ Effect.t +=
       enter_tell_any
       -> (Prop.t list * Err.t list * Ctxt.Cont.t) Effect.t
   | Log_exit_tell : exit_tell -> Err.t option Effect.t
+  | Add_instantiation : add_instantiation -> unit Effect.t
   | Add_bound : add_bound -> unit Effect.t
   | Get_bounds : get_bounds -> Ty.t list Effect.t
   | Get_fresh_tyvar : Prov.t -> Ty.t Effect.t
   | Observe_variance : observe_variance -> unit Effect.t
   | Request_fresh_ty_params : int -> Name.Ty_param.t list Effect.t
+
+let add_instantiation var ~args =
+  Effect.perform (Add_instantiation { var; args })
+;;
 
 let request_fresh_ty_params n = Effect.perform (Request_fresh_ty_params n)
 
@@ -153,6 +163,12 @@ let run comp ~st ~src ~oracle =
     { effc =
         (fun (type a) (eff : a Effect.t) ->
           match eff with
+          | Add_instantiation { var; args } ->
+            let st = State.add_instantiation !st_ref ~var ~args in
+            st_ref := st;
+            Some
+              (fun (k : (a, _) Effect.Deep.continuation) ->
+                Effect.Deep.continue k ())
           | Add_bound { var; bound; upper_or_lower = Upper } ->
             let st = State.add_upper_bound !st_ref ~var ~bound in
             st_ref := st;

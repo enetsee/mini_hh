@@ -59,7 +59,8 @@ end = struct
     | As as_expr -> As.synth (as_expr, span) ~def_ctxt ~ctxt_cont
     | Binary binary -> Binary.synth (binary, span) ~def_ctxt ~ctxt_cont
     | Call call -> Call.synth (call, span) ~def_ctxt ~ctxt_cont
-    | Unary _ | Lambda _ | Apply _ -> failwith "TODO"
+    | Apply apply -> Apply.synth (apply, span) ~def_ctxt ~ctxt_cont
+    | Unary _ | Lambda _ -> failwith "TODO"
   ;;
 
   let check expr ~against ~def_ctxt ~ctxt_cont =
@@ -365,6 +366,32 @@ end = struct
       @@ Subtyping.Tell.is_subtype ~ty_sub ~ty_super ~ctxt_cont
     in
     return, Ctxt.Cont.Expr_delta.empty
+  ;;
+end
+
+and Apply : sig
+  val synth
+    :  Lang.Apply.t * Span.t
+    -> def_ctxt:Ctxt.Def.t
+    -> ctxt_cont:Ctxt.Cont.t
+    -> Ty.t * Ctxt.Cont.Expr_delta.t
+end = struct
+  let synth (Lang.Apply.{ ctor; ty_args }, span) ~def_ctxt ~ctxt_cont =
+    let ty_ctor, _ = Expr.synth ctor ~def_ctxt ~ctxt_cont in
+    let _ : unit =
+      Option.iter ~f:(fun err -> Eff.log_error (Err.subtyping err))
+      @@ Subtyping.Tell.can_instantiate_with
+           ~ty:ty_ctor
+           ~args:ty_args
+           ~ctxt_cont
+    in
+    let prov = Prov.witness span in
+    let ty_apply = Ty.apply prov ~ty:ty_ctor ~args:ty_args in
+    let ty = Eff.get_fresh_tyvar Prov.empty in
+    let _ =
+      Subtyping.Tell.is_subtype ~ty_sub:ty ~ty_super:ty_apply ~ctxt_cont
+    in
+    ty, Ctxt.Cont.Expr_delta.empty
   ;;
 end
 

@@ -69,6 +69,7 @@ let rec promote_ty ty ty_params ~dir =
   | Generic generic ->
     (* TODO(mjt) is this right? *)
     promote_generic prov generic ty_params ~dir
+  | Apply apply -> promote_apply prov apply ty_params ~dir
   | Fn fn -> promote_fn prov fn ty_params ~dir
   | Tuple tuple -> promote_tuple prov tuple ty_params ~dir
   | Shape shape -> promote_shape prov shape ty_params ~dir
@@ -210,6 +211,15 @@ and promote_forall prov forall ty_params ~dir =
     let node = Ty.Node.Forall forall in
     Ty.{ prov; node })
   @@ promote_ty body ty_params ~dir
+
+and promote_apply prov apply ty_params ~dir =
+  let Ty.Apply.{ ty; args } = apply in
+  Result.map ~f:(fun (args, ty) ->
+    let apply = Ty.Apply.create ~ty ~args () in
+    let node = Ty.Node.Apply apply in
+    Ty.create ~node ~prov ())
+  @@ collect_tuple2
+       (promote_tys args ty_params ~dir, promote_ty ty ty_params ~dir)
 ;;
 
 (* ~~ API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *)
