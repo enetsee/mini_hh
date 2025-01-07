@@ -187,8 +187,7 @@ module Ty_view = struct
 
   and render_apply Ty.Apply.{ ty; args } =
     W.hbox
-      [ pad ~right:1 @@ Lwd.pure @@ W.string ~attr:Attr.(st bold) "∀"
-      ; render ty
+      [ render ty
       ; Lwd.pure @@ W.string ~attr:Attr.(st bold) "@["
       ; W.hbox
         @@ List.intersperse ~sep:(pad ~right:1 @@ Lwd.pure @@ W.string ",")
@@ -390,9 +389,11 @@ module State_view = struct
       ]
   ;;
 
+  let scrollbox = Scrollbox.view ()
+
   let render_subtyping Subtyping.State.{ store; _ } =
     let entries = Subtyping.Cstr.Store.entries store in
-    W.scrollbox
+    scrollbox
     @@ W.vlist
     @@ List.map entries ~f:(fun (var, entry) ->
       W.hbox
@@ -401,16 +402,18 @@ module State_view = struct
         ])
   ;;
 
-  let render state_opt =
-    match state_opt with
-    | Some Debugging.State.{ tys; errs; warns; subtyping; _ } ->
-      Tabs.view
-        [ ("types", fun _ -> render_types tys)
-        ; ("errors", fun _ -> render_errors errs)
-        ; ("warnings", fun _ -> render_warnings warns)
-        ; ("subtyping", fun _ -> render_subtyping subtyping)
-        ]
-    | _ -> W.empty_lwd
+  let render =
+    let tabs = Tabs.view () in
+    fun state_opt ->
+      match state_opt with
+      | Some Debugging.State.{ tys; errs; warns; subtyping; _ } ->
+        tabs
+          [ ("types", fun _ -> render_types tys)
+          ; ("errors", fun _ -> render_errors errs)
+          ; ("warnings", fun _ -> render_warnings warns)
+          ; ("subtyping", fun _ -> render_subtyping subtyping)
+          ]
+      | _ -> W.empty_lwd
   ;;
 end
 
@@ -433,6 +436,9 @@ module Ctxt_def = struct
 end
 
 module Ctxt_cont = struct
+  let refinement_scrollbox = Scrollbox.view ()
+  let local_ctxt_scrollbox = Scrollbox.view ()
+
   let render_local_ctxt local local_rfmts =
     (* We want to render each local variable with the accumulated refinements _and_ the evaluation of those refinements *)
     let init =
@@ -460,7 +466,7 @@ module Ctxt_cont = struct
           @@ W.string ~attr:Attr.(fg yellow)
           @@ Name.Tm_var.to_string tm_var
         ; Ty_view.render ty
-        ; W.scrollbox
+        ; refinement_scrollbox
           @@ W.vlist
           @@ List.map ty_rfmts ~f:Ty_view.render_refinement
         ; Ty_view.render refined_ty
@@ -477,8 +483,11 @@ module Ctxt_cont = struct
         ; W.string "Refined type"
         ]
     in
-    W.scrollbox @@ W.grid ~h_space:1 ~headers data
+    local_ctxt_scrollbox @@ W.grid ~h_space:1 ~headers data
   ;;
+
+  let refinement_scrollbox = Scrollbox.view ()
+  let ty_param_ctxt_scrollbox = Scrollbox.view ()
 
   let render_ty_param_ctxt
     (ty_params : Ctxt.Ty_param.t)
@@ -515,7 +524,7 @@ module Ctxt_cont = struct
           @@ W.string ~attr:Attr.(fg yellow)
           @@ Name.Ty_param.to_string ty_param_name
         ; Ty_view.render_param_bounds declard_bounds
-        ; W.scrollbox
+        ; refinement_scrollbox
           @@ W.vlist
           @@ List.map bound_rftms ~f:Ty_view.render_param_bounds
         ; Ty_view.render_param_bounds refined_bounds
@@ -532,31 +541,37 @@ module Ctxt_cont = struct
         ; W.string "Refined bounds"
         ]
     in
-    W.scrollbox @@ W.grid ~h_space:1 ~headers data
+    ty_param_ctxt_scrollbox @@ W.grid ~h_space:1 ~headers data
   ;;
 
-  let render ctxt_cont_opt =
-    let cont =
-      match ctxt_cont_opt with
-      | Some ctxt_cont ->
-        [ ( "local context"
-          , fun _ ->
-              render_local_ctxt ctxt_cont.Ctxt.Cont.bindings.local
-              @@ List.filter_map ctxt_cont.Ctxt.Cont.rfmtss ~f:(fun rfmt_opt ->
-                Option.map rfmt_opt ~f:(fun rfmt ->
-                  rfmt.Ctxt.Cont.Refinements.local)) )
-        ; ( "type parameter context"
-          , fun _ ->
-              render_ty_param_ctxt ctxt_cont.Ctxt.Cont.bindings.ty_param
-              @@ List.filter_map ctxt_cont.Ctxt.Cont.rfmtss ~f:(fun rfmt_opt ->
-                Option.map rfmt_opt ~f:(fun rfmt ->
-                  rfmt.Ctxt.Cont.Refinements.ty_param)) )
-        ]
-      | _ -> []
-    in
-    match cont with
-    | [] -> W.empty_lwd
-    | uis -> Tabs.view uis
+  let render =
+    let tabs = Tabs.view () in
+    fun ctxt_cont_opt ->
+      let cont =
+        match ctxt_cont_opt with
+        | Some ctxt_cont ->
+          [ ( "local context"
+            , fun _ ->
+                render_local_ctxt ctxt_cont.Ctxt.Cont.bindings.local
+                @@ List.filter_map
+                     ctxt_cont.Ctxt.Cont.rfmtss
+                     ~f:(fun rfmt_opt ->
+                       Option.map rfmt_opt ~f:(fun rfmt ->
+                         rfmt.Ctxt.Cont.Refinements.local)) )
+          ; ( "type parameter context"
+            , fun _ ->
+                render_ty_param_ctxt ctxt_cont.Ctxt.Cont.bindings.ty_param
+                @@ List.filter_map
+                     ctxt_cont.Ctxt.Cont.rfmtss
+                     ~f:(fun rfmt_opt ->
+                       Option.map rfmt_opt ~f:(fun rfmt ->
+                         rfmt.Ctxt.Cont.Refinements.ty_param)) )
+          ]
+        | _ -> []
+      in
+      match cont with
+      | [] -> W.empty_lwd
+      | uis -> tabs uis
   ;;
 end
 
@@ -592,19 +607,21 @@ module Cont_delta = struct
     @@ Ctxt.Ty_param.bindings ty_params
   ;;
 
-  let render cont_delta =
-    Tabs.view
-      [ ( "local delta"
-        , fun _ ->
-            match cont_delta.Ctxt.Cont.Delta.bindings with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some { local; _ } -> render_local_delta local )
-      ; ( "type parameter delta"
-        , fun _ ->
-            match cont_delta.Ctxt.Cont.Delta.bindings with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some { ty_param; _ } -> render_ty_param_delta ty_param )
-      ]
+  let render =
+    let tabs = Tabs.view () in
+    fun cont_delta ->
+      tabs
+        [ ( "local delta"
+          , fun _ ->
+              match cont_delta.Ctxt.Cont.Delta.bindings with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some { local; _ } -> render_local_delta local )
+        ; ( "type parameter delta"
+          , fun _ ->
+              match cont_delta.Ctxt.Cont.Delta.bindings with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some { ty_param; _ } -> render_ty_param_delta ty_param )
+        ]
   ;;
 end
 
@@ -686,51 +703,55 @@ module Expr_delta = struct
     @@ Ctxt.Ty_param.bindings ty_params
   ;;
 
-  let render expr_delta =
-    Tabs.view
-      [ ( "local delta"
-        , fun _ ->
-            match expr_delta.Ctxt.Cont.Expr_delta.bindings with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some Ctxt.Cont.Bindings.{ local; _ } -> render_local_delta local
-        )
-      ; ( "local refinement delta"
-        , fun _ ->
-            match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some rfmt_delta ->
-              render_local_refinement_delta
-                rfmt_delta.Ctxt.Cont.Refinements.local )
-      ; ( "type parameter delta"
-        , fun _ ->
-            match expr_delta.Ctxt.Cont.Expr_delta.bindings with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some { ty_param; _ } -> render_ty_param_delta ty_param )
-      ; ( "type parameter refinement delta"
-        , fun _ ->
-            match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
-            | None -> Lwd.pure @@ W.string "(no change)"
-            | Some rfmt_delta ->
-              render_ty_param_refinement_delta
-                rfmt_delta.Ctxt.Cont.Refinements.ty_param )
-      ]
+  let render =
+    let tabs = Tabs.view () in
+    fun expr_delta ->
+      tabs
+        [ ( "local delta"
+          , fun _ ->
+              match expr_delta.Ctxt.Cont.Expr_delta.bindings with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some Ctxt.Cont.Bindings.{ local; _ } -> render_local_delta local
+          )
+        ; ( "local refinement delta"
+          , fun _ ->
+              match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some rfmt_delta ->
+                render_local_refinement_delta
+                  rfmt_delta.Ctxt.Cont.Refinements.local )
+        ; ( "type parameter delta"
+          , fun _ ->
+              match expr_delta.Ctxt.Cont.Expr_delta.bindings with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some { ty_param; _ } -> render_ty_param_delta ty_param )
+        ; ( "type parameter refinement delta"
+          , fun _ ->
+              match expr_delta.Ctxt.Cont.Expr_delta.rfmts with
+              | None -> Lwd.pure @@ W.string "(no change)"
+              | Some rfmt_delta ->
+                render_ty_param_refinement_delta
+                  rfmt_delta.Ctxt.Cont.Refinements.ty_param )
+        ]
   ;;
 end
 
 module Delta = struct
-  let render ctxt_delta =
-    Tabs.view
-      [ ( "next continuation"
-        , fun _ ->
-            match ctxt_delta.Ctxt.Delta.next with
-            | None -> Lwd.pure @@ W.string "(empty)"
-            | Some delta -> Cont_delta.render delta )
-      ; ( "exit continuation"
-        , fun _ ->
-            match ctxt_delta.Ctxt.Delta.exit with
-            | None -> Lwd.pure @@ W.string "(empty)"
-            | Some delta -> Cont_delta.render delta )
-      ]
+  let render =
+    let tabs = Tabs.view () in
+    fun ctxt_delta ->
+      tabs
+        [ ( "next continuation"
+          , fun _ ->
+              match ctxt_delta.Ctxt.Delta.next with
+              | None -> Lwd.pure @@ W.string "(empty)"
+              | Some delta -> Cont_delta.render delta )
+        ; ( "exit continuation"
+          , fun _ ->
+              match ctxt_delta.Ctxt.Delta.exit with
+              | None -> Lwd.pure @@ W.string "(empty)"
+              | Some delta -> Cont_delta.render delta )
+        ]
   ;;
 end
 
@@ -1371,5 +1392,199 @@ module Status = struct
     | Subtyping status -> render_subtyping status
     | Refinement status -> render_refinement status
     | Exposure status -> render_exposure status
+  ;;
+end
+
+module Status_summary = struct
+  let render_comp name =
+    Lwd.pure @@ W.string ~attr:Attr.(st underline ++ fg cyan) name
+  ;;
+
+  let render_status_desc desc = Lwd.pure @@ W.string ~attr:Attr.(st italic) desc
+
+  let render_typing status =
+    let open Debugging.Status.Typing_status in
+    let status_ui =
+      match status with
+      | Logged_error _ -> render_status_desc "Logged an error"
+      | Logged_warning _ -> render_status_desc "Logged a warning"
+      | Logged_enter_classish_def _ -> render_status_desc "Entered classish def"
+      | Logged_exit_classish_def _ -> render_status_desc "Exited classish def"
+      | Logged_enter_fn_def _ -> render_status_desc "Entered function def"
+      | Logged_exit_fn_def _ -> render_status_desc "Exited function def"
+      | Logged_enter_synth_expr _ -> render_status_desc "Entered expr synth"
+      | Logged_enter_check_expr _ -> render_status_desc "Entered expr check"
+      | Logged_exit_expr _ -> render_status_desc "Exited expr"
+      | Logged_enter_stmt _ -> render_status_desc "Entered stmt"
+      | Logged_exit_stmt _ -> render_status_desc "Exited stmt"
+      | Got_fresh_tyvar _ -> render_status_desc "Got fresh tyvar"
+      | Asked_id _ -> render_status_desc "Asked for type of function"
+    in
+    W.hbox [ pad ~right:1 @@ render_comp "Typing"; status_ui ]
+  ;;
+
+  let render_subtyping status =
+    let open Debugging.Status.Subtyping_status in
+    let status_ui =
+      match status with
+      | Logged_enter_tell_prop _ -> render_status_desc "Entered tell prop"
+      | Logged_enter_tell_cstr _ -> render_status_desc "Entered tell cstr"
+      | Logged_enter_tell_all _ -> render_status_desc "Entered tell all"
+      | Logged_enter_tell_any _ -> render_status_desc "Entered tell any"
+      | Logged_exit_tell { data = { tell; _ }; _ } ->
+        let msg =
+          Format.sprintf {|Exited tell %s|} @@ Subtyping.Eff.show_tell tell
+        in
+        render_status_desc msg
+      | Asked_up _ -> render_status_desc "Asked up"
+      | Answered_up _ -> render_status_desc "Answered up"
+      | Asked_ty_param_variances _ -> render_status_desc "Asked variance"
+      | Answered_ty_param_variances _ -> render_status_desc "Answered up"
+      | Added_instantiation _ -> render_status_desc "Added instantiation"
+      | Added_bound { data = { upper_or_lower; _ }; _ } ->
+        render_status_desc
+        @@ Format.sprintf {|Added %s bound|}
+        @@ Subtyping.Eff.show_upper_or_lower upper_or_lower
+      | Got_bounds { data = { upper_or_lower; _ }; _ } ->
+        render_status_desc
+        @@ Format.sprintf {|Got %s bounds|}
+        @@ Subtyping.Eff.show_upper_or_lower upper_or_lower
+      | Got_fresh_tyvar _ -> render_status_desc "Got fresh tyvar"
+      | Observed_variance _ -> render_status_desc "Observed variance"
+      | Requested_fresh_ty_params _ ->
+        render_status_desc "Requested fresh ty params"
+    in
+    W.hbox [ pad ~right:1 @@ render_comp "Subtyping"; status_ui ]
+  ;;
+
+  let render_refinement status =
+    let open Debugging.Status.Refinement_status in
+    let status_ui =
+      match status with
+      | Logged_enter_refinement _ -> render_status_desc "Entered refinement"
+      | Logged_enter_ty _ -> render_status_desc "Entered ty"
+      | Logged_enter_existential_scrut _ ->
+        render_status_desc "Entered existential (scrut)"
+      | Logged_enter_existential_test _ ->
+        render_status_desc "Entered existential (test)"
+      | Logged_enter_union_scrut _ -> render_status_desc "Entered union (scrut)"
+      | Logged_enter_inter_scrut _ -> render_status_desc "Entered inter (scrut)"
+      | Logged_enter_union_test _ -> render_status_desc "Entered union (test)"
+      | Logged_enter_inter_test _ -> render_status_desc "Entered inter (test)"
+      | Logged_enter_top_level_generic_scrut _ ->
+        render_status_desc "Entered top-level generic (scrut)"
+      | Logged_enter_top_level_generic_test _ ->
+        render_status_desc "Entered top-level generic (test)"
+      | Logged_enter_ctor _ -> render_status_desc "Entered ctor"
+      | Logged_enter_ctor_arg _ -> render_status_desc "Entered ctor arg"
+      | Asked_up _ -> render_status_desc "Asked up"
+      | Answered_up _ -> render_status_desc "Answered up"
+      | Asked_ty_param_variance _ -> render_status_desc "Asked variance"
+      | Answered_ty_param_variance _ -> render_status_desc "Answered up"
+      | Requested_fresh_ty_params _ ->
+        render_status_desc "Requested fresh ty params"
+      | Received_fresh_ty_params _ ->
+        render_status_desc "Received fresh ty params"
+      | Logged_exit { data = { elem; _ }; _ } ->
+        let msg =
+          Format.sprintf {|Exited %s|}
+          @@ String.lowercase
+          @@ Refinement.Eff.show_elem elem
+        in
+        render_status_desc msg
+    in
+    W.hbox [ pad ~right:1 @@ render_comp "Refinement"; status_ui ]
+  ;;
+
+  let render_exposure status =
+    let open Debugging.Status.Exposure_status in
+    let status_ui =
+      match status with
+      | Asked_up _ -> render_status_desc "Asked up"
+      | Answered_up _ -> render_status_desc "Answered up"
+      | _ -> W.empty_lwd
+    in
+    W.hbox [ pad ~right:1 @@ render_comp "Exposure"; status_ui ]
+  ;;
+
+  let render status =
+    let open Debugging.Status in
+    match status with
+    | Completed ->
+      Lwd.pure @@ W.string ~attr:Attr.(st bold ++ fg green) "Completed"
+    | Failed _ -> Lwd.pure @@ W.string ~attr:Attr.(st bold ++ fg red) "Failed"
+    | Typing status -> render_typing status
+    | Subtyping status -> render_subtyping status
+    | Refinement status -> render_refinement status
+    | Exposure status -> render_exposure status
+  ;;
+end
+
+module History = struct
+  let render_event event =
+    Lwd.pure
+    @@ W.string
+    @@
+    if Debugging.Status.Event.is_enter event
+    then "Enter"
+    else if Debugging.Status.Event.is_exit event
+    then "Exit"
+    else "Other"
+  ;;
+
+  let indent = 2
+
+  let render_step is_current (Debugging.Step.{ status; _ }, depth) =
+    let offset = if is_current then 0 else 2 in
+    let left = offset + (indent * depth) in
+    let event = Debugging.Status.event status in
+    pad ~left
+    @@ W.hbox
+         [ pad ~right:1 @@ Status_summary.render status; render_event event ]
+  ;;
+
+  let render Debugging.History.{ prev; current; next } =
+    W.vbox
+      [ W.vbox @@ List.rev_map prev ~f:(render_step false)
+      ; W.hbox [ Lwd.pure @@ W.string "> "; render_step true current ]
+      ; W.vbox @@ List.map next ~f:(render_step false)
+      ]
+  ;;
+end
+
+module Alt = struct
+  let render_step Debugging.Step.{ status; _ } = Status_summary.render status
+
+  let rec render_tree tree ~indent =
+    match tree with
+    | Debugging.History.Alt.Leaf step -> render_step step
+    | Branch trees ->
+      pad ~left:indent
+      @@ W.vbox
+      @@ List.map trees ~f:(render_tree ~indent:(indent + 2))
+  ;;
+
+  let rec render_path path =
+    match path with
+    | Debugging.History.Alt.Empty -> Lwd.pure @@ W.string "Empty"
+    | Path { left; up; right } ->
+      W.vbox
+        [ W.hbox
+            [ Lwd.pure @@ W.string "left"
+            ; W.vbox @@ List.map left ~f:(render_tree ~indent:0)
+            ]
+        ; W.hbox [ Lwd.pure @@ W.string "up"; render_path up ]
+        ; W.hbox
+            [ Lwd.pure @@ W.string "right"
+            ; W.vbox @@ List.map right ~f:(render_tree ~indent:0)
+            ]
+        ]
+  ;;
+
+  let render Debugging.History.Alt.{ cursor; path } =
+    W.vbox
+      [ W.hbox [ Lwd.pure @@ W.string "cursor: "; render_tree cursor ~indent:0 ]
+      ; W.hbox [ Lwd.pure @@ W.string "path:   "; render_path path ]
+      ]
   ;;
 end

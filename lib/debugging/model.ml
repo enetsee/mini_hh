@@ -44,11 +44,16 @@ module Debugging = struct
   type t =
     { file : File_ok.t
     ; history : History.t
+    ; alt : History.Alt.t
     }
 
+  let alt { alt; _ } = alt
+  let history { history; _ } = history
+
   let debug_def file def =
+    let alt = History.Alt.init def ~oracle:file.File_ok.oracle in
     let history = History.init def in
-    { file; history }
+    { file; history; alt }
   ;;
 
   let toggle_breakpoint ({ file; _ } as t) line =
@@ -56,30 +61,42 @@ module Debugging = struct
     { t with file }
   ;;
 
-  let restart ({ history; _ } as t) =
+  let restart ({ history; alt; _ } as t) =
+    let alt = History.Alt.start alt in
     let history = History.start history in
-    { t with history }
+    { t with history; alt }
   ;;
 
-  let next ({ history; _ } as t) =
-    Option.value_map ~default:t ~f:(fun history -> { t with history })
-    @@ History.next history ~oracle:t.file.oracle
-  ;;
-
-  let run { history; file } =
-    let start_line =
-      Reporting.Span.start_line @@ Step.span @@ History.current history
+  let next ({ history; alt; _ } as t) =
+    let history =
+      Option.value ~default:history
+      @@ History.next history ~oracle:t.file.oracle
     in
+    let alt = Option.value ~default:alt @@ History.Alt.next alt in
+    { t with history; alt }
+  ;;
+
+  let run ({ history; file; _ } as t) =
+    let start_line =
+      Reporting.Span.start_line @@ Step.span @@ fst @@ History.current history
+    in
+    (* let start_line =
+      Reporting.Span.start_line @@ Step.span @@ History.current history
+    in *)
     let breakpoints = file.breakpoints in
     let rec aux history =
       match History.next history ~oracle:file.oracle with
-      | None -> { history; file }
+      | None -> t
       | Some history ->
         let line =
-          Reporting.Span.start_line @@ Step.span @@ History.current history
+          Reporting.Span.start_line
+          @@ Step.span
+          @@ fst
+          @@ History.current history
+          (* Reporting.Span.start_line @@ Step.span @@ History.current history *)
         in
         if line > start_line && Set.mem breakpoints line
-        then { history; file }
+        then { t with history }
         else aux history
     in
     aux history
@@ -90,10 +107,11 @@ module Debugging = struct
     @@ History.prev history
   ;;
 
-  let span { history; _ } = Step.span @@ History.current history
-  let status { history; _ } = Step.status @@ History.current history
-  let ctxt_def { history; _ } = Step.ctxt_def @@ History.current history
-  let ctxt_cont { history; _ } = Step.ctxt_cont @@ History.current history
+  let current { history; _ } = History.current history
+  let span t = Step.span @@ fst @@ current t
+  let status t = Step.status @@ fst @@ current t
+  let ctxt_def t = Step.ctxt_def @@ fst @@ current t
+  let ctxt_cont t = Step.ctxt_cont @@ fst @@ current t
 end
 
 type t =
@@ -174,7 +192,7 @@ let update t ~action =
 ;;
 
 let state = function
-  | Debugging { history; _ } -> Some (Step.state @@ History.current history)
+  | Debugging t -> Some (Step.state @@ fst @@ Debugging.current t)
   | File_error _ | File_ok _ | Init _ | Uninit -> None
 ;;
 
@@ -195,6 +213,16 @@ let span_opt = function
 
 let status_opt = function
   | Debugging model -> Some (Debugging.status model)
+  | _ -> None
+;;
+
+let history_opt = function
+  | Debugging model -> Some (Debugging.history model)
+  | _ -> None
+;;
+
+let alt_opt = function
+  | Debugging model -> Some (Debugging.alt model)
   | _ -> None
 ;;
 

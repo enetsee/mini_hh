@@ -72,7 +72,7 @@
 %left LOGICAL_OR
 %left LOGICAL_AND
 %left IS AS 
-%right LLANGLE
+// %right LLANGLE
 // %nonassoc IS_EQUAL IS_NOT_EQUAL IS_IDENTICAL
 // %right IS_NOT_IDENTICAL
 // %right RANGLE
@@ -438,16 +438,16 @@ expr: (* Expr.t  *)
 ;
 
 open_expr(left):
-  | ctor=left LLANGLE ty_arg_spans=nonempty_comma_list(ty_expr) span_end=RRANGLE {
-    let ty_args = List.map ~f:fst ty_arg_spans in
-    let span = 
-      let span_start = Located.span_of ctor in 
-      Span.join span_start span_end
-    in
-    let apply = Lang.Apply.create ~ctor ~ty_args () in
-    let elem = Expr_node.Apply apply in
-    Located.create ~elem ~span ()
-  }
+  // | ctor=left LLANGLE ty_arg_spans=nonempty_comma_list(ty_expr) span_end=RRANGLE {
+  //   let ty_args = List.map ~f:fst ty_arg_spans in
+  //   let span = 
+  //     let span_start = Located.span_of ctor in 
+  //     Span.join span_start span_end
+  //   in
+  //   let apply = Lang.Apply.create ~ctor ~ty_args () in
+  //   let elem = Expr_node.Apply apply in
+  //   Located.create ~elem ~span ()
+  // }
   | lit_span=lit {
     let (lit,span) = lit_span in
     let elem = Expr_node.Lit lit in 

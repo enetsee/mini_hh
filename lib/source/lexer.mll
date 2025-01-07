@@ -142,8 +142,8 @@ rule token = parse
   (* | ">="                    { IS_GREATER_THAN_OR_EQUAL (current_loc lexbuf) } *)
   | "<"                     { LANGLE (current_loc lexbuf) }
   | ">"                     { RANGLE (current_loc lexbuf) }
-  | "<<"                     { LLANGLE (current_loc lexbuf) }
-  | ">>"                     { RRANGLE (current_loc lexbuf) }
+  (* | "<<"                     { LLANGLE (current_loc lexbuf) } *)
+  (* | ">>"                     { RRANGLE (current_loc lexbuf) } *)
   | "&&"                    { LOGICAL_AND (current_loc lexbuf) }
   | "||"                    { LOGICAL_OR (current_loc lexbuf) }
   | ";"                     { SEMICOLON (current_loc lexbuf)}

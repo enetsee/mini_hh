@@ -38,11 +38,11 @@ let render_tab label =
   Ui.vcat [ ui_top; Ui.hcat [ ui_left; ui_label; ui_right ]; ui_bottom ]
 ;;
 
-let view (tabs : (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
+let view () tabs =
+  let cur = Lwd.var 0 in
   match tabs with
   | [] -> Lwd.return Ui.empty
   | _ ->
-    let cur = Lwd.var 0 in
     Lwd.bind (Lwd.get cur) ~f:(fun idx_sel ->
       let _, f = List.nth_exn tabs idx_sel in
       let tab_bar =

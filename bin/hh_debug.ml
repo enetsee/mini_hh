@@ -56,7 +56,8 @@ module Definitions = struct
     Lwd.pure @@ W.button ~attr:Attr.(st underline ++ fg blue) label on_click
   ;;
 
-  let render defs = W.scrollbox @@ W.vlist @@ List.map ~f:view_def defs
+  let defs_scrollbox = Scrollbox.view ()
+  let render defs = defs_scrollbox @@ W.vlist @@ List.map ~f:view_def defs
 end
 
 let nav =
@@ -84,11 +85,12 @@ let h2 title =
 
 let start start_directory =
   let _ : unit = Lwd.set model @@ Debugging.Model.Init { start_directory } in
+  let files_scrollbox = Scrollbox.view () in
   let file_and_def_select =
     W.v_pane
       (W.vbox
          [ h1 "Files"
-         ; W.scrollbox
+         ; files_scrollbox
            @@ File_select.view start_directory ~on_select:select_file ()
          ])
       (W.vbox
@@ -97,6 +99,7 @@ let start start_directory =
              Definitions.render @@ Debugging.Model.definitions model)
          ])
   in
+  let prog_scrollbox = Scrollbox.view () in
   let program =
     W.vbox
       [ Lwd.bind (Lwd.get model) ~f:(fun model ->
@@ -119,7 +122,7 @@ let start start_directory =
               and breakpoints = Debugging.Model.breakpoints model in
               lines, span_opt, breakpoints)
           in
-          W.scrollbox
+          prog_scrollbox
           @@ View.Program_view.render
                lines
                span_opt
@@ -128,13 +131,23 @@ let start start_directory =
       ; nav
       ]
   in
+  let history_scrollbox = Scrollbox.view () in
+  let status_tabs = Tabs.view () in
   let status =
     Lwd.bind (Lwd.get model) ~f:(fun model ->
       W.vbox
-        [ h2 "Status"
-        ; Option.value_map ~default:W.empty_lwd ~f:(fun ctxt_def ->
-            W.scroll_area @@ View.Status.render ctxt_def)
-          @@ Debugging.Model.status_opt model
+        [ status_tabs
+          @@ [ ( "status"
+               , fun _ ->
+                   Option.value_map ~default:W.empty_lwd ~f:(fun ctxt_def ->
+                     W.scroll_area @@ View.Status.render ctxt_def)
+                   @@ Debugging.Model.status_opt model )
+             ; ( "history"
+               , fun _ ->
+                   Option.value_map ~default:W.empty_lwd ~f:(fun alt ->
+                     history_scrollbox @@ View.History.render alt)
+                   @@ Debugging.Model.history_opt model )
+             ]
         ])
   in
   let top = W.h_pane (W.h_pane file_and_def_select program) status in
