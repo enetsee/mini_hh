@@ -23,9 +23,7 @@ end = struct
     Eff.log_exit_expr span
     @@
     match elem with
-    | Lit lit ->
-      let ty = Lit.synth (lit, span) in
-      ty, Ctxt.Cont.Expr_delta.empty
+    | Lit lit -> Lit.synth (lit, span)
     | Local tm_var ->
       let ty =
         match Ctxt.Cont.find_local ctxt_cont tm_var with
